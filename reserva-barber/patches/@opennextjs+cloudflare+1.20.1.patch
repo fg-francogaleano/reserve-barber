@@ -1,0 +1,16 @@
+diff --git a/node_modules/@opennextjs/cloudflare/dist/cli/build/patches/plugins/turbopack.js b/node_modules/@opennextjs/cloudflare/dist/cli/build/patches/plugins/turbopack.js
+index 4f0e134..1632241 100644
+--- a/node_modules/@opennextjs/cloudflare/dist/cli/build/patches/plugins/turbopack.js
++++ b/node_modules/@opennextjs/cloudflare/dist/cli/build/patches/plugins/turbopack.js
+@@ -230,6 +230,11 @@ export const patchTurbopackRuntime = {
+             }),
+             contentFilter: /loadRuntimeChunkPath/,
+             patchCode: async ({ code, tracedFiles, filePath }) => {
++                // Windows workaround: normalize to forward slashes so the
++                // ".next/server/chunks/" filters match and the generated
++                // require/import string literals are valid paths.
++                tracedFiles = tracedFiles.map((f) => f.replace(/\\/g, "/"));
++                filePath = filePath.replace(/\\/g, "/");
+                 const mappings = discoverExternalModuleMappings(filePath);
+                 const externalImportRule = buildExternalImportRule(mappings, tracedFiles, code);
+                 let patched = patchCode(code, externalImportRule);

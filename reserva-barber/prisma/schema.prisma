@@ -1,0 +1,26 @@
+// Prisma schema — single source of truth for the database schema.
+// See docs/data-model.md for entity definitions.
+// Connection URLs live in prisma.config.ts (Prisma 7 convention).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  runtime  = "workerd"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A physical barbershop branch owned by the Owner.
+/// NOTE: `ownerId` is a plain column in S0 — the Owner model and its FK
+/// constraint are introduced in change A1 (see openspec/changes/s0-walking-skeleton/design.md D4).
+model Location {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String   @db.VarChar(120)
+  address   String?  @db.VarChar(255)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
