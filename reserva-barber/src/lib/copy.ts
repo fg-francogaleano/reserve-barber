@@ -9,4 +9,14 @@ export const COPY = {
     error: 'No pudimos cargar las sucursales. Intentá de nuevo más tarde.',
     retry: 'Reintentar',
   },
+  auth: {
+    heading: 'Iniciar sesión',
+    emailLabel: 'Email',
+    passwordLabel: 'Contraseña',
+    submit: 'Ingresar',
+    submitting: 'Ingresando…',
+    credentialsError: 'Email o contraseña incorrectos.',
+    infrastructureError: 'No pudimos iniciar sesión. Intentá de nuevo más tarde.',
+    logout: 'Cerrar sesión',
+  },
 } as const;

@@ -27,18 +27,21 @@ cancellation link) non-sequential and non-guessable.
 ## Model Descriptions
 
 ### 1. Owner
-The single administrative user of the system — the business owner who manages every location, barber, service, and payment setting. There is no barber login and no multi-owner tenancy in this version.
+The single administrative user of the system — the business owner who manages every location, barber, service, and payment setting. There is no barber login and no multi-owner tenancy in this version. Authentication is handled by **Supabase Auth** (email/password, sign-ups disabled); the domain database never stores credentials.
 
 **Fields:**
 - `id`: Unique identifier (PK, cuid)
-- `email`: Owner's unique login email (max 255, required, unique)
-- `passwordHash`: Hashed password for authentication (required) *(if using Supabase Auth instead, this maps to the auth user id — see `backend-standards.md`)*
+- `email`: Owner's login email (max 255, required, unique, stored lowercase) — a denormalized copy; Supabase Auth is the source of truth, refreshed by the provisioning script
+- `authUserId`: Foreign key to the Supabase `auth.users.id` (unique, nullable until provisioned) — sessions resolve through this field, never through email
 - `createdAt`: Account creation timestamp (auto-set)
 - `updatedAt`: Last update timestamp (auto-updated)
 
 **Validation Rules:**
-- Email: required, unique system-wide, valid email format
-- Password: minimum 8 characters, hashed with a strong algorithm (never stored in plaintext)
+- Email: required, unique system-wide, valid email format, normalized to lowercase
+- Password: minimum 12 characters, enforced by Supabase Auth (Authentication → Policies). The domain database never stores it — this rule is configured in the provider, not in application code
+- Exactly one `Owner` row may exist system-wide; only a database migration or the owner-provisioning script may create it — no application code path (page, server action, or seed) creates an `Owner`
+- `authUserId` is set by the provisioning script (`scripts/provision-owner.ts`), never by application code
+- `id` exception: the single Owner row is created by the A1 migration with the fixed literal `owner-root` rather than a generated cuid, so the migration can reference it deterministically when backfilling `Location.ownerId`. Every other entity follows the cuid convention above.
 
 **Relationships:**
 - `businessProfile`: One-to-one → BusinessProfile
@@ -361,7 +364,7 @@ erDiagram
     Owner {
         String id PK
         String email UK
-        String passwordHash
+        String authUserId UK
         DateTime createdAt
         DateTime updatedAt
     }

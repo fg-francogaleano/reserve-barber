@@ -1,0 +1,175 @@
+## ADDED Requirements
+
+### Requirement: Owner login with credentials
+The system SHALL allow the owner to log in at `/login` with email and password, authenticated against Supabase Auth (email/password provider, sign-ups disabled). The login form SHALL be processed by a Server Action that validates input (trimmed, lowercased email; non-empty password) before calling the auth provider. On success the owner SHALL be redirected to the dashboard home.
+
+#### Scenario: Successful login
+- **WHEN** the owner submits their correct email and password
+- **THEN** a session is established and they are redirected to the dashboard home
+
+#### Scenario: Email is normalized
+- **WHEN** the owner submits ` Owner@Example.com ` with the correct password
+- **THEN** authentication succeeds as if `owner@example.com` had been submitted
+
+### Requirement: Credential errors do not enable user enumeration
+Failed logins SHALL return a single generic Spanish message — exactly `"Email o contraseña incorrectos."` — regardless of whether the email exists or the password is wrong. The response MUST NOT reveal which field failed, in the message, response shape, or observable timing. Infrastructure failures (auth provider unreachable, 5xx, timeout) SHALL return a distinct generic Spanish message — exactly `"No pudimos iniciar sesión. Intentá de nuevo más tarde."` — and MUST NOT expose provider error text.
+
+To make the timing guarantee real rather than aspirational, every login SHALL be padded to a constant minimum duration that exceeds the slowest credential-checking path, so response time does not distinguish a registered address from an unregistered one.
+
+#### Scenario: Unknown email and wrong password are indistinguishable
+- **WHEN** a login is attempted with a non-existent email, and another with a real email but wrong password
+- **THEN** both receive the identical generic message with no observable difference in response shape
+
+#### Scenario: Timing does not distinguish the two failures
+- **WHEN** the auth provider answers faster for an unregistered address than for a registered one with a wrong password
+- **THEN** both logins still take the same total time, equal to the configured minimum duration
+
+#### Scenario: Work that already exceeds the floor is not delayed further
+- **WHEN** a login takes longer than the configured minimum duration
+- **THEN** no additional padding is applied
+
+#### Scenario: Auth provider outage
+- **WHEN** Supabase Auth is unreachable or returns a server error
+- **THEN** the visitor sees "No pudimos iniciar sesión. Intentá de nuevo más tarde.", a structured English error log is emitted, and no provider detail reaches the response
+
+### Requirement: Bounded auth provider response
+Every call to the auth provider SHALL be subject to an explicit timeout of **5 seconds** so a hung provider degrades into the generic infrastructure error within bounded time instead of hanging the Worker. Failed auth calls SHALL NOT be retried automatically; the owner retries by resubmitting the form.
+
+#### Scenario: Auth provider hangs
+- **WHEN** the auth provider accepts the connection but never responds
+- **THEN** the request completes within the configured timeout, the generic Spanish infrastructure error is rendered, and one structured English error log is emitted
+
+#### Scenario: No automatic retry
+- **WHEN** an auth call fails with a server error or timeout
+- **THEN** the action returns the infrastructure error without re-issuing the request
+
+### Requirement: Owner lookup failures degrade gracefully
+A database failure (including a timeout) while resolving the domain `Owner` — during login, after a successful auth-provider sign-in, or during session resolution (`requireOwner`) — SHALL NOT propagate as an unhandled exception. Login SHALL return the generic infrastructure error; session resolution SHALL treat the request as unauthenticated (redirect to `/login`). Both SHALL emit a structured English error log.
+
+#### Scenario: Owner lookup times out during login
+- **WHEN** Supabase authenticates the credentials successfully but the subsequent `Owner` lookup times out
+- **THEN** the login action returns "No pudimos iniciar sesión. Intentá de nuevo más tarde." instead of a raw server error, and a structured English error log is emitted
+
+#### Scenario: Owner lookup fails during session resolution
+- **WHEN** `requireOwner()` resolves a valid Supabase session but the `Owner` lookup throws
+- **THEN** the request is treated as unauthenticated and redirected to `/login`, and a structured English error log is emitted
+
+### Requirement: Response semantics without REST endpoints
+This change SHALL NOT add REST endpoints; login and logout are Server Actions. A failed login SHALL return a `200` response carrying form-error state (never `401`), middleware redirects SHALL use `307`, and an unauthenticated server action SHALL redirect to `/login` rather than returning a `5xx`.
+
+#### Scenario: Failed login is not an HTTP error
+- **WHEN** invalid credentials are submitted
+- **THEN** the response status is `200` and carries the generic error in form state
+
+#### Scenario: Guard redirects use 307
+- **WHEN** middleware redirects an unauthenticated request away from a protected route
+- **THEN** the response status is `307` with a `Location` header pointing at `/login`
+
+#### Scenario: Server Actions are never answered with a redirect
+- **WHEN** a Server Action is invoked without a valid session
+- **THEN** middleware lets the request reach the action rather than redirecting it, and the action's own `requireOwner()` performs the redirect, so the client receives a response it can follow instead of an unusable HTML page
+
+### Requirement: Session in hardened cookies
+The session SHALL be stored exclusively in cookies flagged `HttpOnly`, `Secure`, and `SameSite=Lax`, managed via `@supabase/ssr`. Session tokens MUST never be stored in `localStorage`, exposed to client-side JavaScript, or written to logs. Session refresh SHALL occur in middleware so that refreshed cookies are set before the response streams.
+
+#### Scenario: Cookie flags
+- **WHEN** the session cookie is set after login
+- **THEN** it carries `HttpOnly`, `Secure`, and `SameSite=Lax` attributes
+
+### Requirement: Dashboard is guarded at three layers
+Every route in the `(dashboard)` group and every server action SHALL require a valid owner session, enforced at three layers: (1) `middleware.ts` redirects unauthenticated requests to `/login`; (2) the dashboard layout re-validates the session server-side; (3) every server action resolves the owner through a single `requireOwner()` helper before executing. Middleware alone MUST NOT be the security boundary. A session whose `authUserId` has no matching `Owner` row SHALL be treated as unauthenticated.
+
+#### Scenario: Direct URL access without session
+- **WHEN** an unauthenticated visitor opens a protected dashboard URL directly
+- **THEN** they are redirected to `/login` and no protected data is rendered or fetched
+
+#### Scenario: Server action with expired session
+- **WHEN** a server action is invoked after the session has expired
+- **THEN** the mutation does not execute and the caller is redirected to `/login` without a raw 500 or internal detail
+
+#### Scenario: Authenticated visitor opens login
+- **WHEN** an owner with a valid session navigates to `/login`
+- **THEN** they are redirected to the dashboard home
+
+#### Scenario: Session without domain owner
+- **WHEN** a session's `authUserId` matches no `Owner` row
+- **THEN** access is denied as unauthenticated and a structured English error log records the mismatch
+
+### Requirement: Safe post-login redirect
+The login flow MAY carry a `next` parameter set by the middleware for deep links. Only same-origin relative paths (starting with `/`, not `//`) SHALL be honored; any other value SHALL fall back to the dashboard home.
+
+#### Scenario: Deep link resumes after login
+- **WHEN** an unauthenticated owner opens a protected path and then logs in
+- **THEN** they land on the originally requested path
+
+#### Scenario: External redirect target rejected
+- **WHEN** the `next` parameter contains an absolute URL or protocol-relative path to another origin
+- **THEN** the owner is redirected to the dashboard home instead
+
+### Requirement: Logout fully invalidates the session
+Logout SHALL invalidate the session server-side (Supabase `signOut`), clear the session cookies, and redirect to `/login`. A previously captured cookie value MUST NOT grant access after logout. Protected pages SHALL be rendered dynamically and non-cacheable so the browser Back button after logout does not display protected content.
+
+Logout SHALL always end with the owner signed out and back at `/login`, even when the provider rejects the sign-out call. The provider answers `403 bad_jwt` once the access token has expired — the exact moment a logout is most likely — so that failure MUST be logged and tolerated, with the session cookies cleared locally, rather than surfacing as an error page.
+
+#### Scenario: Provider rejects the sign-out call
+- **WHEN** the access token has already expired and the provider rejects `signOut`
+- **THEN** the session cookies are cleared anyway, the owner lands on `/login`, no error page is shown, and one structured English error log records the provider failure
+
+#### Scenario: Cookie replay after logout
+- **WHEN** the owner logs out and the previous cookie value is replayed
+- **THEN** access to protected routes is denied
+
+#### Scenario: Back button after logout
+- **WHEN** the owner logs out and presses the browser Back button
+- **THEN** no protected content is displayed from cache
+
+### Requirement: Login attempt throttling
+Repeated failed login attempts SHALL be rejected after **5 failed attempts for the same email + IP pair within a 15-minute window**, for a **60-second cooldown**, as defense-in-depth over the auth provider's own rate limits. A successful login SHALL reset the counter. Throttled attempts SHALL return the generic credential error (throttling MUST NOT be distinguishable from a wrong password, to avoid confirming that an email exists). Throttling events SHALL emit one structured English log entry that never contains the password.
+
+Only **credential** failures SHALL count toward the threshold; infrastructure failures (provider unavailable, timeout) MUST NOT, so an outage never locks the owner out of their own dashboard.
+
+The tracking store SHALL be bounded in size so that an attacker rotating email addresses cannot exhaust the isolate's memory. Records still serving an active cooldown MUST NOT be evicted to make room — otherwise a lockout could be flushed by spraying keys; when no evictable slot remains, the new key SHALL go untracked instead.
+
+#### Scenario: Provider outage does not lock the owner out
+- **WHEN** the auth provider is unavailable and login is attempted repeatedly with correct credentials
+- **THEN** no attempt counts toward the throttle threshold and the owner is not placed in cooldown
+
+#### Scenario: Key spraying cannot exhaust memory
+- **WHEN** failed attempts arrive for far more distinct email addresses than the tracking cap
+- **THEN** the number of tracked pairs stays at or below the cap
+
+#### Scenario: An active cooldown survives key spraying
+- **WHEN** an account is in cooldown and an attacker floods the tracker with distinct keys
+- **THEN** that account remains in cooldown
+
+#### Scenario: Burst of failures is throttled
+- **WHEN** a 6th failed attempt arrives for the same email + IP within 15 minutes
+- **THEN** it is rejected without calling the auth provider, the generic credential error is returned, and one structured English log entry records the throttling event
+
+#### Scenario: Cooldown expires
+- **WHEN** 60 seconds elapse after throttling began
+- **THEN** authentication attempts are accepted again
+
+#### Scenario: Successful login resets the counter
+- **WHEN** the owner authenticates successfully after 4 failed attempts
+- **THEN** the failure counter for that email + IP is cleared
+
+### Requirement: Login UI states in Spanish
+The login page SHALL present all user-facing text in Spanish (es-AR) from the copy constants module: idle form, submitting state (submit button disabled showing a loading indicator, double-submit prevented), credential error (`"Email o contraseña incorrectos."`), and infrastructure error (`"No pudimos iniciar sesión. Intentá de nuevo más tarde."`). Identifiers, comments, and logs remain in English.
+
+Errors SHALL be presented **inline in an `aria-live="polite"` region directly below the form** — not as a toast or modal. After a failed attempt the inputs SHALL remain enabled with their values preserved (password cleared), and focus SHALL move to the error region so assistive technology announces it.
+
+#### Scenario: Double submit prevented
+- **WHEN** the owner activates submit twice in quick succession
+- **THEN** only one authentication attempt is processed and the control is disabled while pending
+
+#### Scenario: Error is announced and recoverable
+- **WHEN** a login attempt fails
+- **THEN** the message renders inline in the `aria-live` region, focus moves to it, the email value is preserved, the password is cleared, and the form is immediately usable again
+
+### Requirement: Auth flow validated on the three-environment gate
+Login, guarded navigation, and logout SHALL be verified in order on (1) `next dev`, (2) `npm run preview` (workerd), and (3) the deployed URL, per the S0 protocol. A failure on workerd blocks deploy; any workaround required SHALL be recorded in `docs/s0-versions-decision.md`.
+
+#### Scenario: workerd cookie regression caught at preview
+- **WHEN** session cookies work on `next dev` but are dropped on the workerd preview
+- **THEN** the failure is caught at the preview gate before any deploy

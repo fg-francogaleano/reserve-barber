@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@/generated/prisma/client';
 
@@ -17,25 +18,25 @@ export function createPrismaClient(connectionString: string): PrismaClient {
     statement_timeout: QUERY_TIMEOUT_MS,
     // Supavisor transaction mode: no prepared statements across requests.
     max: 5,
+    // Workers cannot reuse a socket across request contexts — retire each
+    // connection after a single use so none is ever carried over.
+    maxUses: 1,
   });
   return new PrismaClient({ adapter });
 }
 
-let cachedClient: PrismaClient | null = null;
-
 /**
- * Returns a lazily-created Prisma client reusing a single instance per
- * Worker invocation context. Fails fast with a clear English error when
+ * Returns a Prisma client scoped to the current request. React `cache()` dedupes
+ * it within one invocation while guaranteeing a fresh client per request:
+ * caching a client at module scope makes later requests reuse sockets opened in
+ * an earlier request context, which `workerd` cannot do — the query then hangs
+ * until the read timeout. Fails fast with a clear English error when
  * DATABASE_URL is missing.
  */
-export function getPrismaClient(): PrismaClient {
-  if (cachedClient) {
-    return cachedClient;
-  }
+export const getPrismaClient = cache((): PrismaClient => {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('Missing required environment variable: DATABASE_URL');
   }
-  cachedClient = createPrismaClient(connectionString);
-  return cachedClient;
-}
+  return createPrismaClient(connectionString);
+});

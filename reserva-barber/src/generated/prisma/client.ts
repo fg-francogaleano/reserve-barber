@@ -28,8 +28,8 @@ export * from "./enums"
  * const prisma = new PrismaClient({
  *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
  * })
- * // Fetch zero or more Locations
- * const locations = await prisma.location.findMany()
+ * // Fetch zero or more Owners
+ * const owners = await prisma.owner.findMany()
  * ```
  * 
  * Read more in our [docs](https://pris.ly/d/client).
@@ -39,9 +39,15 @@ export type PrismaClient<LogOpts extends Prisma.LogLevel = never, OmitOpts exten
 export { Prisma }
 
 /**
+ * Model Owner
+ * The single administrative user of the system. Authentication is handled by
+ * Supabase Auth (email/password, sign-ups disabled); this table never stores
+ * credentials. `authUserId` maps to `auth.users.id` and is set by
+ * `scripts/provision-owner.ts`, never by application code.
+ */
+export type Owner = Prisma.OwnerModel
+/**
  * Model Location
  * A physical barbershop branch owned by the Owner.
- * NOTE: `ownerId` is a plain column in S0 — the Owner model and its FK
- * constraint are introduced in change A1 (see openspec/changes/s0-walking-skeleton/design.md D4).
  */
 export type Location = Prisma.LocationModel

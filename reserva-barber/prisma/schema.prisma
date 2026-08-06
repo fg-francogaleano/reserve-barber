@@ -8,16 +8,38 @@ generator client {
   runtime  = "workerd"
 }
 
+// CLI-only client (seed, provisioning scripts). The `workerd` target above
+// generates a wasm query compiler instantiated the way Cloudflare's workerd
+// runtime expects; Node's own ESM loader cannot satisfy those wasm-bindgen
+// imports when run via `tsx`. This generator targets Node instead — it is
+// never imported by application code that ships to the Worker.
+generator cliClient {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma-cli"
+}
+
 datasource db {
   provider = "postgresql"
 }
 
+/// The single administrative user of the system. Authentication is handled by
+/// Supabase Auth (email/password, sign-ups disabled); this table never stores
+/// credentials. `authUserId` maps to `auth.users.id` and is set by
+/// `scripts/provision-owner.ts`, never by application code.
+model Owner {
+  id         String    @id @default(cuid())
+  email      String    @unique @db.VarChar(255)
+  authUserId String?   @unique
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  locations  Location[]
+}
+
 /// A physical barbershop branch owned by the Owner.
-/// NOTE: `ownerId` is a plain column in S0 — the Owner model and its FK
-/// constraint are introduced in change A1 (see openspec/changes/s0-walking-skeleton/design.md D4).
 model Location {
   id        String   @id @default(cuid())
   ownerId   String
+  owner     Owner    @relation(fields: [ownerId], references: [id])
   name      String   @db.VarChar(120)
   address   String?  @db.VarChar(255)
   isActive  Boolean  @default(true)
