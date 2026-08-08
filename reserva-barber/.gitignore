@@ -24,6 +24,10 @@
 .DS_Store
 *.pem
 
+# Local MCP server configuration for Claude Code. Not project source, and it
+# typically carries access tokens — it must never be committed.
+.mcp.json
+
 # debug
 npm-debug.log*
 yarn-debug.log*
