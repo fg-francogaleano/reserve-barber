@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Tooling, generated artifacts and AI workflow directories:
+    ".claude/**",
+    "ai-specs/**",
+    "openspec/**",
+    "coverage/**",
+    "src/generated/**",
+    ".open-next/**",
+    ".wrangler/**",
   ]),
 ]);
 

@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Reserva Barber
 
-## Getting Started
+Barbershop appointment booking web app. A single owner manages locations, barbers and
+services from a private dashboard; clients book as guests through a public link and
+confirm with a mandatory deposit (Mercado Pago or bank transfer).
 
-First, run the development server:
+**Stack:** Next.js (App Router) on Cloudflare Workers (`@opennextjs/cloudflare`),
+Supabase PostgreSQL + Prisma (driver adapters), Tailwind CSS + shadcn/ui.
+
+See `docs/` for the SDD constitution documents (source of truth) and
+`docs/s0-versions-decision.md` for the validated stack version matrix.
+
+## Prerequisites
+
+- Node.js 20+
+- A [Supabase](https://supabase.com) project (PostgreSQL)
+- A [Cloudflare](https://dash.cloudflare.com) account with Workers enabled
+- Windows only: **Developer Mode enabled** (the Cloudflare build creates symlinks)
+
+## Setup
+
+### 1. Install dependencies
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env` (used by `next dev` and the Prisma CLI) and to
+`.dev.vars` (used by `npm run preview`). Fill in both URLs from your Supabase
+project (Settings → Database):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Purpose | Port |
+| --- | --- | --- |
+| `DATABASE_URL` | App runtime — Supavisor pooler, **transaction mode** | 6543 |
+| `DIRECT_URL` | `prisma migrate` / `prisma db seed` only | 5432 |
 
-## Learn More
+Never commit `.env` or `.dev.vars` (both are git-ignored).
 
-To learn more about Next.js, take a look at the following resources:
+### 3. Migrate and seed the database
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npx prisma migrate dev   # applies migrations via DIRECT_URL
+npx prisma db seed       # idempotent — upserts 2 locations
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Development
 
-## Deploy on Vercel
+```bash
+npm run dev        # next dev on http://localhost:3000
+npm run lint       # ESLint
+npm run typecheck  # tsc --noEmit
+npm test           # Vitest (watch)
+npm run test:coverage  # enforces 90% coverage on domain + application layers
+npm run format     # Prettier
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Preview & Deploy (Cloudflare)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Verification order is dev → preview → deploy; each must pass before the next.
+
+```bash
+npm run preview    # OpenNext build + local workerd runtime (http://127.0.0.1:8787)
+```
+
+First deploy only — set the production secret (pooler URL). Pipe the exact bytes;
+a trailing newline or BOM in the value breaks the connection at runtime:
+
+```bash
+npx wrangler secret put DATABASE_URL
+```
+
+Then:
+
+```bash
+npm run deploy
+```
+
+> **Note:** `patches/` contains a `patch-package` fix for `@opennextjs/cloudflare`
+> on Windows (path-separator bug in the Turbopack runtime patcher). It is applied
+> automatically by the `postinstall` script.
+
+## Project layout
+
+```
+app/                    Next.js App Router pages (RSC)
+src/components/ui/      shadcn/ui components
+src/lib/                utilities + Spanish user-facing copy constants
+src/server/domain/          entities + repository interfaces (zero dependencies)
+src/server/application/     services (business logic)
+src/server/infrastructure/  Prisma repositories, client factory, logger
+prisma/                 schema, migrations, seed
+docs/                   SDD constitution documents (source of truth)
+openspec/               change specs and tasks
+```

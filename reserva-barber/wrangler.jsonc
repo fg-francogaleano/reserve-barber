@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "reserva-barber",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets"
+  },
+  "observability": {
+    "enabled": true
+  }
+  // Secrets (DATABASE_URL) are NOT defined here:
+  // - local preview reads .dev.vars (git-ignored)
+  // - production uses `wrangler secret put DATABASE_URL`
+}
