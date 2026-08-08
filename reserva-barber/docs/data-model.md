@@ -106,7 +106,10 @@ A physical barbershop branch owned by the Owner. Each barber belongs to exactly 
 - `createdAt` / `updatedAt`: Timestamps
 
 **Validation Rules:**
-- `name`: required, 2–120 characters, unique per owner
+- `name`: required, 2–120 characters after normalization, unique per owner
+- **Name normalization (application layer):** before validation and persistence, `name` is trimmed, runs of internal whitespace are collapsed to a single space, and Unicode NFC normalization is applied. Without this, `Sucursal  Centro` (double space) and a decomposed-accent spelling of an existing name are byte-different and pixel-identical, and the uniqueness constraint would accept both.
+- **Uniqueness is enforced by the database** via a composite unique constraint on `(ownerId, name)` — not by application checking alone. The application's case-insensitive pre-check exists only to produce a readable field error; it cannot be the guarantee, because the check and the write are separate round trips against a transaction-mode pooler. A constraint violation is translated into a domain error before it reaches the presentation layer.
+- `address`: optional, max 255 characters; a blank submission is stored as `null`, never as an empty string
 
 **Relationships:**
 - `owner`: Many-to-one → Owner

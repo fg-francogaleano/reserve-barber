@@ -27,19 +27,19 @@ async function main(): Promise<void> {
 
   try {
     for (const location of SEED_LOCATIONS) {
-      // Upsert-by-name: Location.name has no unique constraint in S0,
-      // so emulate idempotency with findFirst + create/update.
-      const existing = await prisma.location.findFirst({ where: { name: location.name } });
-      if (existing) {
-        await prisma.location.update({
-          where: { id: existing.id },
-          data: { address: location.address, ownerId: OWNER_ID, isActive: true },
-        });
-      } else {
-        await prisma.location.create({
-          data: { ...location, ownerId: OWNER_ID, isActive: true },
-        });
-      }
+      // Upsert on the (ownerId, name) unique key added by M1. The previous
+      // implementation emulated this with `findFirst({ where: { name } })`
+      // because no unique key existed yet — a lookup that was **not scoped by
+      // owner**. It is harmless with a single Owner and actively wrong with
+      // two: it would match another owner's location by name and reassign it
+      // here via `ownerId`, silently transferring their branch. Scoping the
+      // key is what keeps this script honest to the rule the repository
+      // interface enforces everywhere else (design D7).
+      await prisma.location.upsert({
+        where: { ownerId_name: { ownerId: OWNER_ID, name: location.name } },
+        update: { address: location.address, isActive: true },
+        create: { ...location, ownerId: OWNER_ID, isActive: true },
+      });
     }
 
     const count = await prisma.location.count();

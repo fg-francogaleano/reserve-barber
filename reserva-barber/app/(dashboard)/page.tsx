@@ -10,26 +10,31 @@ import type { Location } from '@/server/domain/models/Location';
 // Always render at request time — this page exists to prove the live DB read.
 export const dynamic = 'force-dynamic';
 
-async function fetchActiveLocations(): Promise<Location[]> {
+async function fetchOwnerLocations(ownerId: string): Promise<Location[]> {
   try {
     const service = new LocationService(new PrismaLocationRepository(getPrismaClient()));
-    return await service.listActiveLocations();
+    return await service.listOwnerLocations(ownerId);
   } catch (error) {
-    logger.error('Failed to list active locations', {
-      operation: 'listActiveLocations',
+    logger.error('Failed to list owner locations', {
+      operation: 'listOwnerLocations',
       cause: error instanceof Error ? error.message : String(error),
     });
     throw error; // Re-throw so error.tsx renders the generic Spanish boundary.
   }
 }
 
+/**
+ * Placeholder dashboard home. Locations are managed at `/sucursales` (M1); this
+ * route becomes the Inicio summary in story D1, which is why it is left showing
+ * the list rather than removed — no route should be left without a page.
+ */
 export default async function Home() {
   // Guarded in its own right, not only by the middleware and the layout: this
   // page reads the database, and that read must never start for a request
   // without a session. `requireOwner()` is request-cached, so this costs nothing.
-  await requireOwner();
+  const owner = await requireOwner();
 
-  const locations = await fetchActiveLocations();
+  const locations = await fetchOwnerLocations(owner.id);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-12">

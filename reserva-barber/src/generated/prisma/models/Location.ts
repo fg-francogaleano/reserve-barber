@@ -214,6 +214,7 @@ export type LocationOrderByWithRelationInput = {
 
 export type LocationWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  ownerId_name?: Prisma.LocationOwnerIdNameCompoundUniqueInput
   AND?: Prisma.LocationWhereInput | Prisma.LocationWhereInput[]
   OR?: Prisma.LocationWhereInput[]
   NOT?: Prisma.LocationWhereInput | Prisma.LocationWhereInput[]
@@ -224,7 +225,7 @@ export type LocationWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"Location"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Location"> | Date | string
   owner?: Prisma.XOR<Prisma.OwnerScalarRelationFilter, Prisma.OwnerWhereInput>
-}, "id">
+}, "id" | "ownerId_name">
 
 export type LocationOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -329,6 +330,11 @@ export type LocationListRelationFilter = {
 
 export type LocationOrderByRelationAggregateInput = {
   _count?: Prisma.SortOrder
+}
+
+export type LocationOwnerIdNameCompoundUniqueInput = {
+  ownerId: string
+  name: string
 }
 
 export type LocationCountOrderByAggregateInput = {

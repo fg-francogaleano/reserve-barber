@@ -45,4 +45,13 @@ model Location {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // The authoritative guarantee against duplicate names, per data-model.md §4.
+  // Application-level checking cannot be it: the check and the write are two
+  // round trips against a transaction-mode pooler and may not share a
+  // connection. Names are normalized before persistence, so this compares
+  // already-canonical values.
+  @@unique([ownerId, name])
+  // Backs the dashboard list query, which always filters by owner.
+  @@index([ownerId, isActive])
 }

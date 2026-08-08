@@ -62,19 +62,28 @@ describe('resolveOwnerFromSession', () => {
     expect(owners.findByAuthUserId).not.toHaveBeenCalled();
   });
 
-  it('should_return_null_when_the_owner_repository_throws', async () => {
-    // Arrange — e.g. a database query timeout
+  it('should_propagate_when_the_owner_repository_throws', async () => {
+    // Arrange — e.g. a database query timeout or an unreachable server
     const supabase = buildSupabase({ id: 'auth-user-1' });
     owners = {
       findByAuthUserId: vi.fn().mockRejectedValue(new Error('Query read timeout')),
       findByEmail: vi.fn(),
     };
 
-    // Act
-    const result = await resolveOwnerFromSession(supabase, owners);
+    // Act & Assert — design D12: not being able to ask the database is not a
+    // statement about who the visitor is. Answering `null` here makes
+    // requireOwner() redirect to /login, where the middleware still sees a
+    // valid Supabase Auth session and redirects back — an infinite loop.
+    await expect(resolveOwnerFromSession(supabase, owners)).rejects.toThrow('Query read timeout');
+  });
 
-    // Assert
-    expect(result).toBeNull();
+  it('should_keep_denying_a_session_whose_owner_lookup_answers_no_row', async () => {
+    // The safety property of D12: the failure path was widened, the denial
+    // path was not. A completed lookup returning nothing still denies access.
+    const supabase = buildSupabase({ id: 'auth-user-1' });
+    owners = { findByAuthUserId: vi.fn().mockResolvedValue(null), findByEmail: vi.fn() };
+
+    await expect(resolveOwnerFromSession(supabase, owners)).resolves.toBeNull();
   });
 
   it('should_return_the_owner_when_the_session_resolves_to_one', async () => {

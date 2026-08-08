@@ -14,6 +14,18 @@ export const LOGIN_PATH = '/login';
  * Pure session → domain Owner resolver (design D3/D4). Returns `null` when
  * there is no session, or when the session's `authUserId` has no matching
  * `Owner` row — both are treated as unauthenticated.
+ *
+ * It **throws** when the owner lookup could not be performed at all (design
+ * D12 of the M1 change). Not being able to reach the database is not a
+ * statement about who the visitor is, and reporting it as "unauthenticated"
+ * traps them: `requireOwner()` would redirect to `/login`, where the
+ * middleware — which consults Supabase Auth, still up, still holding a valid
+ * session — redirects them straight back. That loop ends in a browser
+ * redirect-limit page instead of the Spanish error state. Letting the failure
+ * propagate lets the route's error boundary do its job.
+ *
+ * The asymmetry is safe in one direction only: this can turn a redirect into
+ * an error, never a denial into access.
  */
 export async function resolveOwnerFromSession(
   supabase: Pick<SupabaseClient, 'auth'>,
@@ -46,7 +58,9 @@ export async function resolveOwnerFromSession(
       operation: 'requireOwner',
       cause: error instanceof Error ? error.message : String(error),
     });
-    return null;
+    // Rethrown, not swallowed — see the note above. The caller's error
+    // boundary renders the generic Spanish message; the cause stays in the log.
+    throw error;
   }
 
   if (!owner) {
