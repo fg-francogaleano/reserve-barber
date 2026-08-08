@@ -134,7 +134,8 @@ barber/
 │       │   └── repositories/         # IBookingRepository, IBarberRepository... (contracts)
 │       ├── application/
 │       │   ├── services/             # BookingService, AvailabilityService, PaymentService...
-│       │   └── validators/           # Zod schemas / DTOs
+│       │   ├── auth/                  # loginSchema, routeGuard, throttle...
+│       │   └── locations/             # locationSchema... (one folder per feature)
 │       └── infrastructure/
 │           ├── prisma/               # client.ts (driver adapter + Supavisor), repositories
 │           ├── payments/             # MercadoPagoClient
@@ -301,7 +302,7 @@ export class SlotUnavailableError extends Error {
 
 ### Validation Patterns
 - Validate all external inputs (request bodies, query params, action args, webhook payloads) before business logic runs.
-- Centralize schemas in `src/server/application/validators/`.
+- Centralize schemas under `src/server/application/<feature>/` — one folder per feature (`auth/loginSchema.ts`, `locations/locationSchema.ts`), colocated with that feature's other application-layer policy modules. A single flat `validators/` folder was the original convention; the feature-folder layout replaced it because it keeps a feature's schema next to the rules that use it as the tree grows.
 
 ### Logging Standards
 - Use a centralized logger (structured JSON), not scattered `console.log`. Include context (bookingId, barberId, operation). Levels: `debug`, `info`, `warn`, `error`.

@@ -62,7 +62,7 @@ frontend. The application has two surfaces built with the same framework:
 - **Local state:** React hooks (`useState`, `useReducer`).
 - **Server state:** prefer **React Server Components** + Server Actions; use **TanStack Query** on the client only where live client-side caching/refetching is genuinely needed (e.g., polling pending transfer receipts).
 - **Data fetching:** native `fetch` in Server Components / Route Handlers; Server Actions for mutations. No Axios.
-- **Forms:** **React Hook Form** + **Zod** (schemas shared with the backend where possible).
+- **Forms:** native `<form action={…}>` driven by a **Server Action**, with `useActionState` for returned state and `useFormStatus` for the pending state. Validation is a **Zod** schema on the server (see Form Handling below).
 
 ### Testing Framework
 - **Unit / component:** **Vitest** + **React Testing Library**.
@@ -85,6 +85,10 @@ barber/
 │   ├── (dashboard)/                 # Private owner dashboard (authenticated)
 │   │   ├── layout.tsx               # Dashboard shell (sidebar, auth guard)
 │   │   ├── page.tsx                 # Inicio (summary stats + recent activity)
+│   │   ├── sucursales/              # Locations: list, create, edit
+│   │   │   ├── page.tsx
+│   │   │   ├── nueva/page.tsx
+│   │   │   └── [id]/editar/page.tsx
 │   │   ├── perfil/page.tsx
 │   │   ├── calendario/page.tsx
 │   │   ├── clientes/page.tsx
@@ -217,16 +221,22 @@ import { cn } from '@/lib/utils';
 
 ### Form Handling
 
-- Use **React Hook Form** + **Zod** resolvers. Controlled inputs via shadcn/ui `Form` components.
-- Client-side validation before submit; **disable the submit button while submitting** to prevent double booking/payment.
-- Reset form state after success; surface field-level and form-level errors accessibly.
+**House pattern:** a native `<form action={serverAction}>` with uncontrolled shadcn/ui inputs. The client component calls `useActionState` to hold what the action returned (form-level error, field errors) and `useFormStatus` in a small child for the pending state. Validation lives in **one** place — a Zod schema executed inside the action — so the browser and the server can never disagree about what is valid.
+
+Why this over React Hook Form: the form still submits before hydration and with JavaScript disabled, there is a single validation source instead of two that drift apart, and no extra dependency is carried for what are usually a handful of inputs. Reach for a client-side form library only when a form genuinely needs per-keystroke interactivity (cross-field live calculations, dynamic field arrays) — the multi-step booking wizard is the plausible candidate, not a two-field settings form.
+
+- **Disable the submit button while submitting** to prevent double booking/payment. Note this state only exists after hydration; the server must remain the real guard against duplicate submissions.
+- Surface field-level and form-level errors accessibly, and **preserve what the user typed** when a submission is rejected — a validation error that clears the form is worse than the error it reports.
+- Infrastructure failures inside an action are returned as form state, never thrown: throwing reaches the route error boundary, which replaces the page and discards the user's input.
 
 ```tsx
-const form = useForm<BookingInput>({ resolver: zodResolver(bookingSchema) });
-// ...
-<Button type="submit" disabled={form.formState.isSubmitting}>
-  {form.formState.isSubmitting ? 'Reservando…' : 'Confirmar reserva'}
-</Button>
+'use client';
+const [state, formAction] = useActionState(createLocationAction, { error: null });
+
+function SubmitButton() {
+  const { pending } = useFormStatus(); // must live inside the <form>
+  return <Button type="submit" disabled={pending}>{pending ? 'Guardando…' : 'Guardar'}</Button>;
+}
 ```
 
 ### Navigation Patterns
