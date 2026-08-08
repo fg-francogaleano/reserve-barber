@@ -1,0 +1,10 @@
+# Local MCP server configuration for Claude Code. Not project source, and it
+# typically carries access tokens — it must never be committed.
+.mcp.json
+
+# The application lives in reserva-barber/. These paths only appear at the repo
+# root when `npm install` was run from the wrong directory; anchoring them with
+# a leading slash keeps reserva-barber/package.json tracked as usual.
+/node_modules/
+/package.json
+/package-lock.json
