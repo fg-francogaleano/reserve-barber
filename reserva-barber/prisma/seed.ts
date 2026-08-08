@@ -2,13 +2,14 @@
 // Run with: npx prisma db seed
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../src/generated/prisma/client';
+import { PrismaClient } from '../src/generated/prisma-cli/client';
 
 /**
- * Placeholder owner id used until the Owner model ships in change A1.
- * A1's migration will backfill the real FK from this documented constant.
+ * Fixed Owner id created by the A1 migration (see prisma/migrations/*_add_owner_and_location_fk).
+ * This script seeds domain data only — it never creates the Owner row itself
+ * (see `data-persistence` spec, "Exactly one Owner").
  */
-export const SEED_OWNER_ID = 'seed-owner-placeholder';
+const OWNER_ID = 'owner-root';
 
 const SEED_LOCATIONS: ReadonlyArray<{ name: string; address: string }> = [
   { name: 'Sucursal Centro', address: 'Av. Corrientes 1234, CABA' },
@@ -32,11 +33,11 @@ async function main(): Promise<void> {
       if (existing) {
         await prisma.location.update({
           where: { id: existing.id },
-          data: { address: location.address, ownerId: SEED_OWNER_ID, isActive: true },
+          data: { address: location.address, ownerId: OWNER_ID, isActive: true },
         });
       } else {
         await prisma.location.create({
-          data: { ...location, ownerId: SEED_OWNER_ID, isActive: true },
+          data: { ...location, ownerId: OWNER_ID, isActive: true },
         });
       }
     }

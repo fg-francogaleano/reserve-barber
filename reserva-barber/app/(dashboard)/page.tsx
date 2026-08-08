@@ -4,6 +4,7 @@ import { LocationService } from '@/server/application/services/LocationService';
 import { PrismaLocationRepository } from '@/server/infrastructure/prisma/PrismaLocationRepository';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
 import { logger } from '@/server/infrastructure/logger';
+import { requireOwner } from '@/server/infrastructure/supabase/requireOwner';
 import type { Location } from '@/server/domain/models/Location';
 
 // Always render at request time — this page exists to prove the live DB read.
@@ -23,6 +24,11 @@ async function fetchActiveLocations(): Promise<Location[]> {
 }
 
 export default async function Home() {
+  // Guarded in its own right, not only by the middleware and the layout: this
+  // page reads the database, and that read must never start for a request
+  // without a session. `requireOwner()` is request-cached, so this costs nothing.
+  await requireOwner();
+
   const locations = await fetchActiveLocations();
 
   return (

@@ -60,6 +60,8 @@ For detailed standards specific to different areas of the project, refer to:
 - [Data Model](./data-model.md) — entities, relationships, and the ER diagram
 - [Backend Standards](./backend-standards.md) — API development, DDD layering, database patterns, testing, security
 - [Frontend Standards](./frontend-standards.md) — UI component conventions, UX guidelines, and frontend architecture
+- [Technical Debt](./tech-debt.md) — work deliberately deferred, each with the trigger that brings it back
+- [S0 Stack Decision Note](./s0-versions-decision.md) — validated versions, runtime findings, and the workarounds they required
 - Documentation Standards — *to be created* (technical documentation structure and maintenance guidelines)
 
 ---

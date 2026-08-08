@@ -1,0 +1,26 @@
+import type { ReactNode } from 'react';
+import { requireOwner } from '@/server/infrastructure/supabase/requireOwner';
+import { logoutAction } from './actions';
+import { COPY } from '@/lib/copy';
+
+// Reads cookies (via requireOwner) and must never be statically cached —
+// design D9: protected pages are dynamic and non-cacheable.
+export const dynamic = 'force-dynamic';
+
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  const owner = await requireOwner();
+
+  return (
+    <div className="flex min-h-full flex-col">
+      <header className="flex items-center justify-between border-b px-4 py-3">
+        <span className="text-muted-foreground text-sm">{owner.email}</span>
+        <form action={logoutAction}>
+          <button type="submit" className="text-primary text-sm font-medium underline-offset-4 hover:underline">
+            {COPY.auth.logout}
+          </button>
+        </form>
+      </header>
+      <div className="flex flex-1 flex-col">{children}</div>
+    </div>
+  );
+}

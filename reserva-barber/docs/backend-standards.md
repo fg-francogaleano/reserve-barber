@@ -324,6 +324,10 @@ POST   /api/webhooks/mercadopago # Mercado Pago payment notifications
 
 > Prefer **Server Actions** for dashboard mutations invoked from the app's own UI, and **Route Handlers** for public/unauthenticated endpoints and third-party webhooks (Mercado Pago).
 
+**The public booking flow (B1–B6) MUST use Route Handlers for its mutations — this is a hard rule, not a preference.** Server Actions are addressed by an id that Next.js derives from a build-time key; a Route Handler is addressed by a URL that never changes. If that key is ever lost, rotated, or an action is renamed, every browser tab still open is left calling an id the server no longer knows, and the user gets a dead-end error. A guest halfway through paying a deposit is exactly the person who must never meet that failure. The dashboard, where the owner can simply reload, accepts the trade-off in exchange for the better ergonomics.
+
+See `docs/s0-versions-decision.md` (finding 9) for the measurements behind this and `docs/tech-debt.md` for the client-side safety net that covers the remaining cases.
+
 ### Request / Response Envelope
 
 ```json
