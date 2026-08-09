@@ -89,6 +89,10 @@ barber/
 │   │   │   ├── page.tsx
 │   │   │   ├── nueva/page.tsx
 │   │   │   └── [id]/editar/page.tsx
+│   │   ├── barberos/                # Barbers: list, create, edit
+│   │   │   ├── page.tsx
+│   │   │   ├── nuevo/page.tsx
+│   │   │   └── [id]/editar/page.tsx
 │   │   ├── perfil/page.tsx
 │   │   ├── calendario/page.tsx
 │   │   ├── clientes/page.tsx
@@ -228,6 +232,8 @@ Why this over React Hook Form: the form still submits before hydration and with 
 - **Disable the submit button while submitting** to prevent double booking/payment. Note this state only exists after hydration; the server must remain the real guard against duplicate submissions.
 - Surface field-level and form-level errors accessibly, and **preserve what the user typed** when a submission is rejected — a validation error that clears the form is worse than the error it reports.
 - Infrastructure failures inside an action are returned as form state, never thrown: throwing reaches the route error boundary, which replaces the page and discards the user's input.
+
+**Select controls backed by another table must use a native `<select>`, not shadcn/Radix `Select`.** Radix's `Select` renders a button and a portalled listbox — it is not a form-associated control — so without a hidden mirror input and a client-side sync it submits nothing. A native `<select>` styled with the same ring/border tokens as `Input` preserves the house promise that the form submits correctly before hydration and with JavaScript disabled. The valid option set is always re-verified server-side at write time; what the browser renders is a UX affordance, not a security boundary.
 
 ```tsx
 'use client';

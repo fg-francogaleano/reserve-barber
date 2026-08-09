@@ -3,9 +3,7 @@
 ## Purpose
 
 The owner creates and edits their own locations from the dashboard: input validation and name normalization, uniqueness per owner, ownership enforcement on every read and write, a per-owner cap, and the Spanish (es-AR) states of both forms — idle, submitting, field-level invalid, duplicate name, infrastructure error, and not-found.
-
 ## Requirements
-
 ### Requirement: Owner creates a location
 The dashboard SHALL provide a create form at `/sucursales/nueva` where the authenticated owner supplies a `name` (required) and an `address` (optional). On success the location SHALL be persisted with `ownerId` taken from the session, `isActive` defaulted to `true`, and the owner SHALL be redirected to `/sucursales` with the new location visible in the list. The `ownerId` MUST NOT be read from the submitted form under any circumstance; an `ownerId` field present in the payload MUST be ignored.
 
@@ -39,7 +37,11 @@ The dashboard SHALL provide an edit form at `/sucursales/[id]/editar` allowing t
 - **THEN** no control for `isActive` is present and the submitted payload cannot change it
 
 ### Requirement: Location name is validated and normalized
-Location `name` SHALL be normalized before validation and persistence by trimming surrounding whitespace, collapsing runs of internal whitespace to a single space, and applying Unicode NFC normalization. After normalization the name MUST be between 2 and 120 characters. `address` SHALL be trimmed, MUST NOT exceed 255 characters, and a blank value MUST be stored as `null`. Validation SHALL run server-side before any business logic, regardless of what the browser enforced.
+Location `name` SHALL be normalized before validation and persistence by applying Unicode NFC normalization, removing zero-width and **bidirectional control** characters, collapsing runs of internal whitespace to a single space, and trimming surrounding whitespace. After normalization the name MUST be between 2 and 120 characters. `address` SHALL be trimmed, MUST NOT exceed 255 characters, and a blank value MUST be stored as `null`. Validation SHALL run server-side before any business logic, regardless of what the browser enforced.
+
+This normalization is a **shared domain rule**, not a location-specific one. It SHALL live in a single domain module consumed by every entity whose name is subject to a uniqueness constraint, so that two entities cannot drift into disagreeing about what "the same name" means.
+
+Bidirectional control characters (U+202A–U+202E, U+2066–U+2069) are removed for the same reason zero-width characters are: they are invisible, they survive a length check, and they defeat the uniqueness constraint by making two names that render identically differ in bytes. Unlike zero-width characters they also reverse the rendering direction of *surrounding* text, so a single crafted name corrupts the display of the rows next to it.
 
 #### Scenario: Surrounding and internal whitespace normalized
 - **WHEN** the owner submits "  Sucursal   Centro  "
@@ -53,9 +55,18 @@ Location `name` SHALL be normalized before validation and persistence by trimmin
 - **WHEN** the owner submits a name consisting only of spaces, or only of zero-width characters
 - **THEN** it is treated as empty and rejected by the required rule
 
+#### Scenario: Bidirectional control characters removed
+- **WHEN** the owner submits a name containing a bidirectional override or isolate character
+- **THEN** the character is removed before validation and persistence
+- **THEN** two names differing only by such characters cannot both be stored for one owner
+
 #### Scenario: Address at the boundary
 - **WHEN** the owner submits an address of 256 characters
 - **THEN** a field-level Spanish error renders and nothing is persisted
+
+#### Scenario: The rule has one home
+- **WHEN** the codebase is inspected for name normalization
+- **THEN** exactly one domain module implements it and every consumer imports it
 
 ### Requirement: Location name is unique per owner
 Two locations belonging to the same owner MUST NOT carry the same normalized name. The database constraint SHALL be the authoritative guarantee; a case-insensitive pre-check in the application layer exists only to produce a readable error and MUST NOT be relied upon for correctness, because the check and the write cannot share a transaction on a transaction-mode pooler. A constraint violation SHALL surface as a field-level error on the name input, never as a raw database error.
@@ -189,3 +200,4 @@ The dashboard shell SHALL link to `/sucursales`. A route with no navigation entr
 #### Scenario: Navigation entry present
 - **WHEN** the authenticated owner views any dashboard page
 - **THEN** a link to the locations section is present in the dashboard shell
+

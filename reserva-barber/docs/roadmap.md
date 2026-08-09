@@ -12,7 +12,7 @@
 
 The thinnest end-to-end slice touching every layer: repo scaffold, DB, one entity, one server read, one screen, deployed to Cloudflare. Validates the riskiest architectural assumption (Next.js + Prisma driver adapters + Supavisor on `workerd`) before any real feature is built.
 
-- [ ] **S0** — As the owner, I want to see a list of my locations (seeded in the database) rendered on the deployed app, so that the full stack (Next.js on Cloudflare → Prisma/Supavisor → Supabase Postgres) is proven to work end to end. — *depends on: none*
+- [x] **S0** — As the owner, I want to see a list of my locations (seeded in the database) rendered on the deployed app, so that the full stack (Next.js on Cloudflare → Prisma/Supavisor → Supabase Postgres) is proven to work end to end. — *depends on: none*
   - Includes: project scaffold (Next.js, TypeScript strict, Tailwind, shadcn/ui, ESLint/Prettier, Vitest), Prisma schema with the `Location` model only, Supabase project + migration, `@opennextjs/cloudflare` deploy pipeline with Wrangler secrets, layered folder structure (`src/server/domain|application|infrastructure`).
 
 ---
@@ -23,9 +23,9 @@ Everything required for a minimally usable product: the owner can set up the bus
 
 ### 1a. Foundation
 
-- [ ] **A1** — As the owner, I want to log in and log out of a protected dashboard, so that only I can administer the business. — *depends on: S0*
+- [x] **A1** — As the owner, I want to log in and log out of a protected dashboard, so that only I can administer the business. — *depends on: S0*
 - [x] **M1** — As the owner, I want to create and edit my locations, so that each branch of my business can receive bookings. — *depends on: A1*
-- [ ] **M2** — As the owner, I want to register barbers and assign each one to a location, so that clients can book with them. — *depends on: M1*
+- [x] **M2** — As the owner, I want to register barbers and assign each one to a location, so that clients can book with them. — *depends on: M1*
 - [ ] **M3** — As the owner, I want to create services with a price and a duration, so that clients know what they can book and slots can be sized correctly. — *depends on: A1*
 - [ ] **M4** — As the owner, I want to assign services to barbers, so that a service becomes available in the booking flow (a service with no assigned barber must not be bookable). — *depends on: M2, M3*
 - [ ] **M5** — As the owner, I want to define each barber's weekly working hours and days off, so that available slots reflect their real schedule. — *depends on: M2*

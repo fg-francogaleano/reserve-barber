@@ -385,7 +385,8 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 export const ModelName = {
   Owner: 'Owner',
-  Location: 'Location'
+  Location: 'Location',
+  Barber: 'Barber'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -401,7 +402,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "owner" | "location"
+    modelProps: "owner" | "location" | "barber"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -553,6 +554,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    Barber: {
+      payload: Prisma.$BarberPayload<ExtArgs>
+      fields: Prisma.BarberFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.BarberFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.BarberFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>
+        }
+        findFirst: {
+          args: Prisma.BarberFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.BarberFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>
+        }
+        findMany: {
+          args: Prisma.BarberFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>[]
+        }
+        create: {
+          args: Prisma.BarberCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>
+        }
+        createMany: {
+          args: Prisma.BarberCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.BarberCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>[]
+        }
+        delete: {
+          args: Prisma.BarberDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>
+        }
+        update: {
+          args: Prisma.BarberUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>
+        }
+        deleteMany: {
+          args: Prisma.BarberDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.BarberUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.BarberUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>[]
+        }
+        upsert: {
+          args: Prisma.BarberUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberPayload>
+        }
+        aggregate: {
+          args: Prisma.BarberAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateBarber>
+        }
+        groupBy: {
+          args: Prisma.BarberGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.BarberGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.BarberCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.BarberCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -614,6 +689,20 @@ export const LocationScalarFieldEnum = {
 } as const
 
 export type LocationScalarFieldEnum = (typeof LocationScalarFieldEnum)[keyof typeof LocationScalarFieldEnum]
+
+
+export const BarberScalarFieldEnum = {
+  id: 'id',
+  locationId: 'locationId',
+  displayName: 'displayName',
+  bio: 'bio',
+  avatarUrl: 'avatarUrl',
+  isActive: 'isActive',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type BarberScalarFieldEnum = (typeof BarberScalarFieldEnum)[keyof typeof BarberScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -806,6 +895,7 @@ export type PrismaClientOptions = ({
 export type GlobalOmitConfig = {
   owner?: Prisma.OwnerOmit
   location?: Prisma.LocationOmit
+  barber?: Prisma.BarberOmit
 }
 
 /* Types for Logging */

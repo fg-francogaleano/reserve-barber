@@ -130,8 +130,14 @@ A barber who works at a single location and can be assigned to one or more servi
 - `createdAt` / `updatedAt`: Timestamps
 
 **Validation Rules:**
-- `displayName`: required, 2–120 characters
-- A barber must belong to an existing, active location to be bookable
+- `displayName`: required, 2–120 characters after normalization, unique per location
+- **Name normalization (application layer):** `displayName` is normalized by the same shared rule as `Location.name` (see §4). The rule has one implementation; two entities constrained by uniqueness must not disagree about what "the same name" means.
+- **Uniqueness is enforced by the database** via a composite unique constraint on `(locationId, displayName)`. It is scoped to the *location*, not the owner: the same person's name recurring across branches is legitimate, while two identically-named barbers at one branch cannot be told apart in the booking flow. As with `Location`, the application's case-insensitive pre-check exists only to produce a readable field error and cannot be the guarantee.
+- `bio`: optional, max 500 characters; a blank submission is stored as `null`, never as an empty string
+- **Ownership is derived, never stored.** A barber has no `ownerId`. It belongs to an owner solely through `location.ownerId`, and every read and write MUST carry the owner as a predicate over that relation. Denormalizing `ownerId` onto Barber is rejected: it duplicates a fact the foreign key already carries and can drift on reassignment, leaving a row whose two ownership answers disagree.
+- A barber must belong to an existing, **active** location to be bookable. A barber sitting at a location that was deactivated *after* the assignment is a legal state, not a broken one — so the application permits a barber to **remain** at an inactive location while refusing to **move** one there. The "remain" exemption is decided from the barber's stored `locationId`, never from a value supplied by a submission.
+- `avatarUrl` is written only by story P1 (Supabase Storage). The column exists before then so the avatar feature needs no second migration on a populated table.
+- Deleting a location that still has barbers is refused (`onDelete: Restrict`).
 
 **Relationships:**
 - `location`: Many-to-one → Location
