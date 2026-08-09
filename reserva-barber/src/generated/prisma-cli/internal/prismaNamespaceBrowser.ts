@@ -52,7 +52,8 @@ export const AnyNull = runtime.AnyNull
 
 export const ModelName = {
   Owner: 'Owner',
-  Location: 'Location'
+  Location: 'Location',
+  Barber: 'Barber'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -93,6 +94,20 @@ export const LocationScalarFieldEnum = {
 } as const
 
 export type LocationScalarFieldEnum = (typeof LocationScalarFieldEnum)[keyof typeof LocationScalarFieldEnum]
+
+
+export const BarberScalarFieldEnum = {
+  id: 'id',
+  locationId: 'locationId',
+  displayName: 'displayName',
+  bio: 'bio',
+  avatarUrl: 'avatarUrl',
+  isActive: 'isActive',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type BarberScalarFieldEnum = (typeof BarberScalarFieldEnum)[keyof typeof BarberScalarFieldEnum]
 
 
 export const SortOrder = {

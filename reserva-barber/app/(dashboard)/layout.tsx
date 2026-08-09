@@ -21,6 +21,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           >
             {COPY.locations.nav}
           </Link>
+          <Link
+            href="/barberos"
+            className="text-sm font-medium underline-offset-4 hover:underline"
+          >
+            {COPY.barbers.nav}
+          </Link>
         </nav>
         <span className="text-muted-foreground text-sm">{owner.email}</span>
         <form action={logoutAction}>

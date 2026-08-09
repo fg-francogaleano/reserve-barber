@@ -45,6 +45,7 @@ model Location {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  barbers   Barber[]
 
   // The authoritative guarantee against duplicate names, per data-model.md §4.
   // Application-level checking cannot be it: the check and the write are two
@@ -54,4 +55,25 @@ model Location {
   @@unique([ownerId, name])
   // Backs the dashboard list query, which always filters by owner.
   @@index([ownerId, isActive])
+}
+
+/// A barber working at a specific Location.
+/// Ownership is derived through location.ownerId — no ownerId column (data-model.md §5, design D1).
+model Barber {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  displayName String   @db.VarChar(120)
+  bio         String?  @db.VarChar(500)
+  avatarUrl   String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Uniqueness is per location, not per owner: the same first name at two
+  // branches is legitimate; two identically-named barbers at one branch cannot
+  // be told apart in the booking flow (data-model.md §5, design D2).
+  @@unique([locationId, displayName])
+  // Backs the dashboard list and the active-barber-at-location query.
+  @@index([locationId, isActive])
 }

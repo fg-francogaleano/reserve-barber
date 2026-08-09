@@ -1,0 +1,11 @@
+# The application lives in reserva-barber/. These paths only appear at the repo
+# root when `npm install` was run from the wrong directory; anchoring them with
+# a leading slash keeps reserva-barber/package.json tracked as usual.
+#
+# DELETE THIS FILE if reserva-barber/ ever becomes the repository root. These
+# anchors would then point at the project's own package.json and node_modules
+# and would start ignoring them. reserva-barber/.gitignore already covers
+# everything the project needs, including .mcp.json.
+/node_modules/
+/package.json
+/package-lock.json

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { normalizeLocationName } from '@/server/domain/models/Location';
+import { normalizeName } from '@/server/domain/models/normalizeName';
 
 /**
  * Validation for the location forms, per `docs/backend-standards.md`
@@ -39,10 +39,10 @@ function asString(value: unknown): string {
 // `.optional()` sits before the transform on purpose: in Zod 4 a bare
 // `z.unknown()` is non-optional inside an object, so an absent key would fail
 // with Zod's own English message instead of reaching our code check.
-const nameField = z.unknown().optional().transform(normalizeName).superRefine(checkNameLength);
+const nameField = z.unknown().optional().transform(normalizeNameField).superRefine(checkNameLength);
 
-function normalizeName(value: unknown): string {
-  return normalizeLocationName(asString(value));
+function normalizeNameField(value: unknown): string {
+  return normalizeName(asString(value));
 }
 
 function checkNameLength(name: string, ctx: z.RefinementCtx): void {

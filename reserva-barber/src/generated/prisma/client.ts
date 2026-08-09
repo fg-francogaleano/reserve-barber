@@ -51,3 +51,9 @@ export type Owner = Prisma.OwnerModel
  * A physical barbershop branch owned by the Owner.
  */
 export type Location = Prisma.LocationModel
+/**
+ * Model Barber
+ * A barber working at a specific Location.
+ * Ownership is derived through location.ownerId — no ownerId column (data-model.md §5, design D1).
+ */
+export type Barber = Prisma.BarberModel
