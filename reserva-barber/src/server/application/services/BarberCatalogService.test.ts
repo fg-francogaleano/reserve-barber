@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { BarberService, MAX_BARBERS_PER_LOCATION } from './BarberService';
+import { BarberCatalogService, MAX_BARBERS_PER_LOCATION } from './BarberCatalogService';
 import type { IBarberRepository, BarberWithLocation } from '@/server/domain/repositories/IBarberRepository';
 import type { ILocationRepository } from '@/server/domain/repositories/ILocationRepository';
 import { Barber } from '@/server/domain/models/Barber';
@@ -70,13 +70,13 @@ beforeEach(() => vi.clearAllMocks());
 
 // ─── createBarber ────────────────────────────────────────────────────────────
 
-describe('BarberService - createBarber', () => {
+describe('BarberCatalogService - createBarber', () => {
   it('should_create_the_barber_when_location_is_active_and_name_is_free', async () => {
     const { barbers, locations, bm, lm } = createRepos();
     const created = makeBarber();
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.create.mockResolvedValue(created);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     const result = await svc.createBarber(OWNER, {
       displayName: 'Juan Pérez',
@@ -96,7 +96,7 @@ describe('BarberService - createBarber', () => {
   it('should_reject_when_location_is_unknown_or_foreign', async () => {
     const { barbers, locations, lm } = createRepos();
     lm.findByIdForOwner.mockResolvedValue(null);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan', locationId: 'unknown-loc', bio: null })
@@ -106,7 +106,7 @@ describe('BarberService - createBarber', () => {
   it('should_reject_when_destination_location_is_inactive', async () => {
     const { barbers, locations, lm } = createRepos();
     lm.findByIdForOwner.mockResolvedValue(makeLocation({ isActive: false }));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -117,7 +117,7 @@ describe('BarberService - createBarber', () => {
     const { barbers, locations, bm, lm } = createRepos();
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.countByLocation.mockResolvedValue(MAX_BARBERS_PER_LOCATION);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -131,7 +131,7 @@ describe('BarberService - createBarber', () => {
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.countByLocation.mockResolvedValue(MAX_BARBERS_PER_LOCATION - 1);
     bm.create.mockResolvedValue(makeBarber());
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -142,7 +142,7 @@ describe('BarberService - createBarber', () => {
     const { barbers, locations, bm, lm } = createRepos();
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.existsByLocationAndName.mockResolvedValue(true);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -154,7 +154,7 @@ describe('BarberService - createBarber', () => {
     const { barbers, locations, bm, lm } = createRepos();
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.create.mockRejectedValue(prismaError('P2002'));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -165,7 +165,7 @@ describe('BarberService - createBarber', () => {
     const { barbers, locations, bm, lm } = createRepos();
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.create.mockRejectedValue(prismaError('P2003'));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -176,7 +176,7 @@ describe('BarberService - createBarber', () => {
     const { barbers, locations, bm, lm } = createRepos();
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.create.mockRejectedValue(new Error('connection timeout'));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -186,14 +186,14 @@ describe('BarberService - createBarber', () => {
 
 // ─── D9 — ILIKE hazard (metacharacter pre-check) ─────────────────────────────
 
-describe('BarberService - D9 metacharacter duplicate pre-check', () => {
+describe('BarberCatalogService - D9 metacharacter duplicate pre-check', () => {
   it('should_compare_percent_literally_not_as_wildcard', async () => {
     const { barbers, locations, bm, lm } = createRepos();
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     // The repo returns rows that include a different name with digits
     bm.existsByLocationAndName.mockResolvedValue(false);
     bm.create.mockResolvedValue(makeBarber());
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     // "Juan 50%" should NOT report a duplicate with "Juan 500"
     await expect(
@@ -206,7 +206,7 @@ describe('BarberService - D9 metacharacter duplicate pre-check', () => {
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.existsByLocationAndName.mockResolvedValue(false);
     bm.create.mockResolvedValue(makeBarber());
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.createBarber(OWNER, { displayName: 'Juan_1', locationId: LOC_ID, bio: null })
@@ -216,7 +216,7 @@ describe('BarberService - D9 metacharacter duplicate pre-check', () => {
 
 // ─── updateBarber ────────────────────────────────────────────────────────────
 
-describe('BarberService - updateBarber', () => {
+describe('BarberCatalogService - updateBarber', () => {
   it('should_update_the_barber_when_name_is_free_and_location_is_active', async () => {
     const { barbers, locations, bm, lm } = createRepos();
     const existingBarber = makeBarber();
@@ -224,7 +224,7 @@ describe('BarberService - updateBarber', () => {
     bm.findByIdForOwner.mockResolvedValue(existingBarber);
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.update.mockResolvedValue(updatedBarber);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     const result = await svc.updateBarber(OWNER, {
       id: BARBER_ID,
@@ -244,7 +244,7 @@ describe('BarberService - updateBarber', () => {
     // existsByLocationAndName returns false (repo will be called with excludeId)
     bm.existsByLocationAndName.mockResolvedValue(false);
     bm.update.mockResolvedValue(existingBarber);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await svc.updateBarber(OWNER, {
       id: BARBER_ID,
@@ -261,7 +261,7 @@ describe('BarberService - updateBarber', () => {
   it('should_reject_when_barber_is_not_found_or_belongs_to_another_owner', async () => {
     const { barbers, locations, bm } = createRepos();
     bm.findByIdForOwner.mockResolvedValue(null);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.updateBarber(OWNER, { id: 'unknown', displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -273,7 +273,7 @@ describe('BarberService - updateBarber', () => {
     const INACTIVE_LOC = 'loc-inactive';
     bm.findByIdForOwner.mockResolvedValue(makeBarber()); // current is LOC_ID (active)
     lm.findByIdForOwner.mockResolvedValue(makeLocation({ id: INACTIVE_LOC, isActive: false }));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.updateBarber(OWNER, { id: BARBER_ID, displayName: 'Juan', locationId: INACTIVE_LOC, bio: null })
@@ -289,7 +289,7 @@ describe('BarberService - updateBarber', () => {
     lm.findByIdForOwner.mockResolvedValue(makeLocation({ id: LOC_ID, isActive: false }));
     bm.existsByLocationAndName.mockResolvedValue(false);
     bm.update.mockResolvedValue(barberAtInactiveLoc);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.updateBarber(OWNER, { id: BARBER_ID, displayName: 'Juan Pérez', locationId: LOC_ID, bio: null })
@@ -306,7 +306,7 @@ describe('BarberService - updateBarber', () => {
     bm.findByIdForOwner.mockResolvedValue(storedBarber);
     // Destination is INACTIVE_LOC — inactive, and different from the stored location
     lm.findByIdForOwner.mockResolvedValue(makeLocation({ id: INACTIVE_LOC, isActive: false }));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     // Even if someone passes locationId = INACTIVE_LOC hoping the service
     // treats it as "current", it must be rejected because stored.locationId ≠ INACTIVE_LOC.
@@ -322,7 +322,7 @@ describe('BarberService - updateBarber', () => {
     bm.findByIdForOwner.mockResolvedValue(barberAtOldLoc);
     lm.findByIdForOwner.mockResolvedValue(makeLocation({ id: NEW_LOC }));
     bm.existsByLocationAndName.mockResolvedValue(true); // duplicate at destination
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.updateBarber(OWNER, { id: BARBER_ID, displayName: 'Juan Pérez', locationId: NEW_LOC, bio: null })
@@ -334,7 +334,7 @@ describe('BarberService - updateBarber', () => {
     bm.findByIdForOwner.mockResolvedValue(makeBarber());
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.update.mockResolvedValue(null); // zero-row update
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.updateBarber(OWNER, { id: BARBER_ID, displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -346,7 +346,7 @@ describe('BarberService - updateBarber', () => {
     bm.findByIdForOwner.mockResolvedValue(makeBarber());
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.update.mockRejectedValue(prismaError('P2002'));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.updateBarber(OWNER, { id: BARBER_ID, displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -358,7 +358,7 @@ describe('BarberService - updateBarber', () => {
     bm.findByIdForOwner.mockResolvedValue(makeBarber());
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.update.mockRejectedValue(prismaError('P2003'));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.updateBarber(OWNER, { id: BARBER_ID, displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -370,7 +370,7 @@ describe('BarberService - updateBarber', () => {
     bm.findByIdForOwner.mockResolvedValue(makeBarber());
     lm.findByIdForOwner.mockResolvedValue(makeLocation());
     bm.update.mockRejectedValue(new Error('db timeout'));
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     await expect(
       svc.updateBarber(OWNER, { id: BARBER_ID, displayName: 'Juan', locationId: LOC_ID, bio: null })
@@ -380,7 +380,7 @@ describe('BarberService - updateBarber', () => {
 
 // ─── listBarbers ─────────────────────────────────────────────────────────────
 
-describe('BarberService - listBarbers', () => {
+describe('BarberCatalogService - listBarbers', () => {
   it('should_return_the_owners_barbers', async () => {
     const { barbers, locations, bm } = createRepos();
     const item: BarberWithLocation = {
@@ -389,7 +389,7 @@ describe('BarberService - listBarbers', () => {
       locationIsActive: true,
     };
     bm.findAllByOwner.mockResolvedValue([item]);
-    const svc = new BarberService(barbers, locations);
+    const svc = new BarberCatalogService(barbers, locations);
 
     const result = await svc.listBarbers(OWNER);
     expect(result).toEqual([item]);

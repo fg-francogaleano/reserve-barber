@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { COPY } from '@/lib/copy';
 import { requireOwner } from '@/server/infrastructure/supabase/requireOwner';
-import { BarberService } from '@/server/application/services/BarberService';
+import { BarberCatalogService } from '@/server/application/services/BarberCatalogService';
 import { LocationService } from '@/server/application/services/LocationService';
 import { PrismaBarberRepository } from '@/server/infrastructure/prisma/PrismaBarberRepository';
 import { PrismaLocationRepository } from '@/server/infrastructure/prisma/PrismaLocationRepository';
@@ -24,7 +24,7 @@ export default async function EditBarberPage({ params }: { params: Promise<{ id:
 
   try {
     [barber, allLocations] = await Promise.all([
-      new BarberService(
+      new BarberCatalogService(
         new PrismaBarberRepository(db),
         new PrismaLocationRepository(db)
       ).findBarber(owner.id, id),

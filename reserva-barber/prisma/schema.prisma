@@ -33,6 +33,7 @@ model Owner {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   locations  Location[]
+  services   Service[]
 }
 
 /// A physical barbershop branch owned by the Owner.
@@ -76,4 +77,31 @@ model Barber {
   @@unique([locationId, displayName])
   // Backs the dashboard list and the active-barber-at-location query.
   @@index([locationId, isActive])
+}
+
+/// A bookable service offered by the business, with a price and a duration.
+/// Unlike Barber, ownership is STORED: `ownerId` is a real column, so every
+/// read and write scopes on it directly rather than through a relation join
+/// (data-model.md §6, design D2).
+model Service {
+  id              String   @id @default(cuid())
+  ownerId         String
+  owner           Owner    @relation(fields: [ownerId], references: [id])
+  name            String   @db.VarChar(120)
+  description     String?  @db.VarChar(500)
+  // Explicit precision and scale — NEVER Prisma's default Decimal(65,30).
+  // The column is deliberately wider than the application maximum
+  // (9,999,999.99) so a numeric overflow, which PostgreSQL raises as an
+  // untyped error, is unreachable by construction (design D4).
+  price           Decimal  @db.Decimal(12, 2)
+  durationMinutes Int
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Uniqueness is per owner, not per location: a service is offered by the
+  // business as a whole and Service has no location relation (design D9).
+  @@unique([ownerId, name])
+  // Backs the dashboard list and the active-only count behind the cap.
+  @@index([ownerId, isActive])
 }

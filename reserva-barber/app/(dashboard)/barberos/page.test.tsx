@@ -37,8 +37,8 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-vi.mock('@/server/application/services/BarberService', () => ({
-  BarberService: vi.fn().mockImplementation(function () {
+vi.mock('@/server/application/services/BarberCatalogService', () => ({
+  BarberCatalogService: vi.fn().mockImplementation(function () {
     return { listBarbers: mockListBarbers };
   }),
 }));

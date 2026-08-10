@@ -60,3 +60,11 @@ export type Location = Prisma.LocationModel
  * Ownership is derived through location.ownerId — no ownerId column (data-model.md §5, design D1).
  */
 export type Barber = Prisma.BarberModel
+/**
+ * Model Service
+ * A bookable service offered by the business, with a price and a duration.
+ * Unlike Barber, ownership is STORED: `ownerId` is a real column, so every
+ * read and write scopes on it directly rather than through a relation join
+ * (data-model.md §6, design D2).
+ */
+export type Service = Prisma.ServiceModel

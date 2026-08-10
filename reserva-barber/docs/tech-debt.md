@@ -75,22 +75,24 @@ The fix is the one M1 applied: echo the submitted email back in the action's sta
 - **Trigger:** confirm it in a browser first — one failed login answers the question. If confirmed,
   it is a bug against an existing requirement, not debt, and should be scheduled as its own change.
 
-### T8 — Concurrent edits to the same location or barber silently overwrite each other
-**Status:** accepted · **Effort:** ~2 h if it becomes real · **Last evaluated:** M2 (2026-08-08)
+### T8 — Concurrent edits to the same location, barber or service silently overwrite each other
+**Status:** accepted · **Effort:** ~2 h if it becomes real · **Last evaluated:** M3 (2026-08-09)
 
 M1 ships no version column and no `updatedAt` precondition on the location update. M2 inherits the
-same pattern for barbers. Two sessions editing the same row means the later save discards the
-earlier one with a success message and no warning.
+same pattern for barbers, M3 for services. Two sessions editing the same row means the later save
+discards the earlier one with a success message and no warning.
 
-Re-evaluated during M2 (design D13) and re-accepted. The premise requires two concurrent editors,
-and "Exactly one Owner" forbids the second administrative account that would produce them. Adding
-optimistic concurrency control to a three-field form would cost more than the failure it prevents.
+Re-evaluated during M2 (design D13) and re-accepted; re-evaluated again at M3 with the same
+conclusion and nothing new to weigh — a fourth field on the form does not change the premise. It
+still requires two concurrent editors, and "Exactly one Owner" forbids the second administrative
+account that would produce them. Adding optimistic concurrency control here would cost more than the
+failure it prevents.
 
 - **Trigger:** a second `Owner` row becomes possible, or story D3 (per-barber calendar) where a
   stale overwrite starts costing appointments rather than a retyped name.
 
 ### T10 — No background utility resolves on an `<a>` element
-**Status:** **needs investigation** · **Effort:** ~1 h to diagnose, unknown to fix
+**Status:** **needs investigation — re-deferred at M3** · **Effort:** ~1 h to diagnose, unknown to fix · **Last evaluated:** M3 (2026-08-09)
 
 Verified in the browser during M1: `bg-primary` and `bg-muted` paint a `<div>` and a `<span>`, and
 **never** an `<a>` — the anchor computes `background-color: rgba(0,0,0,0)` with the class present in
@@ -106,8 +108,26 @@ start: read the generated CSS from the build output rather than from the live DO
 **Worked around in M1**, not fixed: the create control puts the variant classes on an inner `<span>`
 inside the `<Link>`. Any future link-styled-as-button hits the same wall.
 
-- **Trigger:** the next story that needs a link to look like a button — P1's public profile and D1's
-  dashboard home both will. Fix it before the workaround is copied a third time.
+**M3 evaluation (one hypothesis eliminated, decision to re-defer).** M3 is the third copy of the
+workaround, which this entry previously said not to allow. It was allowed anyway, deliberately, and
+here is what changed and why:
+
+- **Falsified:** `app/globals.css` contains **no anchor rule of any kind** — no `a { background… }`,
+  no reset suppressing it. The "something in a readable stylesheet suppresses anchor backgrounds"
+  hypothesis is dead and the next investigation should not re-walk it.
+- **What that leaves:** either the generated Tailwind output (read `.next/static/css/*.css` directly,
+  as this entry already suggested), or **the original observation itself**. `bg-primary` on a `<span>`
+  and on an `<a>` resolve to the same generated rule; for one to paint and the other not, something
+  must override it, and nothing in the project does. An artifact of the inspecting extension is now a
+  live possibility that was not considered when this was filed. **Re-verify the symptom before
+  hunting the cause** — that is a five-minute check, not an hour.
+- **Why re-deferred rather than fixed:** the fix is bounded by a diagnosis that needs a browser, and
+  M3's remaining risk sits in money handling, not in a call-to-action's colour. Spending unbounded
+  time here would trade a real risk for a cosmetic one.
+
+- **Trigger:** **now, and no later than P1** — its public profile is a page where a button that looks
+  broken is the first thing a client sees, not a dashboard control only the owner meets. Start with
+  the re-verification above, not with the CSS.
 
 ### T11 — Cross-owner isolation has no executable proof
 **Status:** **needs a test when it becomes possible** · **Effort:** ~1 h
@@ -123,17 +143,36 @@ Owner" forbids a second `Owner` row, and no application path may create one. Wit
 there is no exposure — every row belongs to the only owner there is. The gap is in the *assurance*,
 not in the behaviour.
 
+**Narrowed at M3 (2026-08-09).** An adversarial pass ran the scoping predicate against the real
+database rather than a mock: `update({ where: { id, ownerId } })` with a foreign owner raises `P2025`
+and leaves the row untouched, `findFirst` with a foreign owner returns `null`, and the same update
+with the correct owner applies. Recorded in `docs/s0-versions-decision.md`. So **the mechanism is now
+proven** — Prisma does honour the extra scalar predicate. What remains unproven is isolation between
+two *real* owners, which is what this entry is actually about, and that still needs a second `Owner`.
+
 - **Trigger:** the moment a second `Owner` becomes possible — multi-tenancy, a dedicated test project
   with its own owner, or any change that relaxes "Exactly one Owner". Before that ships, add an
   integration test against a real database with two owners covering: list scoping, a foreign id
   resolving to `null`, and a scoped update affecting zero rows.
 
 ### T12 — A double submit can report a successful creation as a duplicate
-**Status:** accepted · **Effort:** ~1 h if it becomes real
+**Status:** accepted — **now observed, no longer theoretical** · **Effort:** ~1 h if it becomes real
 
-Applies to **locations** (`(ownerId, name)`) and **barbers** (`(locationId, displayName)`). The spec claims the second of two rapid submissions "does not present the successful outcome as a failure". Data integrity is never at risk — the constraint guarantees exactly one row. But when two identical creates race **before hydration** (so the disabled-submit state does not yet exist), one wins and the other is rejected by the constraint, rendering "Ya tenés una sucursal con ese nombre" or "Ya tenés un barbero con ese nombre." The owner created a row and may be told it already exists.
+Applies to **locations** (`(ownerId, name)`), **barbers** (`(locationId, displayName)`) and **services** (`(ownerId, name)`). The spec claims the second of two rapid submissions "does not present the successful outcome as a failure". Data integrity is never at risk — the constraint guarantees exactly one row. But when two identical creates race **before hydration** (so the disabled-submit state does not yet exist), one wins and the other is rejected by the constraint, rendering "Ya tenés una sucursal con ese nombre", "Ya tenés un barbero con ese nombre" or "Ya tenés un servicio con ese nombre." The owner created a row and may be told it already exists.
 
-Verification observed the benign outcome after hydration; which response the browser commits before hydration is a race.
+**Reproduced in M3 (task 10.20).** Two native form submissions dispatched in the same tick through
+separate iframes, so no pending-state guard could exist between them:
+
+```
+POST /servicios/nuevo 303   ← winner, redirected
+POST /servicios/nuevo 200   ← loser, returned form state
+rows in database: 1
+```
+
+Data integrity held exactly as claimed. The losing response is the one that carries the misleading
+duplicate message. Earlier entries said "which response the browser commits before hydration is a
+race" — it is not a race in the sense of being unpredictable: **the loser reliably gets the duplicate
+error**, and the only open question is whether the user is looking at that tab.
 
 A candidate fix is to treat a constraint violation on create as success when the existing row already
 matches what was submitted, redirecting instead of erroring. That deserves thought before it is
@@ -146,13 +185,49 @@ written: it makes "create" quietly idempotent, which is helpful here and would b
 ### T9 — Case-variant names can both survive a race
 **Status:** accepted · **Effort:** ~30 min per table
 
-Applies to **locations** (`(ownerId, name)` unique index) and **barbers** (`(locationId, displayName)` unique index). The case-insensitive duplicate pre-check runs in the application in a separate round trip (location design D2, barber design D9). Two submissions of "Centro" and "centro", or "Pedro" and "pedro", interleaving closely enough can both be accepted.
+Applies to **locations** (`(ownerId, name)` unique index), **barbers** (`(locationId, displayName)` unique index) and **services** (`(ownerId, name)` unique index). The case-insensitive duplicate pre-check runs in the application in a separate round trip (location design D2, barber design D9, service design D9). Two submissions of "Centro" and "centro", "Pedro" and "pedro", or "Corte" and "corte", interleaving closely enough can both be accepted.
 
 The airtight fix is a unique index on the lowercased column; rejected because Prisma cannot express
 an expression index in `schema.prisma` and every later `prisma migrate dev` would report drift that
 is not drift.
 
 - **Trigger:** a second `Owner`, or any report of duplicate-looking rows in production.
+
+### T18 — The barbers list overflows horizontally on a long unbroken name
+**Status:** **confirmed defect against a shipped requirement** · **Effort:** ~2 min · **Found:** M3 (2026-08-09)
+
+`openspec/specs/barber-management/spec.md` → "Long free text renders without breaking the layout"
+requires that "Long unbroken names and bios MUST wrap rather than overflow horizontally". **They do
+not.** Measured in the browser at a 360 px container with a 124-character unbroken display name:
+
+```
+mainClientWidth: 360   mainScrollWidth: 1113   overflows: true
+```
+
+**Cause** (diagnosed while fixing the identical bug in M3's services list). The card title is
+`<CardTitle className="flex items-start justify-between gap-3">` wrapping
+`<span className="break-words">`. A flex item defaults to `min-width: auto` and refuses to shrink
+below its content's intrinsic width, so `break-words` never gets the opportunity to act. Clearing it
+on the span alone is **not** enough — the title is itself a grid item inside `CardHeader`, so both
+levels need it.
+
+**Fix**, already applied and verified in `app/(dashboard)/servicios/page.tsx`:
+
+```diff
+-<CardTitle className="flex items-start justify-between gap-3">
+-  <span className="break-words">{…}</span>
++<CardTitle className="flex min-w-0 items-start justify-between gap-3">
++  <span className="min-w-0 break-words">{…}</span>
+```
+
+**Not fixed in M3** deliberately: it belongs to the `barber-management` spec, and changing shipped
+behaviour of a closed change without updating its artifacts violates `docs/base-standards.md` §7 —
+the same reasoning that left T7 open. M2's task 10.19 recorded this scenario as verified, so the
+check that was performed did not use an unbroken name.
+
+- **Trigger:** now — it is a two-token fix against a requirement that already exists, and it should
+  ship as its own small change rather than riding along in an unrelated one. Also re-check the
+  `sucursales` list, which was not measured.
 
 ### T4 — Owner email hardcoded in a committed migration
 **Status:** **needs a decision** · **Effort:** ~0 (accept) or ~30 min (parameterise)
@@ -197,17 +272,41 @@ The scope of the fix depends on what the booking model looks like: it may requir
 
 - **Trigger:** story B4 (barber booking history) or any story that queries bookings filtered by location, whichever comes first.
 
-### T15 — Unqualified `P2002` violation on barber create translates as duplicate name
-**Status:** deferred · **Effort:** ~30 min
+### T15 — Unqualified `P2002` violation translates as duplicate name, on two tables now
+**Status:** deferred · **Effort:** ~30 min · **Last evaluated:** M3 (2026-08-09)
 
-`BarberService.createBarber` catches `P2002` (unique constraint violation) and throws `DuplicateBarberNameError`. Today there is only one unique constraint on `Barber` — `(locationId, displayName)` — so the translation is always correct. M4 will add `BarberService` rows with their own unique constraints; from that point on, a violation on an unrelated constraint would produce "Ya tenés un barbero con ese nombre" when the actual conflict is elsewhere.
+`BarberCatalogService.createBarber` catches `P2002` (unique constraint violation) and throws `DuplicateBarberNameError`; `ServiceCatalogService` does the same with `DuplicateServiceNameError`. Today each table carries exactly one unique constraint — `Barber(locationId, displayName)` and `Service(ownerId, name)` — so both translations are always correct. M4 adds `BarberService(barberId, serviceId)`, which touches **both** aggregates; from that point on, a violation on an unrelated constraint would produce "Ya tenés un barbero con ese nombre" or "Ya tenés un servicio con ese nombre" when the actual conflict is the assignment.
 
-- **Trigger:** M4 (barber–service assignments), or any migration that adds a second unique constraint to the `Barber` table.
+M3 deliberately reproduced the same unqualified mapping rather than reading `error.meta.target`: doing that would drag Prisma's error shape into the application layer, which is precisely what the structural check exists to avoid. The fix belongs with M4, which is when a second constraint first exists.
 
-### T16 — Session expiry during a long bio entry silently discards up to 500 characters
-**Status:** accepted · **Effort:** ~2–4 h (server-sent draft save or client-side autosave)
+- **Trigger:** M4 (barber–service assignments), or any migration that adds a second unique constraint to `Barber` or `Service`. **M4 must re-audit both services, not just the one it edits.**
 
-`requireOwner()` redirects to `/login?next=…` when the session expires. If the owner was mid-way through typing a 500-character bio, the redirect discards it. React 19 resets uncontrolled forms on resolve, so even a rejected submit clears the bio unless the action echoes it back — which it does, but an expired session never reaches the action.
+### T19 — Per-owner service cap is advisory, not guaranteed
+**Status:** accepted · **Effort:** ~1–2 h if it becomes real · **Added:** M3 (2026-08-09)
+
+`ServiceCatalogService` rejects a create when `countActiveByOwner >= MAX_SERVICES_PER_OWNER` (= 50). The count is read in a separate round trip from the insert against a transaction-mode pooler (design D8), so two concurrent creates can both observe 49 and both write, producing 51 active services. Identical mechanism to T13; the fix is blocked for the same reason (Prisma cannot express a count constraint, and a raw migration would show as permanent drift).
+
+The count deliberately excludes inactive rows. Counting every row would mean that once M6 ships deactivation, an owner who deactivated 50 services would be **permanently unable to create another**, with no remedy anywhere in the application. Verified in M3 task 10.18: at 50 active the create is refused; deactivating one row makes the same submission succeed.
+
+- **Trigger:** any confirmed report of an owner exceeding 50 active services, or multi-owner tenancy.
+
+### T20 — Location and barber write paths still log raw driver error messages
+**Status:** **known gap, deliberately not closed in M3** · **Effort:** ~15 min · **Added:** M3 (2026-08-09)
+
+A PostgreSQL unique violation embeds the offending values in its message — `Key (ownerId, name)=(owner-root, Corte Clásico) already exists`. M3 added `toErrorLogContext()` (design D11), which logs the driver **code** and the operation for recognized constraint violations and never the message, so business data cannot reach the log stream and a name containing quotes or newlines cannot forge fields in structured log output. Unrecognized errors keep their message, because a failure stripped of its detail cannot be diagnosed.
+
+`app/(dashboard)/sucursales/actions.ts` and `app/(dashboard)/barberos/actions.ts` still log `error.message` verbatim and have the exposure M3 fixed for services.
+
+**Not fixed in M3** deliberately: retrofitting it would alter the observable behaviour of two closed changes without updating their artifacts, which `docs/base-standards.md` §7 forbids. The fix is mechanical — import the helper and replace the `cause:` line in each `toFailureState`.
+
+- **Trigger:** the next change that touches either actions file for any reason, or the first time logs are shipped anywhere they can be read by someone who should not see the owner's data.
+
+### T16 — Session expiry during long free-text entry silently discards up to 500 characters
+**Status:** accepted · **Effort:** ~2–4 h (server-sent draft save or client-side autosave) · **Last evaluated:** M3 (2026-08-09)
+
+`requireOwner()` redirects to `/login?next=…` when the session expires. If the owner was mid-way through typing a 500-character barber bio **or service description**, the redirect discards it. React 19 resets uncontrolled forms on resolve, so even a rejected submit clears the field unless the action echoes it back — which it does, but an expired session never reaches the action.
+
+M3 adds a second field of the same size and does not change the mechanism. It does slightly raise the cost: a service form carries four fields the owner must retype, against three on the barber form.
 
 Accepted because: the session lifetime is long relative to the time to type 500 characters; no data loss occurs beyond a single form field; and autosave infrastructure (draft table, SSE, or `localStorage`) costs far more than the failure it prevents.
 

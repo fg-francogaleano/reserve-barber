@@ -186,6 +186,7 @@ export type OwnerWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"Owner"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Owner"> | Date | string
   locations?: Prisma.LocationListRelationFilter
+  services?: Prisma.ServiceListRelationFilter
 }
 
 export type OwnerOrderByWithRelationInput = {
@@ -195,6 +196,7 @@ export type OwnerOrderByWithRelationInput = {
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   locations?: Prisma.LocationOrderByRelationAggregateInput
+  services?: Prisma.ServiceOrderByRelationAggregateInput
 }
 
 export type OwnerWhereUniqueInput = Prisma.AtLeast<{
@@ -207,6 +209,7 @@ export type OwnerWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"Owner"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Owner"> | Date | string
   locations?: Prisma.LocationListRelationFilter
+  services?: Prisma.ServiceListRelationFilter
 }, "id" | "email" | "authUserId">
 
 export type OwnerOrderByWithAggregationInput = {
@@ -238,6 +241,7 @@ export type OwnerCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
+  services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
 }
 
 export type OwnerUncheckedCreateInput = {
@@ -247,6 +251,7 @@ export type OwnerUncheckedCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
+  services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
 }
 
 export type OwnerUpdateInput = {
@@ -256,6 +261,7 @@ export type OwnerUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
+  services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
 }
 
 export type OwnerUncheckedUpdateInput = {
@@ -265,6 +271,7 @@ export type OwnerUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
+  services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
 }
 
 export type OwnerCreateManyInput = {
@@ -346,12 +353,27 @@ export type OwnerUpdateOneRequiredWithoutLocationsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.OwnerUpdateToOneWithWhereWithoutLocationsInput, Prisma.OwnerUpdateWithoutLocationsInput>, Prisma.OwnerUncheckedUpdateWithoutLocationsInput>
 }
 
+export type OwnerCreateNestedOneWithoutServicesInput = {
+  create?: Prisma.XOR<Prisma.OwnerCreateWithoutServicesInput, Prisma.OwnerUncheckedCreateWithoutServicesInput>
+  connectOrCreate?: Prisma.OwnerCreateOrConnectWithoutServicesInput
+  connect?: Prisma.OwnerWhereUniqueInput
+}
+
+export type OwnerUpdateOneRequiredWithoutServicesNestedInput = {
+  create?: Prisma.XOR<Prisma.OwnerCreateWithoutServicesInput, Prisma.OwnerUncheckedCreateWithoutServicesInput>
+  connectOrCreate?: Prisma.OwnerCreateOrConnectWithoutServicesInput
+  upsert?: Prisma.OwnerUpsertWithoutServicesInput
+  connect?: Prisma.OwnerWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.OwnerUpdateToOneWithWhereWithoutServicesInput, Prisma.OwnerUpdateWithoutServicesInput>, Prisma.OwnerUncheckedUpdateWithoutServicesInput>
+}
+
 export type OwnerCreateWithoutLocationsInput = {
   id?: string
   email: string
   authUserId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
 }
 
 export type OwnerUncheckedCreateWithoutLocationsInput = {
@@ -360,6 +382,7 @@ export type OwnerUncheckedCreateWithoutLocationsInput = {
   authUserId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
 }
 
 export type OwnerCreateOrConnectWithoutLocationsInput = {
@@ -384,6 +407,7 @@ export type OwnerUpdateWithoutLocationsInput = {
   authUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
 }
 
 export type OwnerUncheckedUpdateWithoutLocationsInput = {
@@ -392,6 +416,59 @@ export type OwnerUncheckedUpdateWithoutLocationsInput = {
   authUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+}
+
+export type OwnerCreateWithoutServicesInput = {
+  id?: string
+  email: string
+  authUserId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
+}
+
+export type OwnerUncheckedCreateWithoutServicesInput = {
+  id?: string
+  email: string
+  authUserId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
+}
+
+export type OwnerCreateOrConnectWithoutServicesInput = {
+  where: Prisma.OwnerWhereUniqueInput
+  create: Prisma.XOR<Prisma.OwnerCreateWithoutServicesInput, Prisma.OwnerUncheckedCreateWithoutServicesInput>
+}
+
+export type OwnerUpsertWithoutServicesInput = {
+  update: Prisma.XOR<Prisma.OwnerUpdateWithoutServicesInput, Prisma.OwnerUncheckedUpdateWithoutServicesInput>
+  create: Prisma.XOR<Prisma.OwnerCreateWithoutServicesInput, Prisma.OwnerUncheckedCreateWithoutServicesInput>
+  where?: Prisma.OwnerWhereInput
+}
+
+export type OwnerUpdateToOneWithWhereWithoutServicesInput = {
+  where?: Prisma.OwnerWhereInput
+  data: Prisma.XOR<Prisma.OwnerUpdateWithoutServicesInput, Prisma.OwnerUncheckedUpdateWithoutServicesInput>
+}
+
+export type OwnerUpdateWithoutServicesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  authUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
+}
+
+export type OwnerUncheckedUpdateWithoutServicesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  authUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
 }
 
 
@@ -401,10 +478,12 @@ export type OwnerUncheckedUpdateWithoutLocationsInput = {
 
 export type OwnerCountOutputType = {
   locations: number
+  services: number
 }
 
 export type OwnerCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   locations?: boolean | OwnerCountOutputTypeCountLocationsArgs
+  services?: boolean | OwnerCountOutputTypeCountServicesArgs
 }
 
 /**
@@ -424,6 +503,13 @@ export type OwnerCountOutputTypeCountLocationsArgs<ExtArgs extends runtime.Types
   where?: Prisma.LocationWhereInput
 }
 
+/**
+ * OwnerCountOutputType without action
+ */
+export type OwnerCountOutputTypeCountServicesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ServiceWhereInput
+}
+
 
 export type OwnerSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -432,6 +518,7 @@ export type OwnerSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   createdAt?: boolean
   updatedAt?: boolean
   locations?: boolean | Prisma.Owner$locationsArgs<ExtArgs>
+  services?: boolean | Prisma.Owner$servicesArgs<ExtArgs>
   _count?: boolean | Prisma.OwnerCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["owner"]>
 
@@ -462,6 +549,7 @@ export type OwnerSelectScalar = {
 export type OwnerOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "email" | "authUserId" | "createdAt" | "updatedAt", ExtArgs["result"]["owner"]>
 export type OwnerInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   locations?: boolean | Prisma.Owner$locationsArgs<ExtArgs>
+  services?: boolean | Prisma.Owner$servicesArgs<ExtArgs>
   _count?: boolean | Prisma.OwnerCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type OwnerIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -471,6 +559,7 @@ export type $OwnerPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   name: "Owner"
   objects: {
     locations: Prisma.$LocationPayload<ExtArgs>[]
+    services: Prisma.$ServicePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -873,6 +962,7 @@ readonly fields: OwnerFieldRefs;
 export interface Prisma__OwnerClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   locations<T extends Prisma.Owner$locationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$locationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LocationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  services<T extends Prisma.Owner$servicesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$servicesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ServicePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1321,6 +1411,30 @@ export type Owner$locationsArgs<ExtArgs extends runtime.Types.Extensions.Interna
   take?: number
   skip?: number
   distinct?: Prisma.LocationScalarFieldEnum | Prisma.LocationScalarFieldEnum[]
+}
+
+/**
+ * Owner.services
+ */
+export type Owner$servicesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Service
+   */
+  select?: Prisma.ServiceSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Service
+   */
+  omit?: Prisma.ServiceOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ServiceInclude<ExtArgs> | null
+  where?: Prisma.ServiceWhereInput
+  orderBy?: Prisma.ServiceOrderByWithRelationInput | Prisma.ServiceOrderByWithRelationInput[]
+  cursor?: Prisma.ServiceWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ServiceScalarFieldEnum | Prisma.ServiceScalarFieldEnum[]
 }
 
 /**

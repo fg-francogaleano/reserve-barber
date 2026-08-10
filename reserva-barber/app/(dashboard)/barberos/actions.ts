@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { requireOwner } from '@/server/infrastructure/supabase/requireOwner';
-import { BarberService } from '@/server/application/services/BarberService';
+import { BarberCatalogService } from '@/server/application/services/BarberCatalogService';
 import { PrismaBarberRepository } from '@/server/infrastructure/prisma/PrismaBarberRepository';
 import { PrismaLocationRepository } from '@/server/infrastructure/prisma/PrismaLocationRepository';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
@@ -20,9 +20,9 @@ import { toFormState, type BarberFormState } from './formState';
 
 const BARBERS_PATH = '/barberos';
 
-function barberService(): BarberService {
+function barberService(): BarberCatalogService {
   const db = getPrismaClient();
-  return new BarberService(
+  return new BarberCatalogService(
     new PrismaBarberRepository(db),
     new PrismaLocationRepository(db)
   );

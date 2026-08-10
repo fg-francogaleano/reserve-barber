@@ -24,7 +24,7 @@ function hasCode(error: unknown, code: string): boolean {
   );
 }
 
-export class BarberService {
+export class BarberCatalogService {
   constructor(
     private readonly barbers: IBarberRepository,
     private readonly locations: ILocationRepository

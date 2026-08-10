@@ -162,10 +162,16 @@ A bookable service offered by the business (e.g., haircut, beard trim), with a p
 - `createdAt` / `updatedAt`: Timestamps
 
 **Validation Rules:**
-- `name`: required, 2–120 characters
-- `price`: required, non-negative
-- `durationMinutes`: required, positive, typically a multiple of the slot granularity (e.g., 15/30 min)
+- `name`: required, 2–120 characters after normalization
+- **Name normalization (application layer):** `name` is normalized by the same shared rule as `Location.name` and `Barber.displayName` (see §4). The rule has one implementation; three entities constrained by uniqueness must not disagree about what "the same name" means.
+- **`name` is unique per owner**, enforced by a composite unique constraint on `(ownerId, name)`. Uniqueness is scoped to the owner rather than to a location because a service is offered by the business as a whole and `Service` has no location relation. As with `Location` and `Barber`, the database constraint is the authoritative guarantee; the application's case-insensitive pre-check exists only to produce a readable field error and cannot be the guarantee, because the check and the write are separate round trips against a transaction-mode pooler.
+- `description`: optional, trimmed, max 500 characters; a blank submission is stored as `null`, never as an empty string
+- `price`: required, non-negative, at most **2 decimal places**, and not greater than the documented application maximum (`9,999,999.99`). Persisted as `Decimal(12, 2)` — the column is deliberately wider than the rule so that a numeric overflow, which PostgreSQL raises as an untyped error, is unreachable by construction rather than by handling.
+- **Price parsing (application layer):** the accepted decimal separator is `.` **or** `,`, because the platform and an es-AR keyboard disagree about which is correct. A value carrying a thousands separator (`4.500`, `4,500`) is **rejected as ambiguous** rather than interpreted — a wrong guess is a thousandfold pricing error. More than two decimal places is rejected, never silently rounded.
+- `durationMinutes`: required positive integer, a multiple of the slot granularity (`SLOT_GRANULARITY_MINUTES` = 5), between 5 and 480. The granularity constant lives in the domain layer because slot generation and booking sizing consume the same definition; a second definition of the grid would surface as appointments that cannot be booked rather than as a failing test.
 - **Availability rule (application layer):** a service is only exposed in the public booking flow if it has at least one assigned **active** barber via BarberService.
+- **Ownership is stored, not derived.** Unlike `Barber` (§5), `Service` carries a real `ownerId` column, so every read and write scopes on that column rather than through a relation join. The derived-ownership pattern answers a schema that lacks an owner column and must not be applied to one that has it.
+- **Editing a price is not retroactive.** `Booking.priceAtBooking` (§11) is a deliberate historical snapshot; the live service price is never the source of truth for a past booking.
 
 **Relationships:**
 - `owner`: Many-to-one → Owner
@@ -526,7 +532,7 @@ erDiagram
 
 - **Primary keys**: All entities use a string surrogate key `id` with `@default(cuid())` (Prisma) for non-guessable identifiers.
 - **Foreign keys**: Declared explicitly with referential-integrity constraints; `onDelete` behavior chosen per relationship (RESTRICT vs CASCADE) as described above.
-- **Unique constraints**: Applied to `Owner.email`, `BusinessProfile.publicSlug`, `Booking.cancellationToken`, `PaymentConfig.ownerId`, and composite uniques (`Client(ownerId, email)`, `BarberService(barberId, serviceId)`, `SocialLink(businessProfileId, platform)`).
+- **Unique constraints**: Applied to `Owner.email`, `BusinessProfile.publicSlug`, `Booking.cancellationToken`, `PaymentConfig.ownerId`, and composite uniques (`Location(ownerId, name)`, `Barber(locationId, displayName)`, `Service(ownerId, name)`, `Client(ownerId, email)`, `BarberService(barberId, serviceId)`, `SocialLink(businessProfileId, platform)`).
 - **Optional fields**: Represented as nullable; required fields are non-nullable.
 - **Enum / status fields**: Defined as native PostgreSQL enums via Prisma (`BookingStatus`, `PaymentMethod`, `PaymentStatus`, `ReceiptStatus`, `DepositType`, `SocialPlatform`, `CancelledBy`) and validated at the application layer.
 - **Timestamps**: `createdAt` via `@default(now())`; `updatedAt` via `@updatedAt`.

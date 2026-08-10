@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { COPY } from '@/lib/copy';
-import { BarberService } from '@/server/application/services/BarberService';
+import { BarberCatalogService } from '@/server/application/services/BarberCatalogService';
 import { LocationService } from '@/server/application/services/LocationService';
 import { PrismaBarberRepository } from '@/server/infrastructure/prisma/PrismaBarberRepository';
 import { PrismaLocationRepository } from '@/server/infrastructure/prisma/PrismaLocationRepository';
@@ -20,7 +20,7 @@ async function fetchPageData(
   const db = getPrismaClient();
   try {
     const [barbers, locations] = await Promise.all([
-      new BarberService(
+      new BarberCatalogService(
         new PrismaBarberRepository(db),
         new PrismaLocationRepository(db)
       ).listBarbers(ownerId),
