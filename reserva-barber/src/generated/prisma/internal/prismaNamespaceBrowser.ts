@@ -53,7 +53,8 @@ export const AnyNull = runtime.AnyNull
 export const ModelName = {
   Owner: 'Owner',
   Location: 'Location',
-  Barber: 'Barber'
+  Barber: 'Barber',
+  Service: 'Service'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -108,6 +109,21 @@ export const BarberScalarFieldEnum = {
 } as const
 
 export type BarberScalarFieldEnum = (typeof BarberScalarFieldEnum)[keyof typeof BarberScalarFieldEnum]
+
+
+export const ServiceScalarFieldEnum = {
+  id: 'id',
+  ownerId: 'ownerId',
+  name: 'name',
+  description: 'description',
+  price: 'price',
+  durationMinutes: 'durationMinutes',
+  isActive: 'isActive',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ServiceScalarFieldEnum = (typeof ServiceScalarFieldEnum)[keyof typeof ServiceScalarFieldEnum]
 
 
 export const SortOrder = {

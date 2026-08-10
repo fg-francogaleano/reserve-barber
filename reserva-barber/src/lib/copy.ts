@@ -68,6 +68,50 @@ export const COPY = {
       infrastructureError: 'No pudimos guardar los cambios. Intentá de nuevo más tarde.',
     },
   },
+  services: {
+    heading: 'Servicios',
+    nav: 'Servicios',
+    empty: 'Todavía no cargaste ningún servicio. Creá el primero para poder ofrecerlo.',
+    create: 'Nuevo servicio',
+    edit: 'Editar',
+    editLabel: (name: string) => `Editar ${name}`,
+    notFound: 'El servicio que buscás no existe.',
+    duration: (minutes: number) => `${minutes} min`,
+    form: {
+      createHeading: 'Nuevo servicio',
+      editHeading: 'Editar servicio',
+      nameLabel: 'Nombre',
+      priceLabel: 'Precio',
+      durationLabel: 'Duración (minutos)',
+      descriptionLabel: 'Descripción (opcional)',
+      // Idle-state hints: a rule the owner can only discover by breaking it is
+      // a rule stated badly.
+      priceHint: 'Sin separador de miles. Ejemplo: 4500,50',
+      durationHint: 'En múltiplos de 5 minutos, entre 5 y 480.',
+      submit: 'Guardar',
+      submitting: 'Guardando…',
+      cancel: 'Cancelar',
+      nameRequired: 'Ingresá un nombre para el servicio.',
+      nameLength: 'El nombre tiene que tener entre 2 y 120 caracteres.',
+      descriptionTooLong: 'La descripción no puede superar los 500 caracteres.',
+      priceRequired: 'Ingresá un precio.',
+      priceInvalid: 'El precio no es válido. Escribí solo números, por ejemplo 4500,50.',
+      priceThousandsSeparator:
+        'No uses separador de miles. Para cuatro mil quinientos escribí 4500, y para los centavos usá coma: 4500,50.',
+      priceTooManyDecimals: 'El precio puede tener como máximo 2 decimales.',
+      priceTooLarge: 'El precio no puede superar los $ 9.999.999,99.',
+      durationRequired: 'Ingresá una duración.',
+      durationInvalid: 'La duración tiene que ser un número entero de minutos.',
+      durationOutOfRange: 'La duración tiene que estar entre 5 y 480 minutos.',
+      durationNotMultiple: 'La duración tiene que ser múltiplo de 5 minutos.',
+      duplicateName: 'Ya tenés un servicio con ese nombre.',
+      limitReached: 'Llegaste al máximo de servicios activos. Editá uno existente en lugar de crear otro.',
+      // A timed-out write may still have been committed, so a blind retry would
+      // meet the duplicate error and report a success as a failure.
+      infrastructureError:
+        'No pudimos guardar los cambios. Revisá la lista de servicios antes de reintentar, por las dudas de que se haya guardado.',
+    },
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

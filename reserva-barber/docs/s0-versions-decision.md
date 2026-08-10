@@ -167,6 +167,59 @@ Per `docs/roadmap.md` Dependency Notes, the gate (task 8.2) **passed**: the seed
 through the pooler on the local `workerd` runtime and on the deployed URL
 (`https://reserva-barber.franco-galeano.workers.dev`). No stack revisit needed.
 
+## M3 gate result — money on `workerd`
+
+Measured on the local `workerd` preview (`opennextjs-cloudflare preview`), Prisma 7.8.0, against a real
+`Service` row priced `4500.50`:
+
+```json
+{"priceCtor":"Decimal2","priceTypeof":"object","hasToFixed":true,"toFixed2":"4500.50",
+ "jsonRoundTrip":"4500.5","intlArs":"$ 4.500,50","intlResolved":"es-AR"}
+```
+
+**`Intl` is safe — no fallback needed.** `Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' })`
+resolves the real `es-AR` locale and produces `$ 4.500,50` on `workerd`. Full ICU is present. The
+hand-written formatter that M3's design held in reserve was not built. **Do not re-litigate this** in a
+later story unless the runtime or the adapter version changes.
+
+**`toFixed(2)` works on the driver's decimal.** The value is a `Decimal2` instance and carries `toFixed`,
+so the repository-boundary conversion in `docs/data-model.md` §6 is sound as specified.
+
+**Correction to M3 design D3 — the failure is silent, not loud.** The design argued the driver decimal
+"does not survive the RSC → Client Component boundary", implying a serialization error would catch a
+leak. That is **wrong**, and the measurement says so: `JSON.stringify` of the decimal yields `"4500.5"` —
+it serializes fine, via `toJSON`, but **drops the canonical two-decimal form**. A decimal leaking past the
+repository therefore does not throw; it silently renders `4500,5` instead of `4500,50` in one place and
+not another.
+
+This makes the D3 rule *more* important, not less, and changes how it must be enforced: a runtime error
+was never going to catch the leak, so the guard has to be the code review / inspection step
+(`tasks.md` 8.10) plus the repository test asserting a two-decimal string. Any later monetary field
+(`Booking.priceAtBooking`, `Booking.depositAmount`, `PaymentConfig.depositValue`) inherits this.
+
+**Owner-scoped `update` with a scalar filter — proven, not assumed.** M3's design D2 asserted that
+`update({ where: { id, ownerId } })` is "a weaker requirement than the relation filter M2's D3 gate
+had to prove" and skipped the gate. That was an assumption; the repository tests mock Prisma and
+assert only the *shape* of the call. Measured against the real database (Prisma 7.8.0, `DIRECT_URL`):
+
+```json
+{"updateForeignOwner":"P2025 (rejected) OK","rowUnchangedAfterUpdate":"unchanged OK",
+ "findFirstForeignOwner":"null OK","updateCorrectOwner":"applied OK"}
+```
+
+Prisma honours the extra scalar predicate: a mismatched `ownerId` raises `P2025` and leaves the row
+untouched, while the same update with the correct owner applies — so the predicate is doing work
+rather than the write failing for an unrelated reason. **This proves the mechanism, not cross-owner
+isolation end to end**, which still needs a second `Owner` row (T11).
+
+**Incidental observation, not acted on.** The route guard is deny-by-default but lets any request
+carrying a `next-action` header through (`decideGuardAction`), because a Server Action POST must not be
+answered with a redirect. Server Actions are guarded from the inside by `requireOwner()`. This is sound
+for actions, but it means a Route Handler under `app/api/**` that omits its own auth check is reachable
+by anyone sending that header. There are no such handlers today; the first one added — the Mercado Pago
+webhook (B5) is the likely first — must carry its own authentication. Recorded here rather than as debt
+because nothing is currently wrong.
+
 ## References
 
 - OpenNext workerd how-to (serverExternalPackages / conditional exports): https://opennext.js.org/cloudflare/howtos/workerd

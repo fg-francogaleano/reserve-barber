@@ -6,7 +6,7 @@ import type {
   BarberUpdateData,
 } from '@/server/domain/repositories/IBarberRepository';
 import type { PrismaClient } from '@/generated/prisma/client';
-import { MAX_BARBERS_PER_LOCATION } from '@/server/application/services/BarberService';
+import { MAX_BARBERS_PER_LOCATION } from '@/server/application/services/BarberCatalogService';
 
 const RECORD_NOT_FOUND = 'P2025';
 

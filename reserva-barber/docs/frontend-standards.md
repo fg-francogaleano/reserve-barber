@@ -93,11 +93,14 @@ barber/
 │   │   │   ├── page.tsx
 │   │   │   ├── nuevo/page.tsx
 │   │   │   └── [id]/editar/page.tsx
+│   │   ├── servicios/              # Services: list, create, edit
+│   │   │   ├── page.tsx
+│   │   │   ├── nuevo/page.tsx
+│   │   │   └── [id]/editar/page.tsx
 │   │   ├── perfil/page.tsx
 │   │   ├── calendario/page.tsx
 │   │   ├── clientes/page.tsx
 │   │   ├── estadisticas/page.tsx
-│   │   ├── servicios/page.tsx
 │   │   ├── transferencia/page.tsx
 │   │   └── mercado-pago/page.tsx
 │   ├── b/[slug]/                     # Public booking flow (guest)
@@ -232,6 +235,10 @@ Why this over React Hook Form: the form still submits before hydration and with 
 - **Disable the submit button while submitting** to prevent double booking/payment. Note this state only exists after hydration; the server must remain the real guard against duplicate submissions.
 - Surface field-level and form-level errors accessibly, and **preserve what the user typed** when a submission is rejected — a validation error that clears the form is worse than the error it reports.
 - Infrastructure failures inside an action are returned as form state, never thrown: throwing reaches the route error boundary, which replaces the page and discards the user's input.
+
+**A numeric or monetary field uses `type="text"` with `inputMode="decimal"` — never `type="number"`.** A number-typed control submits an **empty string** when the browser's own parser rejects what was typed, and an es-AR keyboard's `4500,50` is exactly such a value in Chrome. Three failures follow at once: the server reports a missing price for a price that was typed; the echo-back that preserves input on rejection has nothing to echo; and "missing" becomes indistinguishable from "malformed". `inputMode="decimal"` still raises the numeric keypad on touch devices, which was the only real benefit on offer.
+
+For the same reason, no form control may carry `min`, `max`, `step`, or `pattern`. Each lets the browser block the submission with a message in the **browser's** locale, from a string that exists nowhere in the copy module — so the validation the specification describes would not be the validation the user meets, and the server-side rule would never run. `required` is retained: it never alters a value. Parsing and range checking are the server's job, and the server accepts both `.` and `,` as the decimal separator.
 
 **Select controls backed by another table must use a native `<select>`, not shadcn/Radix `Select`.** Radix's `Select` renders a button and a portalled listbox — it is not a form-associated control — so without a hidden mirror input and a client-side sync it submits nothing. A native `<select>` styled with the same ring/border tokens as `Input` preserves the house promise that the form submits correctly before hydration and with JavaScript disabled. The valid option set is always re-verified server-side at write time; what the browser renders is a UX affordance, not a security boundary.
 
