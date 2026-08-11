@@ -72,3 +72,23 @@ export type BarberService = Prisma.BarberServiceModel
  * committed-but-timed-out save (design D4).
  */
 export type WorkingHours = Prisma.WorkingHoursModel
+/**
+ * Model TimeOff
+ * A period in which a barber is unavailable, overriding the recurring
+ * WorkingHours (data-model.md §9).
+ * 
+ * The range is HALF-OPEN: [startsAt, endsAt). The start is inside the absence,
+ * the end is not — matching Booking's [startTime, endTime) on purpose. If the
+ * two disagreed, a booking beginning exactly when an absence ends would be
+ * blocked or allowed depending on which rule ran first, and that surfaces as a
+ * mysterious unbookable slot rather than as a failing test.
+ * 
+ * `@db.Timestamptz` is deliberate and load-bearing: Prisma's default for
+ * DateTime is a zone-LESS `TIMESTAMP`, which is harmless for createdAt and
+ * wrong for anything compared against a human's clock. An absence is a point in
+ * time, so it obeys the stored-time convention — UTC, zone-aware column.
+ * 
+ * Named startsAt/endsAt rather than startDate/endDate because the earlier
+ * naming invited a `date`, and a date has no instant.
+ */
+export type TimeOff = Prisma.TimeOffModel

@@ -72,6 +72,7 @@ model Barber {
   updatedAt   DateTime @updatedAt
   services    BarberService[]
   workingHours WorkingHours[]
+  timeOffs    TimeOff[]
 
   // Uniqueness is per location, not per owner: the same first name at two
   // branches is legitimate; two identically-named barbers at one branch cannot
@@ -169,4 +170,40 @@ model WorkingHours {
   // Backs the editor read and the slot generation lookup, both of which lead
   // with the barber and filter by day.
   @@index([barberId, dayOfWeek])
+}
+
+/// A period in which a barber is unavailable, overriding the recurring
+/// WorkingHours (data-model.md §9).
+///
+/// The range is HALF-OPEN: [startsAt, endsAt). The start is inside the absence,
+/// the end is not — matching Booking's [startTime, endTime) on purpose. If the
+/// two disagreed, a booking beginning exactly when an absence ends would be
+/// blocked or allowed depending on which rule ran first, and that surfaces as a
+/// mysterious unbookable slot rather than as a failing test.
+///
+/// `@db.Timestamptz` is deliberate and load-bearing: Prisma's default for
+/// DateTime is a zone-LESS `TIMESTAMP`, which is harmless for createdAt and
+/// wrong for anything compared against a human's clock. An absence is a point in
+/// time, so it obeys the stored-time convention — UTC, zone-aware column.
+///
+/// Named startsAt/endsAt rather than startDate/endDate because the earlier
+/// naming invited a `date`, and a date has no instant.
+model TimeOff {
+  id        String   @id @default(cuid())
+  barberId  String
+  barber    Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  startsAt  DateTime @db.Timestamptz(3)
+  endsAt    DateTime @db.Timestamptz(3)
+  reason    String?  @db.VarChar(255)
+  // No updatedAt: an absence is recorded or removed, never edited. Changing one
+  // is a remove plus an add.
+  createdAt DateTime @default(now())
+
+  // Identity is the barber plus the two boundaries. This is what makes a
+  // retried create idempotent: unlike the weekly schedule there is no
+  // replacement semantics here, so without it a retry after a
+  // committed-but-timed-out save would insert a duplicate.
+  @@unique([barberId, startsAt, endsAt])
+  // Backs the editor list (ordered by startsAt) and the availability lookup.
+  @@index([barberId, startsAt])
 }

@@ -184,6 +184,43 @@ export const COPY = {
     infrastructureError:
       'No pudimos guardar los cambios. Revisá el horario antes de reintentar, por las dudas de que se haya guardado.',
   },
+  timeOff: {
+    heading: (barberName: string) => `Ausencias de ${barberName}`,
+    intro:
+      'Registrá los días u horas en que este barbero no está disponible. Dejá las horas vacías para marcar días completos.',
+    manage: 'Ausencias',
+    manageLabel: (barberName: string) => `Editar las ausencias de ${barberName}`,
+    listHeading: 'Ausencias registradas',
+    empty: 'Todavía no registraste ninguna ausencia para este barbero.',
+    formHeading: 'Nueva ausencia',
+    startDateLabel: 'Desde',
+    endDateLabel: 'Hasta',
+    startTimeLabel: 'Hora de inicio (opcional)',
+    endTimeLabel: 'Hora de fin (opcional)',
+    reasonLabel: 'Motivo (opcional)',
+    // The "hasta" field is inclusive when no times are given, and the copy has
+    // to say so — otherwise the owner has to discover it by losing a day.
+    wholeDayHint: 'Si dejás las horas vacías, se toman los días completos, incluido el último.',
+    allDay: 'Todo el día',
+    submit: 'Agregar',
+    submitting: 'Agregando…',
+    remove: 'Eliminar',
+    removeLabel: (range: string) => `Eliminar la ausencia del ${range}`,
+    barberNotFound: 'El barbero que buscás no existe.',
+    startDateRequired: 'Ingresá la fecha de inicio.',
+    endDateRequired: 'Ingresá la fecha de fin.',
+    invalidDate: 'La fecha no es válida.',
+    invalidTime: 'La hora no es válida.',
+    incompleteTimes: 'Completá las dos horas o dejá ambas vacías para días completos.',
+    endNotAfterStart: 'El fin tiene que ser posterior al inicio.',
+    tooLong: 'La ausencia no puede durar más de 365 días.',
+    tooFarAhead: 'La fecha de inicio está demasiado lejos. Revisá el año.',
+    tooFarBack: 'La fecha de inicio es demasiado antigua. Revisá el año.',
+    reasonTooLong: 'El motivo no puede superar los 255 caracteres.',
+    limitReached: 'Llegaste al máximo de ausencias para este barbero.',
+    infrastructureError:
+      'No pudimos guardar los cambios. Revisá la lista de ausencias antes de reintentar, por las dudas de que se haya guardado.',
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

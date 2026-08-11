@@ -29,7 +29,7 @@ Everything required for a minimally usable product: the owner can set up the bus
 - [x] **M3** — As the owner, I want to create services with a price and a duration, so that clients know what they can book and slots can be sized correctly. — *depends on: A1*
 - [x] **M4** — As the owner, I want to assign services to barbers, so that a service becomes available in the booking flow (a service with no assigned barber must not be bookable). — *depends on: M2, M3*
 - [x] **M5a** — As the owner, I want to define each barber's weekly working hours, so that available slots reflect when they actually work. — *depends on: M2*
-- [ ] **M5b** — As the owner, I want to register each barber's days off and absences, so that available slots exclude the days they are away. — *depends on: M2; independent of M5a*
+- [x] **M5b** — As the owner, I want to register each barber's days off and absences, so that available slots exclude the days they are away. — *depends on: M2; independent of M5a*
   - M5 was split during refinement: the two are different entities with different write shapes — a whole-week replacement versus row-level create and delete — and they share nothing but the story that consumes them. B3 depends on both; they can be built in either order or in parallel.
 
 ### 1b. Public presence & payment setup
