@@ -131,6 +131,13 @@ export default async function BarbersPage() {
                   >
                     {COPY.workingHours.manage}
                   </Link>
+                  <Link
+                    href={`/barberos/${barber.id}/ausencias`}
+                    aria-label={COPY.timeOff.manageLabel(barber.displayName)}
+                    className="text-primary text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    {COPY.timeOff.manage}
+                  </Link>
                 </div>
               </CardContent>
             </Card>

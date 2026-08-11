@@ -447,7 +447,7 @@ The defect surfaces in the availability story, not here, but it is created here 
 
 Working hours are stored as minutes from midnight, and all-day ranges are computed as local midnight to local midnight. Both are exact only while the business's timezone has no daylight saving. Argentina has observed none since 2009, so this is correct today rather than approximately correct.
 
-If DST returns, three things break together and must be revisited as one: a day is 23 or 25 hours rather than 1440 minutes, `BUSINESS_UTC_OFFSET_MINUTES` stops being a constant, and a window spanning the transition shifts by an hour. The conversion module already computes the offset per instant rather than assuming it, so the code path is prepared; the assumptions around it are not.
+M5b adds a second consumer: a whole-day absence is computed as local midnight to local midnight, which is 23 or 25 hours on a transition day rather than 24. If DST returns, three things break together and must be revisited as one: a day is 23 or 25 hours rather than 1440 minutes, `BUSINESS_UTC_OFFSET_MINUTES` stops being a constant, and a window spanning the transition shifts by an hour. The conversion module already computes the offset per instant rather than assuming it, so the code path is prepared; the assumptions around it are not.
 
 - **Trigger:** Argentina reinstating daylight saving, or a location outside the current timezone.
 
@@ -459,6 +459,26 @@ Saving a schedule replaces the barber's week wholesale. Once bookings exist, nar
 Same shape as T14 (barber reassignment rewriting derived history): the fix depends on what the booking model looks like, and may be either a warning that names the affected appointments or a refusal to narrow a window that has bookings inside it.
 
 - **Trigger:** B4 (booking creation), or any story that queries bookings against working hours.
+
+### T30 — Per-barber absence cap is advisory, not guaranteed
+**Status:** accepted · **Effort:** ~1–2 h if it becomes real · **Added:** M5b (2026-08-11)
+
+`BarberTimeOffService` refuses a create once the barber has reached `MAX_TIME_OFF_PER_BARBER` (= 100). The count is read in a separate round trip from the insert against a transaction-mode pooler, so two concurrent creates can both observe 99 and both write. Identical mechanism to T13 and T19, blocked for the same reason: Prisma cannot express a count constraint, and a raw migration would show as permanent drift.
+
+Unlike the service cap (T19), this one counts **every** row rather than only the active ones, because an absence has no active flag — so an owner who accumulates a year of past absences approaches the limit through ordinary use rather than through a deactivation quirk. The backward bound of one year on `startsAt` is what keeps that from growing without end.
+
+- **Trigger:** any confirmed report of a barber exceeding 100 absences, or multi-owner tenancy.
+
+### T31 — A failed absence removal tells the owner nothing
+**Status:** accepted · **Effort:** ~1 h · **Added:** M5b (2026-08-11, pre-archive review)
+
+`removeAbsenceAction` is a plain `<form action={fn}>` with no `useActionState`, so it has nowhere to put a message. An infrastructure failure is logged and swallowed; the only signal the owner gets is that the row is still there after the list refreshes.
+
+That is enough to notice but not enough to explain, and it differs from every other write in the dashboard, which returns failures as form state. Surfacing it properly means a client component per row purely to hold a rare error — more machinery than the failure justifies today.
+
+The create path is unaffected: it carries form state and reports failures normally.
+
+- **Trigger:** the first report of an absence that would not delete, or any change that gives the list rows client state for another reason.
 
 ### T16 — Session expiry during long free-text entry silently discards up to 500 characters
 **Status:** accepted · **Effort:** ~2–4 h (server-sent draft save or client-side autosave) · **Last evaluated:** M3 (2026-08-09)

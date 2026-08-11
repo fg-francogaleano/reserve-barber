@@ -242,13 +242,23 @@ A date or date range in which a barber is unavailable (day off, vacation, holida
 **Fields:**
 - `id`: Unique identifier (PK, cuid)
 - `barberId`: Foreign key → Barber (required)
-- `startDate`: First unavailable date/datetime (required)
-- `endDate`: Last unavailable date/datetime (required)
+- `startsAt`: First unavailable instant, **UTC in `@db.Timestamptz`** (required)
+- `endsAt`: First available instant after the absence, same type (required)
 - `reason`: Optional note (max 255, optional)
+- `createdAt`: Timestamp. No `updatedAt` — an absence is recorded or removed, never edited; changing one is a remove plus an add.
 
 **Validation Rules:**
-- `endDate` must be on or after `startDate`
-- Time-off ranges block slot generation for the affected barber
+- **The range is half-open: `[startsAt, endsAt)`.** The start is inside the absence, the end is not. This matches `Booking`'s `[startTime, endTime)` (§11) on purpose — if the two disagreed, a booking beginning exactly when an absence ends would be blocked or allowed depending on which rule the availability code evaluated first, and that surfaces as a mysterious unbookable slot rather than as a failing test.
+- **Instants, not dates.** The fields were previously described as "date/datetime"; those are different types and only one has a defined instant. An absence is a point in time and obeys the stored-time convention in *General Conventions* — UTC in a zone-aware column, never the zone-less Prisma default.
+- **A whole day is expressed in the same range, with no `isAllDay` flag.** A full day off is `[00:00 local, 00:00 next-day local)`. A flag would be a second way to state one fact, and two representations can disagree.
+- **The form's "hasta" is inclusive for whole days and exclusive for a timed range.** With both times empty, "del 1 al 15" covers the 15th and therefore ends at the start of the 16th. With times given, the range ends at the instant named. Both readings are correct for their input; the conversion lives in exactly one function because an off-by-one here silently hands the barber back a day and nothing else in the system would notice.
+- `endsAt` must be **strictly after** `startsAt`. A zero-length range blocks nothing and is a data-entry error wearing the shape of a record.
+- **Bounded:** at most 365 days long, starting no more than 2 years ahead and no more than 1 year in the past. Without bounds a mistyped year is accepted and permanently disables a barber with no error anywhere. Past absences remain allowed because recording one after the fact is legitimate — which is also why the backward bound is tighter.
+- **Overlaps between a barber's absences are allowed.** They union when availability is computed. Rejecting them would stop an owner who recorded a long holiday from recording a specific appointment inside it.
+- **Identity is `(barberId, startsAt, endsAt)`**, enforced by a unique constraint, which is what makes a retried create idempotent. Two absences with identical boundaries are the same absence; a duplicate range carrying a different `reason` is not a second fact.
+- **`reason` never leaves the dashboard.** It can hold medical information, so it must not reach any log entry or any read intended for a consumer other than the absences editor. Confinement is structural — a projection that omits the field — rather than a matter of remembering. A blank submission is stored as `null`, never as an empty string.
+- Time-off ranges block slot generation for the affected barber.
+- **Business-wide holidays are not modelled.** A national holiday needs one row per barber today; a `BusinessHoliday` entity is recorded as technical debt rather than assumed.
 
 **Relationships:**
 - `barber`: Many-to-one → Barber

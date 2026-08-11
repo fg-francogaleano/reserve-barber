@@ -389,7 +389,8 @@ export const ModelName = {
   Barber: 'Barber',
   Service: 'Service',
   BarberService: 'BarberService',
-  WorkingHours: 'WorkingHours'
+  WorkingHours: 'WorkingHours',
+  TimeOff: 'TimeOff'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -405,7 +406,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "owner" | "location" | "barber" | "service" | "barberService" | "workingHours"
+    modelProps: "owner" | "location" | "barber" | "service" | "barberService" | "workingHours" | "timeOff"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -853,6 +854,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    TimeOff: {
+      payload: Prisma.$TimeOffPayload<ExtArgs>
+      fields: Prisma.TimeOffFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.TimeOffFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.TimeOffFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>
+        }
+        findFirst: {
+          args: Prisma.TimeOffFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.TimeOffFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>
+        }
+        findMany: {
+          args: Prisma.TimeOffFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>[]
+        }
+        create: {
+          args: Prisma.TimeOffCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>
+        }
+        createMany: {
+          args: Prisma.TimeOffCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.TimeOffCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>[]
+        }
+        delete: {
+          args: Prisma.TimeOffDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>
+        }
+        update: {
+          args: Prisma.TimeOffUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>
+        }
+        deleteMany: {
+          args: Prisma.TimeOffDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.TimeOffUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.TimeOffUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>[]
+        }
+        upsert: {
+          args: Prisma.TimeOffUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TimeOffPayload>
+        }
+        aggregate: {
+          args: Prisma.TimeOffAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateTimeOff>
+        }
+        groupBy: {
+          args: Prisma.TimeOffGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TimeOffGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.TimeOffCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TimeOffCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -965,6 +1040,18 @@ export const WorkingHoursScalarFieldEnum = {
 } as const
 
 export type WorkingHoursScalarFieldEnum = (typeof WorkingHoursScalarFieldEnum)[keyof typeof WorkingHoursScalarFieldEnum]
+
+
+export const TimeOffScalarFieldEnum = {
+  id: 'id',
+  barberId: 'barberId',
+  startsAt: 'startsAt',
+  endsAt: 'endsAt',
+  reason: 'reason',
+  createdAt: 'createdAt'
+} as const
+
+export type TimeOffScalarFieldEnum = (typeof TimeOffScalarFieldEnum)[keyof typeof TimeOffScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -1189,6 +1276,7 @@ export type GlobalOmitConfig = {
   service?: Prisma.ServiceOmit
   barberService?: Prisma.BarberServiceOmit
   workingHours?: Prisma.WorkingHoursOmit
+  timeOff?: Prisma.TimeOffOmit
 }
 
 /* Types for Logging */

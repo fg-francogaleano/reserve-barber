@@ -210,6 +210,7 @@ export type BarberWhereInput = {
   location?: Prisma.XOR<Prisma.LocationScalarRelationFilter, Prisma.LocationWhereInput>
   services?: Prisma.BarberServiceListRelationFilter
   workingHours?: Prisma.WorkingHoursListRelationFilter
+  timeOffs?: Prisma.TimeOffListRelationFilter
 }
 
 export type BarberOrderByWithRelationInput = {
@@ -224,6 +225,7 @@ export type BarberOrderByWithRelationInput = {
   location?: Prisma.LocationOrderByWithRelationInput
   services?: Prisma.BarberServiceOrderByRelationAggregateInput
   workingHours?: Prisma.WorkingHoursOrderByRelationAggregateInput
+  timeOffs?: Prisma.TimeOffOrderByRelationAggregateInput
 }
 
 export type BarberWhereUniqueInput = Prisma.AtLeast<{
@@ -242,6 +244,7 @@ export type BarberWhereUniqueInput = Prisma.AtLeast<{
   location?: Prisma.XOR<Prisma.LocationScalarRelationFilter, Prisma.LocationWhereInput>
   services?: Prisma.BarberServiceListRelationFilter
   workingHours?: Prisma.WorkingHoursListRelationFilter
+  timeOffs?: Prisma.TimeOffListRelationFilter
 }, "id" | "locationId_displayName">
 
 export type BarberOrderByWithAggregationInput = {
@@ -283,6 +286,7 @@ export type BarberCreateInput = {
   location: Prisma.LocationCreateNestedOneWithoutBarbersInput
   services?: Prisma.BarberServiceCreateNestedManyWithoutBarberInput
   workingHours?: Prisma.WorkingHoursCreateNestedManyWithoutBarberInput
+  timeOffs?: Prisma.TimeOffCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUncheckedCreateInput = {
@@ -296,6 +300,7 @@ export type BarberUncheckedCreateInput = {
   updatedAt?: Date | string
   services?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutBarberInput
   workingHours?: Prisma.WorkingHoursUncheckedCreateNestedManyWithoutBarberInput
+  timeOffs?: Prisma.TimeOffUncheckedCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUpdateInput = {
@@ -309,6 +314,7 @@ export type BarberUpdateInput = {
   location?: Prisma.LocationUpdateOneRequiredWithoutBarbersNestedInput
   services?: Prisma.BarberServiceUpdateManyWithoutBarberNestedInput
   workingHours?: Prisma.WorkingHoursUpdateManyWithoutBarberNestedInput
+  timeOffs?: Prisma.TimeOffUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateInput = {
@@ -322,6 +328,7 @@ export type BarberUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.BarberServiceUncheckedUpdateManyWithoutBarberNestedInput
   workingHours?: Prisma.WorkingHoursUncheckedUpdateManyWithoutBarberNestedInput
+  timeOffs?: Prisma.TimeOffUncheckedUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberCreateManyInput = {
@@ -479,6 +486,20 @@ export type BarberUpdateOneRequiredWithoutWorkingHoursNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.BarberUpdateToOneWithWhereWithoutWorkingHoursInput, Prisma.BarberUpdateWithoutWorkingHoursInput>, Prisma.BarberUncheckedUpdateWithoutWorkingHoursInput>
 }
 
+export type BarberCreateNestedOneWithoutTimeOffsInput = {
+  create?: Prisma.XOR<Prisma.BarberCreateWithoutTimeOffsInput, Prisma.BarberUncheckedCreateWithoutTimeOffsInput>
+  connectOrCreate?: Prisma.BarberCreateOrConnectWithoutTimeOffsInput
+  connect?: Prisma.BarberWhereUniqueInput
+}
+
+export type BarberUpdateOneRequiredWithoutTimeOffsNestedInput = {
+  create?: Prisma.XOR<Prisma.BarberCreateWithoutTimeOffsInput, Prisma.BarberUncheckedCreateWithoutTimeOffsInput>
+  connectOrCreate?: Prisma.BarberCreateOrConnectWithoutTimeOffsInput
+  upsert?: Prisma.BarberUpsertWithoutTimeOffsInput
+  connect?: Prisma.BarberWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.BarberUpdateToOneWithWhereWithoutTimeOffsInput, Prisma.BarberUpdateWithoutTimeOffsInput>, Prisma.BarberUncheckedUpdateWithoutTimeOffsInput>
+}
+
 export type BarberCreateWithoutLocationInput = {
   id?: string
   displayName: string
@@ -489,6 +510,7 @@ export type BarberCreateWithoutLocationInput = {
   updatedAt?: Date | string
   services?: Prisma.BarberServiceCreateNestedManyWithoutBarberInput
   workingHours?: Prisma.WorkingHoursCreateNestedManyWithoutBarberInput
+  timeOffs?: Prisma.TimeOffCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUncheckedCreateWithoutLocationInput = {
@@ -501,6 +523,7 @@ export type BarberUncheckedCreateWithoutLocationInput = {
   updatedAt?: Date | string
   services?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutBarberInput
   workingHours?: Prisma.WorkingHoursUncheckedCreateNestedManyWithoutBarberInput
+  timeOffs?: Prisma.TimeOffUncheckedCreateNestedManyWithoutBarberInput
 }
 
 export type BarberCreateOrConnectWithoutLocationInput = {
@@ -553,6 +576,7 @@ export type BarberCreateWithoutServicesInput = {
   updatedAt?: Date | string
   location: Prisma.LocationCreateNestedOneWithoutBarbersInput
   workingHours?: Prisma.WorkingHoursCreateNestedManyWithoutBarberInput
+  timeOffs?: Prisma.TimeOffCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUncheckedCreateWithoutServicesInput = {
@@ -565,6 +589,7 @@ export type BarberUncheckedCreateWithoutServicesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   workingHours?: Prisma.WorkingHoursUncheckedCreateNestedManyWithoutBarberInput
+  timeOffs?: Prisma.TimeOffUncheckedCreateNestedManyWithoutBarberInput
 }
 
 export type BarberCreateOrConnectWithoutServicesInput = {
@@ -593,6 +618,7 @@ export type BarberUpdateWithoutServicesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.LocationUpdateOneRequiredWithoutBarbersNestedInput
   workingHours?: Prisma.WorkingHoursUpdateManyWithoutBarberNestedInput
+  timeOffs?: Prisma.TimeOffUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateWithoutServicesInput = {
@@ -605,6 +631,7 @@ export type BarberUncheckedUpdateWithoutServicesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   workingHours?: Prisma.WorkingHoursUncheckedUpdateManyWithoutBarberNestedInput
+  timeOffs?: Prisma.TimeOffUncheckedUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberCreateWithoutWorkingHoursInput = {
@@ -617,6 +644,7 @@ export type BarberCreateWithoutWorkingHoursInput = {
   updatedAt?: Date | string
   location: Prisma.LocationCreateNestedOneWithoutBarbersInput
   services?: Prisma.BarberServiceCreateNestedManyWithoutBarberInput
+  timeOffs?: Prisma.TimeOffCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUncheckedCreateWithoutWorkingHoursInput = {
@@ -629,6 +657,7 @@ export type BarberUncheckedCreateWithoutWorkingHoursInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   services?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutBarberInput
+  timeOffs?: Prisma.TimeOffUncheckedCreateNestedManyWithoutBarberInput
 }
 
 export type BarberCreateOrConnectWithoutWorkingHoursInput = {
@@ -657,6 +686,7 @@ export type BarberUpdateWithoutWorkingHoursInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.LocationUpdateOneRequiredWithoutBarbersNestedInput
   services?: Prisma.BarberServiceUpdateManyWithoutBarberNestedInput
+  timeOffs?: Prisma.TimeOffUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateWithoutWorkingHoursInput = {
@@ -669,6 +699,75 @@ export type BarberUncheckedUpdateWithoutWorkingHoursInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.BarberServiceUncheckedUpdateManyWithoutBarberNestedInput
+  timeOffs?: Prisma.TimeOffUncheckedUpdateManyWithoutBarberNestedInput
+}
+
+export type BarberCreateWithoutTimeOffsInput = {
+  id?: string
+  displayName: string
+  bio?: string | null
+  avatarUrl?: string | null
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  location: Prisma.LocationCreateNestedOneWithoutBarbersInput
+  services?: Prisma.BarberServiceCreateNestedManyWithoutBarberInput
+  workingHours?: Prisma.WorkingHoursCreateNestedManyWithoutBarberInput
+}
+
+export type BarberUncheckedCreateWithoutTimeOffsInput = {
+  id?: string
+  locationId: string
+  displayName: string
+  bio?: string | null
+  avatarUrl?: string | null
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  services?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutBarberInput
+  workingHours?: Prisma.WorkingHoursUncheckedCreateNestedManyWithoutBarberInput
+}
+
+export type BarberCreateOrConnectWithoutTimeOffsInput = {
+  where: Prisma.BarberWhereUniqueInput
+  create: Prisma.XOR<Prisma.BarberCreateWithoutTimeOffsInput, Prisma.BarberUncheckedCreateWithoutTimeOffsInput>
+}
+
+export type BarberUpsertWithoutTimeOffsInput = {
+  update: Prisma.XOR<Prisma.BarberUpdateWithoutTimeOffsInput, Prisma.BarberUncheckedUpdateWithoutTimeOffsInput>
+  create: Prisma.XOR<Prisma.BarberCreateWithoutTimeOffsInput, Prisma.BarberUncheckedCreateWithoutTimeOffsInput>
+  where?: Prisma.BarberWhereInput
+}
+
+export type BarberUpdateToOneWithWhereWithoutTimeOffsInput = {
+  where?: Prisma.BarberWhereInput
+  data: Prisma.XOR<Prisma.BarberUpdateWithoutTimeOffsInput, Prisma.BarberUncheckedUpdateWithoutTimeOffsInput>
+}
+
+export type BarberUpdateWithoutTimeOffsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  location?: Prisma.LocationUpdateOneRequiredWithoutBarbersNestedInput
+  services?: Prisma.BarberServiceUpdateManyWithoutBarberNestedInput
+  workingHours?: Prisma.WorkingHoursUpdateManyWithoutBarberNestedInput
+}
+
+export type BarberUncheckedUpdateWithoutTimeOffsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  locationId?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  services?: Prisma.BarberServiceUncheckedUpdateManyWithoutBarberNestedInput
+  workingHours?: Prisma.WorkingHoursUncheckedUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberCreateManyLocationInput = {
@@ -691,6 +790,7 @@ export type BarberUpdateWithoutLocationInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.BarberServiceUpdateManyWithoutBarberNestedInput
   workingHours?: Prisma.WorkingHoursUpdateManyWithoutBarberNestedInput
+  timeOffs?: Prisma.TimeOffUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateWithoutLocationInput = {
@@ -703,6 +803,7 @@ export type BarberUncheckedUpdateWithoutLocationInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.BarberServiceUncheckedUpdateManyWithoutBarberNestedInput
   workingHours?: Prisma.WorkingHoursUncheckedUpdateManyWithoutBarberNestedInput
+  timeOffs?: Prisma.TimeOffUncheckedUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateManyWithoutLocationInput = {
@@ -723,11 +824,13 @@ export type BarberUncheckedUpdateManyWithoutLocationInput = {
 export type BarberCountOutputType = {
   services: number
   workingHours: number
+  timeOffs: number
 }
 
 export type BarberCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   services?: boolean | BarberCountOutputTypeCountServicesArgs
   workingHours?: boolean | BarberCountOutputTypeCountWorkingHoursArgs
+  timeOffs?: boolean | BarberCountOutputTypeCountTimeOffsArgs
 }
 
 /**
@@ -754,6 +857,13 @@ export type BarberCountOutputTypeCountWorkingHoursArgs<ExtArgs extends runtime.T
   where?: Prisma.WorkingHoursWhereInput
 }
 
+/**
+ * BarberCountOutputType without action
+ */
+export type BarberCountOutputTypeCountTimeOffsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.TimeOffWhereInput
+}
+
 
 export type BarberSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -767,6 +877,7 @@ export type BarberSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   location?: boolean | Prisma.LocationDefaultArgs<ExtArgs>
   services?: boolean | Prisma.Barber$servicesArgs<ExtArgs>
   workingHours?: boolean | Prisma.Barber$workingHoursArgs<ExtArgs>
+  timeOffs?: boolean | Prisma.Barber$timeOffsArgs<ExtArgs>
   _count?: boolean | Prisma.BarberCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["barber"]>
 
@@ -810,6 +921,7 @@ export type BarberInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   location?: boolean | Prisma.LocationDefaultArgs<ExtArgs>
   services?: boolean | Prisma.Barber$servicesArgs<ExtArgs>
   workingHours?: boolean | Prisma.Barber$workingHoursArgs<ExtArgs>
+  timeOffs?: boolean | Prisma.Barber$timeOffsArgs<ExtArgs>
   _count?: boolean | Prisma.BarberCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type BarberIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -825,6 +937,7 @@ export type $BarberPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
     location: Prisma.$LocationPayload<ExtArgs>
     services: Prisma.$BarberServicePayload<ExtArgs>[]
     workingHours: Prisma.$WorkingHoursPayload<ExtArgs>[]
+    timeOffs: Prisma.$TimeOffPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1232,6 +1345,7 @@ export interface Prisma__BarberClient<T, Null = never, ExtArgs extends runtime.T
   location<T extends Prisma.LocationDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LocationDefaultArgs<ExtArgs>>): Prisma.Prisma__LocationClient<runtime.Types.Result.GetResult<Prisma.$LocationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   services<T extends Prisma.Barber$servicesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Barber$servicesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$BarberServicePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   workingHours<T extends Prisma.Barber$workingHoursArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Barber$workingHoursArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WorkingHoursPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  timeOffs<T extends Prisma.Barber$timeOffsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Barber$timeOffsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TimeOffPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1715,6 +1829,30 @@ export type Barber$workingHoursArgs<ExtArgs extends runtime.Types.Extensions.Int
   take?: number
   skip?: number
   distinct?: Prisma.WorkingHoursScalarFieldEnum | Prisma.WorkingHoursScalarFieldEnum[]
+}
+
+/**
+ * Barber.timeOffs
+ */
+export type Barber$timeOffsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the TimeOff
+   */
+  select?: Prisma.TimeOffSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the TimeOff
+   */
+  omit?: Prisma.TimeOffOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TimeOffInclude<ExtArgs> | null
+  where?: Prisma.TimeOffWhereInput
+  orderBy?: Prisma.TimeOffOrderByWithRelationInput | Prisma.TimeOffOrderByWithRelationInput[]
+  cursor?: Prisma.TimeOffWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.TimeOffScalarFieldEnum | Prisma.TimeOffScalarFieldEnum[]
 }
 
 /**

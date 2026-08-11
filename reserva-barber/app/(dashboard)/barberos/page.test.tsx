@@ -235,3 +235,27 @@ describe('BarbersPage — working hours indicator', () => {
     ).toHaveAttribute('href', '/barberos/barber-1/horarios');
   });
 });
+
+// ─── M5b — route into the absences editor ────────────────────────────────────
+
+describe('BarbersPage — absences route', () => {
+  it('should_link_to_the_absences_editor_with_an_accessible_name', async () => {
+    mockListBarbers.mockResolvedValue([
+      {
+        barber: { id: 'barber-1', locationId: 'loc-1', displayName: 'Ana', bio: null, isActive: true },
+        locationName: 'Sucursal Centro',
+        locationIsActive: true,
+      },
+    ]);
+    mockListOwnerLocations.mockResolvedValue([
+      { id: 'loc-1', name: 'Sucursal Centro', isActive: true, ownerId: 'owner-1', address: null },
+    ]);
+
+    render(await BarbersPage());
+
+    expect(screen.getByRole('link', { name: COPY.timeOff.manageLabel('Ana') })).toHaveAttribute(
+      'href',
+      '/barberos/barber-1/ausencias'
+    );
+  });
+});
