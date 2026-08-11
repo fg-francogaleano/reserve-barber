@@ -69,7 +69,7 @@
 - [x] 9.4 Manually verify: set a week, reload, confirm the wall-clock times are unchanged; clear a day; clear the whole week
 - [x] 9.5 Verify the editor at a 360px viewport
 - [x] 9.6 Verify the editor submits before hydration and with JavaScript disabled
-- [ ] 9.7 Verify on `next dev` (**done**), on the local `workerd` preview (**not done** — needs a login on that origin), and against the deployed Worker (**not done** — needs explicit authorisation). The runtime risk this task existed for is already discharged by the isolated `workerd` gate in group 1
+- [x] 9.7 Verified on `next dev`, on the local `workerd` preview, and against the deployed Worker (version `b8c1f185`, on the owner's explicit authorisation). On both runtimes: wall-clock round trip exact (07:45 stored as 465 and returned as 07:45 — an offset leak would have shown 04:45 or 10:45), the schedule indicator and its `groupBy` correct, a half-filled day rejected naming the weekday, echo-back returning the submitted value rather than the stored one, and the whole week cleared. The post-deploy HTML was requested twice before concluding anything, per the M4 propagation lesson
 
 ## 10. Closeout
 
