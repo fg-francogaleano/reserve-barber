@@ -111,4 +111,5 @@
 - [x] 11.2 Update `docs/tech-debt.md` with the outcomes of §9 — T18 and T20 moved to a new Closed section, T15 discharged, T11 and T8 re-evaluated, T21 added
 - [x] 11.3 Tick M4 in `docs/roadmap.md`
 - [ ] 11.4 Run `/opsx:verify`, then archive the change and sync `barber-service-assignment` as a new capability with the three delta specs — verify run; archive still pending
-- [ ] 11.5 Commit to `feat/m4-barber-service-assignment` and open the PR to `main` — nothing committed; the working tree is left for review
+- [x] 11.5 Commit to `feat/m4-barber-service-assignment` and open the PR to `main` — commit `e3c5f61`, PR #6. Branched from `origin/main` rather than from `feat/m3-service-catalog`, since M3 was already merged and the trees were identical
+- [x] 11.6 **Added:** adversarial-review findings recorded as T22–T26 instead of fixed, per the owner's call. The two spec rules they touch (`barber-service-assignment` → submitted-set bound, `service-catalog` → bookability) are marked **provisional**, so the archive does not freeze an arithmetic slip and an unmade product decision as normative
