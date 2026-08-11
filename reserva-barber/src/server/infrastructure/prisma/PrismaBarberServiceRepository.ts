@@ -11,6 +11,17 @@ import type { PrismaClient, Prisma } from '@/generated/prisma/client';
  */
 const ownedBy = (ownerId: string) => ({ location: { ownerId } });
 
+/**
+ * Owner scope **plus** the branch being open.
+ *
+ * Distinct from `ownedBy` on purpose: that one answers "does this row belong to
+ * the owner", this one answers "can a client reach it". The booking flow selects
+ * a location first, so a barber at a deactivated branch is unreachable no matter
+ * how active the barber is. Reusing the same relation traversal means the extra
+ * term costs no additional query.
+ */
+const reachableAt = (ownerId: string) => ({ location: { ownerId, isActive: true } });
+
 export class PrismaBarberServiceRepository implements IBarberServiceRepository {
   constructor(private readonly db: PrismaClient) {}
 
@@ -82,16 +93,22 @@ export class PrismaBarberServiceRepository implements IBarberServiceRepository {
   }
 
   /**
-   * Inactive barbers are excluded here rather than by the caller: a service
-   * assigned exclusively to inactive barbers is not bookable (data-model.md
-   * §6), and leaving that filter to each caller is how the two disagree.
+   * Backs the bookability marker, so both exclusions live here rather than at
+   * the caller: a service assigned exclusively to inactive barbers, or
+   * exclusively to barbers at closed branches, is not bookable
+   * (`data-model.md` §6). Leaving either filter to each caller is how two
+   * callers end up disagreeing about what "bookable" means.
+   *
+   * `countServicesByBarber` is deliberately **not** filtered this way — it
+   * answers "how many services is this barber assigned to", which stays true
+   * whether or not the branch is open.
    */
   async countActiveBarbersByService(ownerId: string): Promise<Map<string, number>> {
     const rows = await this.db.barberService.groupBy({
       by: ['serviceId'],
       where: {
         service: { ownerId },
-        barber: { isActive: true, ...ownedBy(ownerId) },
+        barber: { isActive: true, ...reachableAt(ownerId) },
       },
       _count: { _all: true },
     });
