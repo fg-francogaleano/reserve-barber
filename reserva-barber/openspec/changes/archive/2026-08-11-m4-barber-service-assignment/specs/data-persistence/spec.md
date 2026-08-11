@@ -105,6 +105,10 @@ The bound SHALL be proven by test rather than documented, and the re-audit SHALL
 - **WHEN** the barber and assignment write paths are reviewed after this change
 - **THEN** no assignment insert is nested inside a barber create or update
 
+#### Scenario: The limitation is documented
+- **WHEN** `docs/tech-debt.md` is reviewed after this change
+- **THEN** it records that the M4 trigger is discharged, why the bound now holds by construction rather than by care, and the condition that would invalidate it again
+
 ### Requirement: Service unique-violation translation is bounded to one business constraint
 A unique-constraint violation raised by the database during a service write SHALL be translated into the duplicate-name domain error, so no Prisma error text reaches the presentation layer.
 
@@ -119,6 +123,10 @@ No foreign-key violation translation is required: `Service`'s only foreign key i
 #### Scenario: An assignment violation cannot be mistaken for a duplicate service name
 - **WHEN** a unique violation originating from the assignment table is raised
 - **THEN** it does not surface as the duplicate-name domain error
+
+#### Scenario: The limitation is documented
+- **WHEN** `docs/tech-debt.md` is reviewed after this change
+- **THEN** it records that the M4 trigger is discharged for the service aggregate as well, and that the re-audit covered both aggregates rather than only the one this change edits
 
 ### Requirement: Constraint-violation diagnostics exclude submitted business data
 When a database error is recognized as a constraint violation, the log entry SHALL record the driver's error code and the operation, and MUST NOT record the driver's error message. A PostgreSQL unique-violation message embeds the offending column values, so logging it verbatim writes business data into the log stream and allows a submitted name containing quotes or newlines to forge fields in structured log output.
@@ -144,6 +152,6 @@ This requirement applies to the service write paths, to the assignment write and
 - **WHEN** an unexpected database error that is not a recognized constraint violation is caught
 - **THEN** the log entry still records its message so the failure can be diagnosed
 
-#### Scenario: The remaining exposure is recorded, not silently changed
+#### Scenario: The shipped exposure is recorded, not silently changed
 - **WHEN** `docs/tech-debt.md` is reviewed after this change
-- **THEN** it records that the location write path still logs raw driver messages, and the trigger for correcting it
+- **THEN** it records that the barber write path is corrected, that the location write path still logs raw driver messages, and the trigger for correcting the latter

@@ -224,3 +224,30 @@ describe('ServicesPage — bookability marker', () => {
     expect(screen.getByRole('status')).toHaveTextContent(COPY.services.notBookableBadge);
   });
 });
+
+describe('ServicesPage — a closed branch suppresses bookability', () => {
+  const active = new Service('svc-1', 'Corte', null, '4500.00', 30, true);
+
+  it('should_mark_a_service_whose_only_barbers_work_at_a_closed_branch', async () => {
+    mockListServices.mockResolvedValue([active]);
+    // The repository excludes barbers at inactive locations, so "assigned only
+    // at a closed branch" arrives here as zero — the booking flow selects a
+    // location first, so no client could ever reach that service.
+    mockCountActiveBarbersByService.mockResolvedValue(new Map([['svc-1', 0]]));
+
+    render(await ServicesPage());
+
+    expect(screen.getByText(COPY.services.notBookableBadge)).toBeInTheDocument();
+  });
+
+  it('should_clear_the_marker_when_one_open_branch_remains', async () => {
+    mockListServices.mockResolvedValue([active]);
+    // Two assigned barbers, one at a closed branch: the count sees only the
+    // reachable one, and one is enough.
+    mockCountActiveBarbersByService.mockResolvedValue(new Map([['svc-1', 1]]));
+
+    render(await ServicesPage());
+
+    expect(screen.queryByText(COPY.services.notBookableBadge)).toBeNull();
+  });
+});

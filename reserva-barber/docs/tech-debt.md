@@ -374,8 +374,16 @@ Unreachable today because service deactivation does not exist. The requirement "
 
 - **Trigger:** M6 (service deactivation), or any change that lets total services exceed the active cap.
 
-### T23 — Bookability ignores whether the barber's location is active
-**Status:** **undecided, not merely deferred** · **Effort:** ~1 h once decided · **Added:** M4 (2026-08-10, adversarial review)
+### T23 — Bookability is reported per service, not per (service, location)
+**Status:** deferred — **the decision half is closed, the modelling half is not** · **Effort:** ~2 h · **Added:** M4 (2026-08-10, adversarial review) · **Half-closed:** M4a (2026-08-11)
+
+**Closed at M4a: a closed branch now suppresses bookability.** The original question — whether a barber at a deactivated location should count — is answered **no**. The booking flow selects a location first (B2), so a barber at a closed branch is unreachable by any booking, and a dashboard that called such a service bookable was asserting revenue that could not be earned. `countActiveBarbersByService` now requires `barber.location.isActive`, the `service-catalog` requirement is normative rather than provisional, and `scripts/m4a-gate.ts` proves the predicate discriminates against the real database.
+
+**Still open: the unit of bookability is wrong.** Because the client picks a branch before a service, the honest unit is the **(service, location) pair**, not the service. A service with active barbers at Centro and none at Norte is bookable at Centro and dead at Norte, and the dashboard reports a single "bookable" that hides the second half. The owner cannot see that a branch offers nothing.
+
+Not modelled now because B2 has not defined how it presents services per branch, and building a per-location dashboard against a spec that does not exist is designing for an imagined consumer. The aggregate already groups by `serviceId`; extending it to `(serviceId, locationId)` is mechanical once B2 fixes the shape.
+
+- **Trigger:** B2 (public location → service → barber selection).
 
 `countActiveBarbersByService` filters `barber.isActive` but not `barber.location.isActive`, so a service performed only by barbers at a **deactivated branch** is presented as bookable on the dashboard.
 

@@ -184,7 +184,7 @@ describe('PrismaBarberServiceRepository - counts are one aggregate each', () => 
       by: ['serviceId'],
       where: {
         service: { ownerId: OWNER },
-        barber: { isActive: true, location: { ownerId: OWNER } },
+        barber: { isActive: true, location: { ownerId: OWNER, isActive: true } },
       },
       _count: { _all: true },
     });
@@ -196,5 +196,49 @@ describe('PrismaBarberServiceRepository - counts are one aggregate each', () => 
     const counts = await new PrismaBarberServiceRepository(db).countActiveBarbersByService(OWNER);
 
     expect(counts.size).toBe(0);
+  });
+});
+
+// ─── Bookability excludes barbers at closed branches ─────────────────────────
+
+describe('PrismaBarberServiceRepository - the per-service count excludes closed branches', () => {
+  it('should_require_both_the_barber_and_the_location_to_be_active', async () => {
+    const { db, barberService } = createDb();
+
+    await new PrismaBarberServiceRepository(db).countActiveBarbersByService(OWNER);
+
+    // The location term extends the relation traversal that already scopes by
+    // owner — a barber at a deactivated branch cannot be reached by a booking,
+    // because the public flow selects a location first.
+    expect(barberService.groupBy).toHaveBeenCalledWith({
+      by: ['serviceId'],
+      where: {
+        service: { ownerId: OWNER },
+        barber: { isActive: true, location: { ownerId: OWNER, isActive: true } },
+      },
+      _count: { _all: true },
+    });
+  });
+
+  it('should_still_issue_exactly_one_aggregate', async () => {
+    const { db, barberService } = createDb();
+
+    await new PrismaBarberServiceRepository(db).countActiveBarbersByService(OWNER);
+
+    expect(barberService.groupBy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should_not_filter_the_per_barber_count_by_location_activity', async () => {
+    const { db, barberService } = createDb();
+
+    await new PrismaBarberServiceRepository(db).countServicesByBarber(OWNER);
+
+    // Deliberate asymmetry: this count answers "how many services is this
+    // barber assigned to", which stays true whether or not the branch is open.
+    expect(barberService.groupBy).toHaveBeenCalledWith({
+      by: ['barberId'],
+      where: { barber: { location: { ownerId: OWNER } } },
+      _count: { _all: true },
+    });
   });
 });
