@@ -75,7 +75,7 @@ The fix is the one M1 applied: echo the submitted email back in the action's sta
 - **Trigger:** confirm it in a browser first — one failed login answers the question. If confirmed,
   it is a bug against an existing requirement, not debt, and should be scheduled as its own change.
 
-### T8 — Concurrent edits to the same location, barber or service silently overwrite each other
+### T8 — Concurrent edits to the same location, barber, service or schedule silently overwrite each other
 **Status:** accepted · **Effort:** ~2 h if it becomes real · **Last evaluated:** M3 (2026-08-09)
 
 M1 ships no version column and no `updatedAt` precondition on the location update. M2 inherits the
@@ -99,6 +99,13 @@ The fix was design, not concurrency control. Removals are confined to the ids th
 rendered (`data-model.md` §7, design D3), which makes collateral deletion unreachable rather than
 unlikely. What remains is a conflict over an id **both** views rendered, which is genuinely
 last-write-wins and is the same exposure M1–M3 already carry. So no version column here either.
+
+**Extended at M5a1 (2026-08-11).** The entry never named **working hours**, which M5a added with a
+whole-week replacement: a stale tab reinstates its own snapshot of all seven days over whatever a
+second tab saved. This is *not* the collateral-deletion class M4 had to solve — the schedule form
+renders every day, so nothing is removed that was never displayed — it is plain last-write-wins on
+values, the same exposure the scalar forms carry. Re-accepted on the same reasoning, and named here
+so the next set-valued write does not have to rediscover which class it belongs to.
 
 - **Trigger:** a second `Owner` row becomes possible, or story D3 (per-barber calendar) where a
   stale overwrite starts costing appointments rather than a retyped name. **Also:** any future
@@ -402,12 +409,14 @@ Fix is to branch the empty state on "no services at all" versus "none currently 
 
 - **Trigger:** M6 (service deactivation).
 
-### T25 — The assignment route parameter is decorative for the write
+### T25 — The assignment and schedule route parameters are decorative for the write
 **Status:** accepted · **Effort:** ~30 min · **Added:** M4 (2026-08-10, adversarial review)
 
 `setBarberServicesAction` reads `barberId` from a hidden form field, not from the route segment, so a payload can name a different barber than the URL displays. This is **not** a tenancy hole — `findByIdForOwner` still scopes it to the session owner — and it is the ordinary shape of a Server Action, which receives no route params.
 
 What is unrecorded is whether that mismatch is intended. Today a crafted payload silently edits a different barber the owner owns, and no scenario says whether that should be honoured or refused.
+
+**Extended at M5a1 (2026-08-11).** The same shape exists in `setWorkingHoursAction`: `barberId` comes from a hidden body field, not the route segment, so a payload can name a different barber than the URL displays. Still not a tenancy hole — `findByIdForOwner` scopes it to the session owner — and still unrecorded as to whether the mismatch is intended.
 
 - **Trigger:** a second administrative user (which would make the mismatch a privilege question rather than a UX one), or any report of an edit landing on the wrong barber.
 
