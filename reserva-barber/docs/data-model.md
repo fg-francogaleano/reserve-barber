@@ -216,13 +216,20 @@ A recurring weekly working window for a barber, used to generate available slots
 - `id`: Unique identifier (PK, cuid)
 - `barberId`: Foreign key → Barber (required)
 - `dayOfWeek`: Day of week (Int, 0 = Sunday … 6 = Saturday, required)
-- `startTime`: Start of the working window (stored as minutes-from-midnight `Int`, or `String` "HH:mm", required)
-- `endTime`: End of the working window (same format, required)
+- `startMinute`: Start of the window, **minutes from midnight in business local time** (Int, required)
+- `endMinute`: End of the window, same units (Int, required)
+- `createdAt`: Timestamp. There is deliberately no `updatedAt` — the write replaces rows rather than editing them.
 
 **Validation Rules:**
-- `dayOfWeek`: 0–6
-- `endTime` must be after `startTime`
-- Multiple windows per day are allowed (e.g., split shifts) but must not overlap for the same barber/day
+- `dayOfWeek`: an **integer** 0–6. A non-integer is rejected explicitly: `0.5` satisfies a naive range comparison and then matches no day, so the window it carries would be discarded while the save reported success.
+- `endMinute` must be strictly greater than `startMinute`. A zero-length window is rejected — a window containing no time is not a working day, it is the absence of one.
+- **A window must not cross midnight.** The owner confirmed no barber works past 23:00, so `endMinute ≤ 1439` and the wrap-around case is unrepresentable by construction rather than by handling.
+- Both values must be multiples of `SLOT_GRANULARITY_MINUTES` (5) — the same constant service duration uses (§6). A window that does not tile the grid produces slot times no other part of the system expects.
+- **A day with no window is a non-working day.** There is deliberately no "closed" flag: absence of a window *is* the absence. A flag would create two representations of one fact, which can then disagree.
+- **Times are stored as wall clock and never converted at rest.** A recurring schedule is a statement about a clock face ("we open at nine"), not about an instant. Storing an offset would mean a change in civil time silently reinterprets what the owner said. Conversion to an instant happens only when comparing a schedule against a booking, and lives in exactly one module.
+- **One window per day in the product, several permitted by the schema.** The unique constraint is `(barberId, dayOfWeek, startMinute)`, not `(barberId, dayOfWeek)`. The editor currently offers a single continuous window per day; the wider constraint keeps a split shift (9–13, 16–20 — the common local pattern) representable without a migration over live data. Narrowing it would trade a free index column today for a migration later.
+  - **Known consequence:** with one window, a barber working a split shift must enter 9–20, and slot generation will offer appointments during the midday break. That is a real booking defect, it belongs to the availability story, and it is recorded in `tech-debt.md` rather than left to be discovered.
+- No overlap rule is enforced today because one window per day cannot overlap anything. It returns with the second window.
 
 **Relationships:**
 - `barber`: Many-to-one → Barber
@@ -547,6 +554,12 @@ erDiagram
 - **Optional fields**: Represented as nullable; required fields are non-nullable.
 - **Enum / status fields**: Defined as native PostgreSQL enums via Prisma (`BookingStatus`, `PaymentMethod`, `PaymentStatus`, `ReceiptStatus`, `DepositType`, `SocialPlatform`, `CancelledBy`) and validated at the application layer.
 - **Timestamps**: `createdAt` via `@default(now())`; `updatedAt` via `@updatedAt`.
+- **Stored time — two kinds, never mixed.** The distinction is recorded here rather than left to be inferred from column types:
+  - A **recurring schedule** (`WorkingHours`, §8) is stored as **wall-clock minutes from midnight in business local time**, with no offset applied at rest.
+  - A **point in time** (`TimeOff` §9, `Booking.startTime`/`endTime`/`holdExpiresAt` §11, and every `createdAt`/`updatedAt`) is a **UTC instant** and must use a zone-aware column, `@db.Timestamptz`.
+
+  Prisma's default for `DateTime` is a zone-**less** `TIMESTAMP`, which is harmless for `createdAt` and wrong for anything compared against a human's clock. `Booking.startTime` must therefore declare `@db.Timestamptz` explicitly when it is created; inheriting the default by omission is the failure mode this convention exists to prevent.
+- **Business timezone**: `America/Argentina/Buenos_Aires`, a constant rather than a column — every branch is in Argentina. Conversion between local time and instants lives in exactly one domain module. The deployment runtime is UTC, so `getDay()`, `getHours()`, `getDate()` and `toISOString().slice(0, 10)` are **forbidden in scheduling code**: they return the UTC answer, which is wrong for the last three hours of every local day, and they return a plausible number rather than raising. Timezone data support on the runtime is proven by an executable check, because a runtime lacking it falls back to UTC silently.
 - **Money**: All amounts use `Decimal` (Prisma `@db.Decimal`) to avoid floating-point rounding errors; currency is ARS.
 - **Secrets**: `PaymentConfig.mpAccessToken` is encrypted at rest and never sent to the browser; only `mpPublicKey` is exposed to the frontend.
 - **Concurrency**: The Booking no-overlap invariant is enforced inside a database transaction (see `backend-standards.md`), never by application-level read-then-write alone.

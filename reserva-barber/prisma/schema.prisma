@@ -71,6 +71,7 @@ model Barber {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   services    BarberService[]
+  workingHours WorkingHours[]
 
   // Uniqueness is per location, not per owner: the same first name at two
   // branches is legitimate; two identically-named barbers at one branch cannot
@@ -137,4 +138,35 @@ model BarberService {
   // barberId-leading direction. The bookability read and B2's "which barbers
   // perform this service" query both lead with the service.
   @@index([serviceId])
+}
+
+/// A recurring weekly working window for a barber, consumed by slot generation.
+///
+/// `startMinute` / `endMinute` are minutes from midnight in BUSINESS LOCAL TIME
+/// — wall clock, never an instant and never offset at rest (data-model.md §8).
+/// A recurring schedule states a clock face; storing an offset would let a
+/// change in civil time silently reinterpret what the owner said.
+///
+/// No `updatedAt`: the write replaces the barber's whole week inside one
+/// transaction rather than editing rows. A working window has no natural
+/// business key, so an additive write would double the week on a retry after a
+/// committed-but-timed-out save (design D4).
+model WorkingHours {
+  id          String   @id @default(cuid())
+  barberId    String
+  barber      Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  /// 0 = Sunday … 6 = Saturday, in the BUSINESS calendar — never the runtime's.
+  dayOfWeek   Int
+  startMinute Int
+  endMinute   Int
+  createdAt   DateTime @default(now())
+
+  // Deliberately NOT (barberId, dayOfWeek). The editor offers one window per
+  // day today, but the split shift (9–13, 16–20) is the common local pattern
+  // and data-model.md §8 permits it. Keeping the wider key means restoring the
+  // second window is a UI change, not a migration over live data (design D3).
+  @@unique([barberId, dayOfWeek, startMinute])
+  // Backs the editor read and the slot generation lookup, both of which lead
+  // with the barber and filter by day.
+  @@index([barberId, dayOfWeek])
 }

@@ -147,6 +147,43 @@ export const COPY = {
     infrastructureError:
       'No pudimos guardar los cambios. Revisá los servicios asignados antes de reintentar, por las dudas de que se haya guardado.',
   },
+  workingHours: {
+    heading: (barberName: string) => `Horarios de ${barberName}`,
+    intro:
+      'Definí en qué horario trabaja este barbero cada día. Un día sin horario es un día que no trabaja.',
+    legend: 'Horario semanal',
+    manage: 'Horarios',
+    manageLabel: (barberName: string) => `Editar los horarios de ${barberName}`,
+    hasSchedule: 'Con horario',
+    noSchedule: 'Sin horario',
+    // True whether the schedule was never set or deliberately left empty: both
+    // are zero rows, and the product does not distinguish them.
+    noScheduleHint: 'Sin horario cargado no se le pueden reservar turnos.',
+    startLabel: 'Desde',
+    endLabel: 'Hasta',
+    dayNames: {
+      0: 'Domingo',
+      1: 'Lunes',
+      2: 'Martes',
+      3: 'Miércoles',
+      4: 'Jueves',
+      5: 'Viernes',
+      6: 'Sábado',
+    } as Record<number, string>,
+    barberNotFound: 'El barbero que buscás no existe.',
+    submit: 'Guardar',
+    submitting: 'Guardando…',
+    cancel: 'Cancelar',
+    dayIncomplete: 'Completá las dos horas o dejá el día vacío.',
+    dayEndNotAfterStart: 'La hora de fin tiene que ser posterior a la de inicio.',
+    dayNotOnGrid: 'Las horas tienen que ser múltiplos de 5 minutos.',
+    dayOutOfDay: 'La hora no es válida.',
+    invalidSelection: 'El horario enviado no es válido. Recargá la página e intentá de nuevo.',
+    // A timed-out write may still have committed, so a blind retry would hide a
+    // save that already happened. The retry itself is safe: the write replaces.
+    infrastructureError:
+      'No pudimos guardar los cambios. Revisá el horario antes de reintentar, por las dudas de que se haya guardado.',
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

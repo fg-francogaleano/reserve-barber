@@ -7,6 +7,7 @@ import { LocationService } from '@/server/application/services/LocationService';
 import { PrismaBarberRepository } from '@/server/infrastructure/prisma/PrismaBarberRepository';
 import { PrismaLocationRepository } from '@/server/infrastructure/prisma/PrismaLocationRepository';
 import { PrismaBarberServiceRepository } from '@/server/infrastructure/prisma/PrismaBarberServiceRepository';
+import { PrismaWorkingHoursRepository } from '@/server/infrastructure/prisma/PrismaWorkingHoursRepository';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
 import { logger } from '@/server/infrastructure/logger';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
@@ -20,20 +21,22 @@ async function fetchPageData(ownerId: string): Promise<{
   barbers: BarberWithLocation[];
   locations: Location[];
   assignedCounts: Map<string, number>;
+  barbersWithSchedule: Set<string>;
 }> {
   const db = getPrismaClient();
   try {
-    // Three queries for the whole page, not one per barber: the assignment
-    // count is a single aggregate for the owner (design D12).
-    const [barbers, locations, assignedCounts] = await Promise.all([
+    // Four queries for the whole page, not one per barber: both the assignment
+    // count and the schedule indicator are single aggregates for the owner.
+    const [barbers, locations, assignedCounts, barbersWithSchedule] = await Promise.all([
       new BarberCatalogService(
         new PrismaBarberRepository(db),
         new PrismaLocationRepository(db)
       ).listBarbers(ownerId),
       new LocationService(new PrismaLocationRepository(db)).listOwnerLocations(ownerId),
       new PrismaBarberServiceRepository(db).countServicesByBarber(ownerId),
+      new PrismaWorkingHoursRepository(db).findBarberIdsWithSchedule(ownerId),
     ]);
-    return { barbers, locations, assignedCounts };
+    return { barbers, locations, assignedCounts, barbersWithSchedule };
   } catch (error) {
     logger.error('Failed to load barberos page data', toErrorLogContext('listBarbers', error));
     throw error;
@@ -42,7 +45,7 @@ async function fetchPageData(ownerId: string): Promise<{
 
 export default async function BarbersPage() {
   const owner = await requireOwner();
-  const { barbers, locations, assignedCounts } = await fetchPageData(owner.id);
+  const { barbers, locations, assignedCounts, barbersWithSchedule } = await fetchPageData(owner.id);
 
   const hasLocations = locations.length > 0;
 
@@ -90,6 +93,19 @@ export default async function BarbersPage() {
                 <p className="text-muted-foreground text-sm">
                   {COPY.barberServices.assignedCount(assignedCounts.get(barber.id) ?? 0)}
                 </p>
+                {/* Shown for every barber, not only in the negative case: a
+                    barber with no schedule cannot be booked at any time, which
+                    is the same class of fact as having no assigned services. */}
+                {barbersWithSchedule.has(barber.id) ? (
+                  <p className="text-muted-foreground text-sm">{COPY.workingHours.hasSchedule}</p>
+                ) : (
+                  <p className="text-destructive text-sm">
+                    {COPY.workingHours.noSchedule}
+                    <span className="text-muted-foreground block text-xs">
+                      {COPY.workingHours.noScheduleHint}
+                    </span>
+                  </p>
+                )}
                 {barber.bio ? (
                   <p className="line-clamp-3 text-sm break-words">{barber.bio}</p>
                 ) : null}
@@ -107,6 +123,13 @@ export default async function BarbersPage() {
                     className="text-primary text-sm font-medium underline-offset-4 hover:underline"
                   >
                     {COPY.barberServices.manage}
+                  </Link>
+                  <Link
+                    href={`/barberos/${barber.id}/horarios`}
+                    aria-label={COPY.workingHours.manageLabel(barber.displayName)}
+                    className="text-primary text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    {COPY.workingHours.manage}
                   </Link>
                 </div>
               </CardContent>

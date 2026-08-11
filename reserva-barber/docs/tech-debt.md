@@ -422,6 +422,35 @@ Same root cause as T22: a cap that counts active rows being used to bound a quer
 
 - **Trigger:** M6 (service deactivation), together with T22.
 
+### T27 — One window per day cannot express a split shift, and slot generation will offer the break
+**Status:** accepted — **known product gap, not an oversight** · **Effort:** ~3 h · **Added:** M5a (2026-08-11)
+
+The owner chose a single continuous window per weekday. The common local pattern is a split shift — 9–13 and 16–20 — and a barber who works one must enter 9–20. Slot generation will then offer appointments at 14:00 with the shop closed: the client books, pays a deposit, and nobody is there.
+
+The defect surfaces in the availability story, not here, but it is created here and must not be discovered there. `data-model.md` §8 previously permitted multiple non-overlapping windows for exactly this reason.
+
+**The schema is deliberately left capable.** The unique constraint is `(barberId, dayOfWeek, startMinute)` rather than `(barberId, dayOfWeek)`, so restoring the second window is a UI change plus re-enabling an overlap validation — **no migration over live data**. The cost of keeping it open is one column in an index.
+
+- **Trigger:** the first barber who works a split shift, or B3 — whichever comes first. B3 must not ship assuming a single window is sufficient.
+
+### T28 — "Every day has 1440 minutes" is an assumption, not a fact
+**Status:** accepted · **Effort:** ~2 h if it becomes real · **Added:** M5a (2026-08-11)
+
+Working hours are stored as minutes from midnight, and all-day ranges are computed as local midnight to local midnight. Both are exact only while the business's timezone has no daylight saving. Argentina has observed none since 2009, so this is correct today rather than approximately correct.
+
+If DST returns, three things break together and must be revisited as one: a day is 23 or 25 hours rather than 1440 minutes, `BUSINESS_UTC_OFFSET_MINUTES` stops being a constant, and a window spanning the transition shifts by an hour. The conversion module already computes the offset per instant rather than assuming it, so the code path is prepared; the assumptions around it are not.
+
+- **Trigger:** Argentina reinstating daylight saving, or a location outside the current timezone.
+
+### T29 — Editing a schedule retroactively strands existing bookings
+**Status:** deferred · **Effort:** unknown until the booking model exists · **Added:** M5a (2026-08-11)
+
+Saving a schedule replaces the barber's week wholesale. Once bookings exist, narrowing or removing a window leaves confirmed appointments outside working hours, and nothing detects or reports it. At zero bookings — the current state — this is harmless.
+
+Same shape as T14 (barber reassignment rewriting derived history): the fix depends on what the booking model looks like, and may be either a warning that names the affected appointments or a refusal to narrow a window that has bookings inside it.
+
+- **Trigger:** B4 (booking creation), or any story that queries bookings against working hours.
+
 ### T16 — Session expiry during long free-text entry silently discards up to 500 characters
 **Status:** accepted · **Effort:** ~2–4 h (server-sent draft save or client-side autosave) · **Last evaluated:** M3 (2026-08-09)
 
