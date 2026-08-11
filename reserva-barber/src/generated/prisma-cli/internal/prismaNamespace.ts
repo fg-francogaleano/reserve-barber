@@ -388,7 +388,8 @@ export const ModelName = {
   Location: 'Location',
   Barber: 'Barber',
   Service: 'Service',
-  BarberService: 'BarberService'
+  BarberService: 'BarberService',
+  WorkingHours: 'WorkingHours'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -404,7 +405,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "owner" | "location" | "barber" | "service" | "barberService"
+    modelProps: "owner" | "location" | "barber" | "service" | "barberService" | "workingHours"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -778,6 +779,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    WorkingHours: {
+      payload: Prisma.$WorkingHoursPayload<ExtArgs>
+      fields: Prisma.WorkingHoursFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.WorkingHoursFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.WorkingHoursFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>
+        }
+        findFirst: {
+          args: Prisma.WorkingHoursFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.WorkingHoursFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>
+        }
+        findMany: {
+          args: Prisma.WorkingHoursFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>[]
+        }
+        create: {
+          args: Prisma.WorkingHoursCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>
+        }
+        createMany: {
+          args: Prisma.WorkingHoursCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.WorkingHoursCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>[]
+        }
+        delete: {
+          args: Prisma.WorkingHoursDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>
+        }
+        update: {
+          args: Prisma.WorkingHoursUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>
+        }
+        deleteMany: {
+          args: Prisma.WorkingHoursDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.WorkingHoursUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.WorkingHoursUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>[]
+        }
+        upsert: {
+          args: Prisma.WorkingHoursUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WorkingHoursPayload>
+        }
+        aggregate: {
+          args: Prisma.WorkingHoursAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateWorkingHours>
+        }
+        groupBy: {
+          args: Prisma.WorkingHoursGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.WorkingHoursGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.WorkingHoursCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.WorkingHoursCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -878,6 +953,18 @@ export const BarberServiceScalarFieldEnum = {
 } as const
 
 export type BarberServiceScalarFieldEnum = (typeof BarberServiceScalarFieldEnum)[keyof typeof BarberServiceScalarFieldEnum]
+
+
+export const WorkingHoursScalarFieldEnum = {
+  id: 'id',
+  barberId: 'barberId',
+  dayOfWeek: 'dayOfWeek',
+  startMinute: 'startMinute',
+  endMinute: 'endMinute',
+  createdAt: 'createdAt'
+} as const
+
+export type WorkingHoursScalarFieldEnum = (typeof WorkingHoursScalarFieldEnum)[keyof typeof WorkingHoursScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -1101,6 +1188,7 @@ export type GlobalOmitConfig = {
   barber?: Prisma.BarberOmit
   service?: Prisma.ServiceOmit
   barberService?: Prisma.BarberServiceOmit
+  workingHours?: Prisma.WorkingHoursOmit
 }
 
 /* Types for Logging */

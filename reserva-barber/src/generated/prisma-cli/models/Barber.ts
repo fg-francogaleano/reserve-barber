@@ -209,6 +209,7 @@ export type BarberWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"Barber"> | Date | string
   location?: Prisma.XOR<Prisma.LocationScalarRelationFilter, Prisma.LocationWhereInput>
   services?: Prisma.BarberServiceListRelationFilter
+  workingHours?: Prisma.WorkingHoursListRelationFilter
 }
 
 export type BarberOrderByWithRelationInput = {
@@ -222,6 +223,7 @@ export type BarberOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   location?: Prisma.LocationOrderByWithRelationInput
   services?: Prisma.BarberServiceOrderByRelationAggregateInput
+  workingHours?: Prisma.WorkingHoursOrderByRelationAggregateInput
 }
 
 export type BarberWhereUniqueInput = Prisma.AtLeast<{
@@ -239,6 +241,7 @@ export type BarberWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"Barber"> | Date | string
   location?: Prisma.XOR<Prisma.LocationScalarRelationFilter, Prisma.LocationWhereInput>
   services?: Prisma.BarberServiceListRelationFilter
+  workingHours?: Prisma.WorkingHoursListRelationFilter
 }, "id" | "locationId_displayName">
 
 export type BarberOrderByWithAggregationInput = {
@@ -279,6 +282,7 @@ export type BarberCreateInput = {
   updatedAt?: Date | string
   location: Prisma.LocationCreateNestedOneWithoutBarbersInput
   services?: Prisma.BarberServiceCreateNestedManyWithoutBarberInput
+  workingHours?: Prisma.WorkingHoursCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUncheckedCreateInput = {
@@ -291,6 +295,7 @@ export type BarberUncheckedCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   services?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutBarberInput
+  workingHours?: Prisma.WorkingHoursUncheckedCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUpdateInput = {
@@ -303,6 +308,7 @@ export type BarberUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.LocationUpdateOneRequiredWithoutBarbersNestedInput
   services?: Prisma.BarberServiceUpdateManyWithoutBarberNestedInput
+  workingHours?: Prisma.WorkingHoursUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateInput = {
@@ -315,6 +321,7 @@ export type BarberUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.BarberServiceUncheckedUpdateManyWithoutBarberNestedInput
+  workingHours?: Prisma.WorkingHoursUncheckedUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberCreateManyInput = {
@@ -458,6 +465,20 @@ export type BarberUpdateOneRequiredWithoutServicesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.BarberUpdateToOneWithWhereWithoutServicesInput, Prisma.BarberUpdateWithoutServicesInput>, Prisma.BarberUncheckedUpdateWithoutServicesInput>
 }
 
+export type BarberCreateNestedOneWithoutWorkingHoursInput = {
+  create?: Prisma.XOR<Prisma.BarberCreateWithoutWorkingHoursInput, Prisma.BarberUncheckedCreateWithoutWorkingHoursInput>
+  connectOrCreate?: Prisma.BarberCreateOrConnectWithoutWorkingHoursInput
+  connect?: Prisma.BarberWhereUniqueInput
+}
+
+export type BarberUpdateOneRequiredWithoutWorkingHoursNestedInput = {
+  create?: Prisma.XOR<Prisma.BarberCreateWithoutWorkingHoursInput, Prisma.BarberUncheckedCreateWithoutWorkingHoursInput>
+  connectOrCreate?: Prisma.BarberCreateOrConnectWithoutWorkingHoursInput
+  upsert?: Prisma.BarberUpsertWithoutWorkingHoursInput
+  connect?: Prisma.BarberWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.BarberUpdateToOneWithWhereWithoutWorkingHoursInput, Prisma.BarberUpdateWithoutWorkingHoursInput>, Prisma.BarberUncheckedUpdateWithoutWorkingHoursInput>
+}
+
 export type BarberCreateWithoutLocationInput = {
   id?: string
   displayName: string
@@ -467,6 +488,7 @@ export type BarberCreateWithoutLocationInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   services?: Prisma.BarberServiceCreateNestedManyWithoutBarberInput
+  workingHours?: Prisma.WorkingHoursCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUncheckedCreateWithoutLocationInput = {
@@ -478,6 +500,7 @@ export type BarberUncheckedCreateWithoutLocationInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   services?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutBarberInput
+  workingHours?: Prisma.WorkingHoursUncheckedCreateNestedManyWithoutBarberInput
 }
 
 export type BarberCreateOrConnectWithoutLocationInput = {
@@ -529,6 +552,7 @@ export type BarberCreateWithoutServicesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   location: Prisma.LocationCreateNestedOneWithoutBarbersInput
+  workingHours?: Prisma.WorkingHoursCreateNestedManyWithoutBarberInput
 }
 
 export type BarberUncheckedCreateWithoutServicesInput = {
@@ -540,6 +564,7 @@ export type BarberUncheckedCreateWithoutServicesInput = {
   isActive?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  workingHours?: Prisma.WorkingHoursUncheckedCreateNestedManyWithoutBarberInput
 }
 
 export type BarberCreateOrConnectWithoutServicesInput = {
@@ -567,6 +592,7 @@ export type BarberUpdateWithoutServicesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   location?: Prisma.LocationUpdateOneRequiredWithoutBarbersNestedInput
+  workingHours?: Prisma.WorkingHoursUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateWithoutServicesInput = {
@@ -578,6 +604,71 @@ export type BarberUncheckedUpdateWithoutServicesInput = {
   isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  workingHours?: Prisma.WorkingHoursUncheckedUpdateManyWithoutBarberNestedInput
+}
+
+export type BarberCreateWithoutWorkingHoursInput = {
+  id?: string
+  displayName: string
+  bio?: string | null
+  avatarUrl?: string | null
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  location: Prisma.LocationCreateNestedOneWithoutBarbersInput
+  services?: Prisma.BarberServiceCreateNestedManyWithoutBarberInput
+}
+
+export type BarberUncheckedCreateWithoutWorkingHoursInput = {
+  id?: string
+  locationId: string
+  displayName: string
+  bio?: string | null
+  avatarUrl?: string | null
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  services?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutBarberInput
+}
+
+export type BarberCreateOrConnectWithoutWorkingHoursInput = {
+  where: Prisma.BarberWhereUniqueInput
+  create: Prisma.XOR<Prisma.BarberCreateWithoutWorkingHoursInput, Prisma.BarberUncheckedCreateWithoutWorkingHoursInput>
+}
+
+export type BarberUpsertWithoutWorkingHoursInput = {
+  update: Prisma.XOR<Prisma.BarberUpdateWithoutWorkingHoursInput, Prisma.BarberUncheckedUpdateWithoutWorkingHoursInput>
+  create: Prisma.XOR<Prisma.BarberCreateWithoutWorkingHoursInput, Prisma.BarberUncheckedCreateWithoutWorkingHoursInput>
+  where?: Prisma.BarberWhereInput
+}
+
+export type BarberUpdateToOneWithWhereWithoutWorkingHoursInput = {
+  where?: Prisma.BarberWhereInput
+  data: Prisma.XOR<Prisma.BarberUpdateWithoutWorkingHoursInput, Prisma.BarberUncheckedUpdateWithoutWorkingHoursInput>
+}
+
+export type BarberUpdateWithoutWorkingHoursInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  location?: Prisma.LocationUpdateOneRequiredWithoutBarbersNestedInput
+  services?: Prisma.BarberServiceUpdateManyWithoutBarberNestedInput
+}
+
+export type BarberUncheckedUpdateWithoutWorkingHoursInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  locationId?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  bio?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  services?: Prisma.BarberServiceUncheckedUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberCreateManyLocationInput = {
@@ -599,6 +690,7 @@ export type BarberUpdateWithoutLocationInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.BarberServiceUpdateManyWithoutBarberNestedInput
+  workingHours?: Prisma.WorkingHoursUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateWithoutLocationInput = {
@@ -610,6 +702,7 @@ export type BarberUncheckedUpdateWithoutLocationInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.BarberServiceUncheckedUpdateManyWithoutBarberNestedInput
+  workingHours?: Prisma.WorkingHoursUncheckedUpdateManyWithoutBarberNestedInput
 }
 
 export type BarberUncheckedUpdateManyWithoutLocationInput = {
@@ -629,10 +722,12 @@ export type BarberUncheckedUpdateManyWithoutLocationInput = {
 
 export type BarberCountOutputType = {
   services: number
+  workingHours: number
 }
 
 export type BarberCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   services?: boolean | BarberCountOutputTypeCountServicesArgs
+  workingHours?: boolean | BarberCountOutputTypeCountWorkingHoursArgs
 }
 
 /**
@@ -652,6 +747,13 @@ export type BarberCountOutputTypeCountServicesArgs<ExtArgs extends runtime.Types
   where?: Prisma.BarberServiceWhereInput
 }
 
+/**
+ * BarberCountOutputType without action
+ */
+export type BarberCountOutputTypeCountWorkingHoursArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.WorkingHoursWhereInput
+}
+
 
 export type BarberSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -664,6 +766,7 @@ export type BarberSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   updatedAt?: boolean
   location?: boolean | Prisma.LocationDefaultArgs<ExtArgs>
   services?: boolean | Prisma.Barber$servicesArgs<ExtArgs>
+  workingHours?: boolean | Prisma.Barber$workingHoursArgs<ExtArgs>
   _count?: boolean | Prisma.BarberCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["barber"]>
 
@@ -706,6 +809,7 @@ export type BarberOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
 export type BarberInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   location?: boolean | Prisma.LocationDefaultArgs<ExtArgs>
   services?: boolean | Prisma.Barber$servicesArgs<ExtArgs>
+  workingHours?: boolean | Prisma.Barber$workingHoursArgs<ExtArgs>
   _count?: boolean | Prisma.BarberCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type BarberIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -720,6 +824,7 @@ export type $BarberPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
   objects: {
     location: Prisma.$LocationPayload<ExtArgs>
     services: Prisma.$BarberServicePayload<ExtArgs>[]
+    workingHours: Prisma.$WorkingHoursPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1126,6 +1231,7 @@ export interface Prisma__BarberClient<T, Null = never, ExtArgs extends runtime.T
   readonly [Symbol.toStringTag]: "PrismaPromise"
   location<T extends Prisma.LocationDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LocationDefaultArgs<ExtArgs>>): Prisma.Prisma__LocationClient<runtime.Types.Result.GetResult<Prisma.$LocationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   services<T extends Prisma.Barber$servicesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Barber$servicesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$BarberServicePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  workingHours<T extends Prisma.Barber$workingHoursArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Barber$workingHoursArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WorkingHoursPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1585,6 +1691,30 @@ export type Barber$servicesArgs<ExtArgs extends runtime.Types.Extensions.Interna
   take?: number
   skip?: number
   distinct?: Prisma.BarberServiceScalarFieldEnum | Prisma.BarberServiceScalarFieldEnum[]
+}
+
+/**
+ * Barber.workingHours
+ */
+export type Barber$workingHoursArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the WorkingHours
+   */
+  select?: Prisma.WorkingHoursSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the WorkingHours
+   */
+  omit?: Prisma.WorkingHoursOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.WorkingHoursInclude<ExtArgs> | null
+  where?: Prisma.WorkingHoursWhereInput
+  orderBy?: Prisma.WorkingHoursOrderByWithRelationInput | Prisma.WorkingHoursOrderByWithRelationInput[]
+  cursor?: Prisma.WorkingHoursWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.WorkingHoursScalarFieldEnum | Prisma.WorkingHoursScalarFieldEnum[]
 }
 
 /**

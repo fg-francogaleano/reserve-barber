@@ -81,3 +81,18 @@ export type Service = Prisma.ServiceModel
  * permitted writer of this table (M4 design D6).
  */
 export type BarberService = Prisma.BarberServiceModel
+/**
+ * Model WorkingHours
+ * A recurring weekly working window for a barber, consumed by slot generation.
+ * 
+ * `startMinute` / `endMinute` are minutes from midnight in BUSINESS LOCAL TIME
+ * — wall clock, never an instant and never offset at rest (data-model.md §8).
+ * A recurring schedule states a clock face; storing an offset would let a
+ * change in civil time silently reinterpret what the owner said.
+ * 
+ * No `updatedAt`: the write replaces the barber's whole week inside one
+ * transaction rather than editing rows. A working window has no natural
+ * business key, so an additive write would double the week on a retry after a
+ * committed-but-timed-out save (design D4).
+ */
+export type WorkingHours = Prisma.WorkingHoursModel

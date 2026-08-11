@@ -28,7 +28,9 @@ Everything required for a minimally usable product: the owner can set up the bus
 - [x] **M2** — As the owner, I want to register barbers and assign each one to a location, so that clients can book with them. — *depends on: M1*
 - [x] **M3** — As the owner, I want to create services with a price and a duration, so that clients know what they can book and slots can be sized correctly. — *depends on: A1*
 - [x] **M4** — As the owner, I want to assign services to barbers, so that a service becomes available in the booking flow (a service with no assigned barber must not be bookable). — *depends on: M2, M3*
-- [ ] **M5** — As the owner, I want to define each barber's weekly working hours and days off, so that available slots reflect their real schedule. — *depends on: M2*
+- [x] **M5a** — As the owner, I want to define each barber's weekly working hours, so that available slots reflect when they actually work. — *depends on: M2*
+- [ ] **M5b** — As the owner, I want to register each barber's days off and absences, so that available slots exclude the days they are away. — *depends on: M2; independent of M5a*
+  - M5 was split during refinement: the two are different entities with different write shapes — a whole-week replacement versus row-level create and delete — and they share nothing but the story that consumes them. B3 depends on both; they can be built in either order or in parallel.
 
 ### 1b. Public presence & payment setup
 
@@ -41,7 +43,7 @@ Everything required for a minimally usable product: the owner can set up the bus
 
 - [ ] **B1** — As a client, I want to open the shared link and see the barbershop's public profile with a "Reservar" button, so that I can start a booking. — *depends on: P1*
 - [ ] **B2** — As a client, I want to choose a location, then a service, then a barber of that location who performs it, so that my booking matches how the business operates. — *depends on: B1, M4*
-- [ ] **B3** — As a client, I want to pick a date and see the barber's truly available time slots (working hours − time off − existing bookings, sized by service duration), so that I can choose a valid time. — *depends on: B2, M5*
+- [ ] **B3** — As a client, I want to pick a date and see the barber's truly available time slots (working hours − time off − existing bookings, sized by service duration), so that I can choose a valid time. — *depends on: B2, M5a, M5b*
 - [ ] **B4** — As a client, I want to enter my name, email and phone and create a provisional booking that holds my slot, so that nobody else can take it while I pay. — *depends on: B3*
   - Includes: `Client` dedup by (owner, email), transactional no-overlap check, `PENDING_PAYMENT` status, `holdExpiresAt`, `cancellationToken` generation.
 - [ ] **B5** — As a client, I want to pay the deposit with Mercado Pago and have my booking confirmed automatically, so that my appointment is guaranteed without manual steps. — *depends on: B4, PC2, PC3*

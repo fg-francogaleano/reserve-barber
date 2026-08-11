@@ -55,7 +55,8 @@ export const ModelName = {
   Location: 'Location',
   Barber: 'Barber',
   Service: 'Service',
-  BarberService: 'BarberService'
+  BarberService: 'BarberService',
+  WorkingHours: 'WorkingHours'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -135,6 +136,18 @@ export const BarberServiceScalarFieldEnum = {
 } as const
 
 export type BarberServiceScalarFieldEnum = (typeof BarberServiceScalarFieldEnum)[keyof typeof BarberServiceScalarFieldEnum]
+
+
+export const WorkingHoursScalarFieldEnum = {
+  id: 'id',
+  barberId: 'barberId',
+  dayOfWeek: 'dayOfWeek',
+  startMinute: 'startMinute',
+  endMinute: 'endMinute',
+  createdAt: 'createdAt'
+} as const
+
+export type WorkingHoursScalarFieldEnum = (typeof WorkingHoursScalarFieldEnum)[keyof typeof WorkingHoursScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -37,7 +37,11 @@ export default defineConfig({
       // Deliberately scoped to domain + application only: component tests must
       // never inflate the threshold that protects business rules (design D4).
       include: ['src/server/domain/**', 'src/server/application/**'],
-      exclude: ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
+      // `*.probe.ts` is gate harness, not shipped logic: it is executed by
+      // scripts/*-gate.ts and by an isolated worker to prove a runtime
+      // capability, never by the application. Counting it would let test
+      // scaffolding move the threshold that protects business rules.
+      exclude: ['**/*.test.ts', '**/*.spec.ts', '**/*.probe.ts', '**/node_modules/**'],
       thresholds: {
         branches: 90,
         functions: 90,
