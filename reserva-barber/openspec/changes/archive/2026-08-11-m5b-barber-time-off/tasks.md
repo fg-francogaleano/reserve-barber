@@ -63,7 +63,7 @@
 - [x] 9.2 `npm run build` and `opennextjs-cloudflare build` both succeed
 - [x] 9.3 Manually verify against the real database: a whole-day absence, a multi-day one whose last day is included, a timed one, a duplicate submit, and a removal
 - [x] 9.4 Verify the editor at a 360px viewport and without client-side JavaScript
-- [x] 9.5 Verified on `next dev` against the real database. The `workerd` preview and the deployed Worker are **not done** — both need a login on those origins and the deploy needs explicit authorisation. The runtime risk they would cover is already discharged by the instant round-trip gate in group 3
+- [x] 9.5 Verified on `next dev`, on the local `workerd` preview, and against the deployed Worker (version `9974fa43`, on the owner's authorisation). On every runtime: `timestamptz` stores the instant unshifted, the inclusive end date holds across a month boundary (28–31 Oct stores endsAt = 1 Nov), the list renders the last covered day rather than the stored end, a duplicate submit is absorbed, and removing an already-removed absence raises nothing. Post-deploy HTML was requested twice before concluding anything, per the M4 propagation lesson
 
 ## 10. Review — inside the window this time
 
