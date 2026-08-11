@@ -15,6 +15,7 @@ import {
   BarberLimitReachedError,
 } from '@/server/domain/errors/BarberErrors';
 import { logger } from '@/server/infrastructure/logger';
+import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
 import { COPY } from '@/lib/copy';
 import { toFormState, type BarberFormState } from './formState';
 
@@ -54,10 +55,12 @@ function toFailureState(
     return { error: COPY.barbers.notFound, fieldErrors: {}, values };
   }
 
-  logger.error('Barber write failed', {
-    operation,
-    cause: error instanceof Error ? error.message : String(error),
-  });
+  // T20: a recognized constraint violation logs its code and operation only.
+  // A PostgreSQL unique-violation message embeds the offending values — logging
+  // it verbatim writes the owner's business data into the log stream and lets a
+  // display name containing quotes or newlines forge fields in structured
+  // output. Unrecognized errors keep their message so they stay diagnosable.
+  logger.error('Barber write failed', toErrorLogContext(operation, error));
   return { error: COPY.barbers.form.infrastructureError, fieldErrors: {}, values };
 }
 

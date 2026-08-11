@@ -387,7 +387,8 @@ export const ModelName = {
   Owner: 'Owner',
   Location: 'Location',
   Barber: 'Barber',
-  Service: 'Service'
+  Service: 'Service',
+  BarberService: 'BarberService'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -403,7 +404,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "owner" | "location" | "barber" | "service"
+    modelProps: "owner" | "location" | "barber" | "service" | "barberService"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -703,6 +704,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    BarberService: {
+      payload: Prisma.$BarberServicePayload<ExtArgs>
+      fields: Prisma.BarberServiceFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.BarberServiceFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.BarberServiceFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>
+        }
+        findFirst: {
+          args: Prisma.BarberServiceFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.BarberServiceFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>
+        }
+        findMany: {
+          args: Prisma.BarberServiceFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>[]
+        }
+        create: {
+          args: Prisma.BarberServiceCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>
+        }
+        createMany: {
+          args: Prisma.BarberServiceCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.BarberServiceCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>[]
+        }
+        delete: {
+          args: Prisma.BarberServiceDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>
+        }
+        update: {
+          args: Prisma.BarberServiceUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>
+        }
+        deleteMany: {
+          args: Prisma.BarberServiceDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.BarberServiceUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.BarberServiceUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>[]
+        }
+        upsert: {
+          args: Prisma.BarberServiceUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BarberServicePayload>
+        }
+        aggregate: {
+          args: Prisma.BarberServiceAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateBarberService>
+        }
+        groupBy: {
+          args: Prisma.BarberServiceGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.BarberServiceGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.BarberServiceCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.BarberServiceCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -793,6 +868,16 @@ export const ServiceScalarFieldEnum = {
 } as const
 
 export type ServiceScalarFieldEnum = (typeof ServiceScalarFieldEnum)[keyof typeof ServiceScalarFieldEnum]
+
+
+export const BarberServiceScalarFieldEnum = {
+  id: 'id',
+  barberId: 'barberId',
+  serviceId: 'serviceId',
+  createdAt: 'createdAt'
+} as const
+
+export type BarberServiceScalarFieldEnum = (typeof BarberServiceScalarFieldEnum)[keyof typeof BarberServiceScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -1015,6 +1100,7 @@ export type GlobalOmitConfig = {
   location?: Prisma.LocationOmit
   barber?: Prisma.BarberOmit
   service?: Prisma.ServiceOmit
+  barberService?: Prisma.BarberServiceOmit
 }
 
 /* Types for Logging */

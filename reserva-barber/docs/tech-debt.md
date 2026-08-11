@@ -88,8 +88,22 @@ still requires two concurrent editors, and "Exactly one Owner" forbids the secon
 account that would produce them. Adding optimistic concurrency control here would cost more than the
 failure it prevents.
 
+**Re-evaluated at M4 (2026-08-10) — re-accepted, but only after the premise nearly broke.**
+M4 introduces the first *set-valued* write, and the original reasoning ("costs a retyped name")
+would not have survived it. Under a naive replace — removals computed as `stored − checked` — a
+second tab would silently delete an assignment it never displayed, and the loss would be a service
+quietly becoming unbookable: no error, no badge the owner is looking at, no audit trail. That is
+categorically worse than a lost name.
+
+The fix was design, not concurrency control. Removals are confined to the ids the form actually
+rendered (`data-model.md` §7, design D3), which makes collateral deletion unreachable rather than
+unlikely. What remains is a conflict over an id **both** views rendered, which is genuinely
+last-write-wins and is the same exposure M1–M3 already carry. So no version column here either.
+
 - **Trigger:** a second `Owner` row becomes possible, or story D3 (per-barber calendar) where a
-  stale overwrite starts costing appointments rather than a retyped name.
+  stale overwrite starts costing appointments rather than a retyped name. **Also:** any future
+  set-valued write that cannot carry a rendered baseline — the exemption above is specific to
+  being able to bound removals by what was displayed.
 
 ### T10 — No background utility resolves on an `<a>` element
 **Status:** **needs investigation — re-deferred at M3** · **Effort:** ~1 h to diagnose, unknown to fix · **Last evaluated:** M3 (2026-08-09)
@@ -150,10 +164,22 @@ with the correct owner applies. Recorded in `docs/s0-versions-decision.md`. So *
 proven** — Prisma does honour the extra scalar predicate. What remains unproven is isolation between
 two *real* owners, which is what this entry is actually about, and that still needs a second `Owner`.
 
+**Narrowed again at M4 (2026-08-10).** M4 introduces the first relation whose ownership rule the
+database *cannot* express — `BarberService` joins a `Barber` (ownership derived through `location`)
+to a `Service` (ownership stored), with no shared column for a composite key. `scripts/m4-gate.ts`
+probes D and E prove against the real database that the join predicate
+`barber.location.ownerId` genuinely filters: a foreign owner reads zero rows and deletes zero rows.
+
+One asymmetry is now explicit rather than latent: the **insert** cannot be scoped at all.
+`createMany` is a raw multi-row insert admitting no relation filter, so the foreign keys prove only
+that both ids exist, never that they agree about the owner. `BarberServiceAssignmentService` is the
+entire guarantee there, which is why it must remain the table's only writer.
+
 - **Trigger:** the moment a second `Owner` becomes possible — multi-tenancy, a dedicated test project
   with its own owner, or any change that relaxes "Exactly one Owner". Before that ships, add an
   integration test against a real database with two owners covering: list scoping, a foreign id
-  resolving to `null`, and a scoped update affecting zero rows.
+  resolving to `null`, a scoped update affecting zero rows, and **a cross-owner assignment writing
+  zero rows**.
 
 ### T12 — A double submit can report a successful creation as a duplicate
 **Status:** accepted — **now observed, no longer theoretical** · **Effort:** ~1 h if it becomes real
@@ -279,7 +305,24 @@ The scope of the fix depends on what the booking model looks like: it may requir
 
 M3 deliberately reproduced the same unqualified mapping rather than reading `error.meta.target`: doing that would drag Prisma's error shape into the application layer, which is precisely what the structural check exists to avoid. The fix belongs with M4, which is when a second constraint first exists.
 
-- **Trigger:** M4 (barber–service assignments), or any migration that adds a second unique constraint to `Barber` or `Service`. **M4 must re-audit both services, not just the one it edits.**
+**Re-audited at M4 (2026-08-10) — the bound holds, and is now enforced rather than assumed.**
+`BarberService(barberId, serviceId)` exists as of M4, so a second unique constraint is live. Both
+translations nevertheless remain correct, and deliberately **not** because anyone remembered to be
+careful:
+
+- Assignments are written through `PrismaBarberServiceRepository`, never nested inside a `Service` or
+  `Barber` write, so no violation from that table can surface inside either catalogue service.
+- The assignment insert requests `skipDuplicates`, so a `(barberId, serviceId)` violation is not
+  raised at all — the failure mode the entry predicted cannot occur even in principle.
+- `BarberServiceAssignmentService.test.ts` asserts a `P2002` reaching the assignment path propagates
+  untouched rather than becoming `DuplicateServiceNameError` or `DuplicateBarberNameError`.
+
+Reading `error.meta.target` to qualify the translation was re-rejected for the reason M3 gave: it
+drags Prisma's error shape into the application layer, which is what the boundary exists to prevent.
+
+- **Trigger:** any change that nests an assignment write inside a barber or service write, or a
+  migration adding a **second reachable** unique constraint to `Barber` or `Service` themselves.
+  The M4 trigger is discharged.
 
 ### T19 — Per-owner service cap is advisory, not guaranteed
 **Status:** accepted · **Effort:** ~1–2 h if it becomes real · **Added:** M3 (2026-08-09)
@@ -300,6 +343,76 @@ A PostgreSQL unique violation embeds the offending values in its message — `Ke
 **Not fixed in M3** deliberately: retrofitting it would alter the observable behaviour of two closed changes without updating their artifacts, which `docs/base-standards.md` §7 forbids. The fix is mechanical — import the helper and replace the `cause:` line in each `toFailureState`.
 
 - **Trigger:** the next change that touches either actions file for any reason, or the first time logs are shipped anywhere they can be read by someone who should not see the owner's data.
+
+### T21 — `skipDuplicates` becomes silent update-discarding if the assignment row ever gains a field
+**Status:** accepted · **Effort:** ~1 h when triggered · **Added:** M4 (2026-08-10)
+
+`PrismaBarberServiceRepository.setForBarber` inserts with `skipDuplicates: true`. Today that is
+exactly right: `BarberService` carries no mutable column, so a re-inserted row is the same intent
+expressed twice — a double click or a retried timeout — and absorbing it is what makes the write
+idempotent. It is also what keeps T15's translations bounded.
+
+The day the row gains a mutable field — a per-barber price or duration override is the plausible
+one — the same flag stops meaning "tolerate a re-submission" and starts meaning "silently discard
+the update". The write would report success and change nothing, which is the worst shape a data bug
+can take. The replacement is a per-row `upsert` inside the same batch array (never a sequence of
+awaited writes, per design D4).
+
+This is recorded rather than pre-solved because writing an upsert now would add a code path with no
+caller and imply the row has state it does not have.
+
+- **Trigger:** the first migration that adds any column to `BarberService` beyond `createdAt`.
+
+### T22 — The assignment cap can lock an owner out of their own editor
+**Status:** accepted — **latent, becomes reachable at M6** · **Effort:** ~30 min · **Added:** M4 (2026-08-10, adversarial review)
+
+`barberServicesSchema` rejects a submission whose id list exceeds `MAX_SERVICES_PER_OWNER` (50). But that constant counts **active** services only (T19), while the editor renders `assignable = active ∪ already-assigned`. An owner sitting at 50 active services with any deactivated-but-still-assigned service therefore renders more than 50 baseline inputs, and their own form is rejected as `too_many` — **that barber can never be saved again, with no remedy anywhere in the application.**
+
+Identical in shape to the mistake T19 documents: two rules disagreeing about what "the cap" counts. The fix is to bound both lists by the size of the assignable set rather than by the active-service cap.
+
+Unreachable today because service deactivation does not exist. The requirement "The submitted set is bounded before any database read" in `openspec/specs/barber-service-assignment` states the flawed rule and must be amended with the code.
+
+- **Trigger:** M6 (service deactivation), or any change that lets total services exceed the active cap.
+
+### T23 — Bookability ignores whether the barber's location is active
+**Status:** **undecided, not merely deferred** · **Effort:** ~1 h once decided · **Added:** M4 (2026-08-10, adversarial review)
+
+`countActiveBarbersByService` filters `barber.isActive` but not `barber.location.isActive`, so a service performed only by barbers at a **deactivated branch** is presented as bookable on the dashboard.
+
+This is an underspecification, not a contradiction: `data-model.md` §6 says "at least one assigned **active** barber" and is silent about the location. But M2 deliberately ruled that a barber may *remain* at an inactive location, so the state is live rather than hypothetical — and B2 will inherit whichever answer is frozen here.
+
+The question is a product one and has not been answered: **should a closed branch suppress bookability?** It is recorded as undecided rather than resolved by whichever behaviour the code happens to have.
+
+- **Trigger:** B2 (public service/barber selection) at the latest, or the first location deactivation with assigned barbers.
+
+### T24 — The editor's empty state states something false when every service is inactive
+**Status:** accepted · **Effort:** ~15 min · **Added:** M4 (2026-08-10, adversarial review)
+
+`COPY.barberServices.emptyNoServices` reads "Antes de asignar servicios, creá al menos uno en el catálogo". It renders whenever the assignable set is empty — which includes the case where the owner **has** services and all of them are inactive and unassigned. The message then tells the owner to create something they already have.
+
+Fix is to branch the empty state on "no services at all" versus "none currently assignable". Same M6 trigger as T22.
+
+- **Trigger:** M6 (service deactivation).
+
+### T25 — The assignment route parameter is decorative for the write
+**Status:** accepted · **Effort:** ~30 min · **Added:** M4 (2026-08-10, adversarial review)
+
+`setBarberServicesAction` reads `barberId` from a hidden form field, not from the route segment, so a payload can name a different barber than the URL displays. This is **not** a tenancy hole — `findByIdForOwner` still scopes it to the session owner — and it is the ordinary shape of a Server Action, which receives no route params.
+
+What is unrecorded is whether that mismatch is intended. Today a crafted payload silently edits a different barber the owner owns, and no scenario says whether that should be honoured or refused.
+
+- **Trigger:** a second administrative user (which would make the mismatch a privilege question rather than a UX one), or any report of an edit landing on the wrong barber.
+
+### T26 — The service duplicate-name pre-check can miss a row once services exceed the active cap
+**Status:** accepted · **Effort:** ~15 min · **Added:** M4 (2026-08-10, adversarial review) · **Origin:** M3
+
+`PrismaServiceRepository.existsByOwnerAndName` reads with `take: MAX_SERVICES_PER_OWNER`, but that constant counts active services only while the query is unfiltered by `isActive`. Once total services exceed 50, the pre-check can read a truncated set and miss a genuine duplicate.
+
+Impact is bounded: the database's `@@unique([ownerId, name])` remains the authoritative guarantee (M3 design D9), so the outcome is a worse error message — the generic infrastructure message instead of a readable field error — never a duplicate row.
+
+Same root cause as T22: a cap that counts active rows being used to bound a query over all rows.
+
+- **Trigger:** M6 (service deactivation), together with T22.
 
 ### T16 — Session expiry during long free-text entry silently discards up to 500 characters
 **Status:** accepted · **Effort:** ~2–4 h (server-sent draft save or client-side autosave) · **Last evaluated:** M3 (2026-08-09)
@@ -343,5 +456,26 @@ That last one is the honest criterion: for a solo developer, velocity is the sca
 
 ## Closed
 
-_(none yet — move entries here with the date and how they were resolved, rather than deleting them,
-when the reasoning stays useful.)_
+### T18 — The barbers list overflows horizontally on a long unbroken name
+**Closed:** M4 (2026-08-10) · **Was:** confirmed defect against a shipped requirement
+
+Fixed exactly as the entry prescribed — `min-w-0` on both `CardTitle` and its inner `<span>` in
+`app/(dashboard)/barberos/page.tsx`. M4 was the right moment rather than an unrelated ride-along:
+this change adds the assigned-service count to that same title row, so it touches the defect's
+own markup and updates the `barber-management` spec in the same breath, which is what
+`base-standards.md` §7 asks for.
+
+The `sucursales` list named at the end of that entry was **not** measured and remains unchecked —
+carried forward as the remaining scope, not silently closed with the rest.
+
+### T20 — Location and barber write paths still log raw driver error messages
+**Closed for barbers:** M4 (2026-08-10) · **Still open for locations**
+
+`app/(dashboard)/barberos/actions.ts` now logs through `toErrorLogContext(operation, error)`, so a
+recognized constraint violation records the driver code and the operation and never the message that
+embeds the submitted display name. The trigger this entry named — "the next change that touches
+either actions file for any reason" — is exactly what happened.
+
+`app/(dashboard)/sucursales/actions.ts` is unchanged and still has the exposure. M4 has no reason to
+open that file, and editing a closed change's behaviour without touching its artifacts is what §7
+forbids. **The original trigger still stands for it.**

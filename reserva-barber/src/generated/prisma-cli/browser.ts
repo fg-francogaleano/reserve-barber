@@ -44,3 +44,16 @@ export type Barber = Prisma.BarberModel
  * (data-model.md §6, design D2).
  */
 export type Service = Prisma.ServiceModel
+/**
+ * Model BarberService
+ * Join entity linking barbers to the services they can perform. Presence of a
+ * row is what makes a service bookable with a given barber — this table, not
+ * Service, is the gate to the public booking flow (data-model.md §7).
+ * 
+ * The same-owner rule is NOT expressible here: Barber has no ownerId column
+ * (ownership is derived through location), so no composite foreign key,
+ * unique constraint or CHECK can compare the two sides. It is enforced at
+ * write time in BarberServiceAssignmentService, which is therefore the ONLY
+ * permitted writer of this table (M4 design D6).
+ */
+export type BarberService = Prisma.BarberServiceModel

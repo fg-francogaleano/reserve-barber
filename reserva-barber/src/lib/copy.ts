@@ -77,6 +77,11 @@ export const COPY = {
     editLabel: (name: string) => `Editar ${name}`,
     notFound: 'El servicio que buscás no existe.',
     duration: (minutes: number) => `${minutes} min`,
+    // Never colour alone: the marker carries its own text and is announced as
+    // part of the service's description.
+    notBookableBadge: 'No reservable',
+    notBookableHint:
+      'Asignale al menos un barbero activo para que se pueda reservar.',
     form: {
       createHeading: 'Nuevo servicio',
       editHeading: 'Editar servicio',
@@ -111,6 +116,36 @@ export const COPY = {
       infrastructureError:
         'No pudimos guardar los cambios. Revisá la lista de servicios antes de reintentar, por las dudas de que se haya guardado.',
     },
+  },
+  barberServices: {
+    heading: (barberName: string) => `Servicios de ${barberName}`,
+    intro:
+      'Elegí qué servicios realiza este barbero. Un servicio sin barbero activo asignado no se puede reservar.',
+    legend: 'Servicios que realiza',
+    manage: 'Servicios asignados',
+    manageLabel: (barberName: string) => `Editar los servicios de ${barberName}`,
+    assignedCount: (count: number) => (count === 1 ? '1 servicio' : `${count} servicios`),
+    inactiveMarker: '(inactivo)',
+    barberNotFound: 'El barbero que buscás no existe.',
+    // The editor is not operable at all without a catalogue, so this is an
+    // empty state with a way out, never a form with no options.
+    emptyNoServices: 'Antes de asignar servicios, creá al menos uno en el catálogo.',
+    createService: 'Nuevo servicio',
+    submit: 'Guardar',
+    submitting: 'Guardando…',
+    cancel: 'Cancelar',
+    // A malformed submission cannot come from the form, so the remedy is a
+    // reload rather than a correction the owner could make by hand.
+    invalidSelection: 'La selección no es válida. Recargá la página e intentá de nuevo.',
+    tooMany: 'Seleccionaste demasiados servicios.',
+    serviceUnavailable: (serviceName: string) =>
+      `«${serviceName}» ya no está disponible y no se puede asignar. Recargá la página.`,
+    serviceUnknown:
+      'Alguno de los servicios seleccionados ya no está disponible. Recargá la página.',
+    // A timed-out write may still have committed, so a blind retry would hide
+    // a save that already happened.
+    infrastructureError:
+      'No pudimos guardar los cambios. Revisá los servicios asignados antes de reintentar, por las dudas de que se haya guardado.',
   },
   auth: {
     heading: 'Iniciar sesión',

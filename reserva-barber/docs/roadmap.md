@@ -27,7 +27,7 @@ Everything required for a minimally usable product: the owner can set up the bus
 - [x] **M1** — As the owner, I want to create and edit my locations, so that each branch of my business can receive bookings. — *depends on: A1*
 - [x] **M2** — As the owner, I want to register barbers and assign each one to a location, so that clients can book with them. — *depends on: M1*
 - [x] **M3** — As the owner, I want to create services with a price and a duration, so that clients know what they can book and slots can be sized correctly. — *depends on: A1*
-- [ ] **M4** — As the owner, I want to assign services to barbers, so that a service becomes available in the booking flow (a service with no assigned barber must not be bookable). — *depends on: M2, M3*
+- [x] **M4** — As the owner, I want to assign services to barbers, so that a service becomes available in the booking flow (a service with no assigned barber must not be bookable). — *depends on: M2, M3*
 - [ ] **M5** — As the owner, I want to define each barber's weekly working hours and days off, so that available slots reflect their real schedule. — *depends on: M2*
 
 ### 1b. Public presence & payment setup

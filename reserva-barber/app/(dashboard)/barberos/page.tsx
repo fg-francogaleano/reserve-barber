@@ -6,39 +6,43 @@ import { BarberCatalogService } from '@/server/application/services/BarberCatalo
 import { LocationService } from '@/server/application/services/LocationService';
 import { PrismaBarberRepository } from '@/server/infrastructure/prisma/PrismaBarberRepository';
 import { PrismaLocationRepository } from '@/server/infrastructure/prisma/PrismaLocationRepository';
+import { PrismaBarberServiceRepository } from '@/server/infrastructure/prisma/PrismaBarberServiceRepository';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
 import { logger } from '@/server/infrastructure/logger';
+import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
 import { requireOwner } from '@/server/infrastructure/supabase/requireOwner';
 import type { BarberWithLocation } from '@/server/domain/repositories/IBarberRepository';
 import type { Location } from '@/server/domain/models/Location';
 
 export const dynamic = 'force-dynamic';
 
-async function fetchPageData(
-  ownerId: string
-): Promise<{ barbers: BarberWithLocation[]; locations: Location[] }> {
+async function fetchPageData(ownerId: string): Promise<{
+  barbers: BarberWithLocation[];
+  locations: Location[];
+  assignedCounts: Map<string, number>;
+}> {
   const db = getPrismaClient();
   try {
-    const [barbers, locations] = await Promise.all([
+    // Three queries for the whole page, not one per barber: the assignment
+    // count is a single aggregate for the owner (design D12).
+    const [barbers, locations, assignedCounts] = await Promise.all([
       new BarberCatalogService(
         new PrismaBarberRepository(db),
         new PrismaLocationRepository(db)
       ).listBarbers(ownerId),
       new LocationService(new PrismaLocationRepository(db)).listOwnerLocations(ownerId),
+      new PrismaBarberServiceRepository(db).countServicesByBarber(ownerId),
     ]);
-    return { barbers, locations };
+    return { barbers, locations, assignedCounts };
   } catch (error) {
-    logger.error('Failed to load barberos page data', {
-      operation: 'listBarbers',
-      cause: error instanceof Error ? error.message : String(error),
-    });
+    logger.error('Failed to load barberos page data', toErrorLogContext('listBarbers', error));
     throw error;
   }
 }
 
 export default async function BarbersPage() {
   const owner = await requireOwner();
-  const { barbers, locations } = await fetchPageData(owner.id);
+  const { barbers, locations, assignedCounts } = await fetchPageData(owner.id);
 
   const hasLocations = locations.length > 0;
 
@@ -62,8 +66,15 @@ export default async function BarbersPage() {
           {barbers.map(({ barber, locationName, locationIsActive }) => (
             <Card key={barber.id}>
               <CardHeader>
-                <CardTitle className="flex items-start justify-between gap-3">
-                  <span className="break-words">{barber.displayName}</span>
+                {/* T18: min-w-0 on BOTH levels is load-bearing. A flex item
+                    defaults to min-width:auto and refuses to shrink below its
+                    content's intrinsic width, so `break-words` never gets the
+                    chance to act and a 120-character unbroken name overflows
+                    the card. Fixed for the services list in M3 and recorded as
+                    debt here; this change adds another element to the same row,
+                    which is the trigger that entry named. */}
+                <CardTitle className="flex min-w-0 items-start justify-between gap-3">
+                  <span className="min-w-0 break-words">{barber.displayName}</span>
                   {!locationIsActive ? (
                     <span className="text-muted-foreground shrink-0 text-xs font-normal">
                       {COPY.barbers.inactiveBadge}
@@ -73,16 +84,31 @@ export default async function BarbersPage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <p className="text-muted-foreground text-sm">{locationName}</p>
+                {/* Zero is rendered, never omitted: a barber assigned to nothing
+                    cannot be booked for anything, and that is exactly the state
+                    worth seeing without opening each barber in turn. */}
+                <p className="text-muted-foreground text-sm">
+                  {COPY.barberServices.assignedCount(assignedCounts.get(barber.id) ?? 0)}
+                </p>
                 {barber.bio ? (
                   <p className="line-clamp-3 text-sm break-words">{barber.bio}</p>
                 ) : null}
-                <Link
-                  href={`/barberos/${barber.id}/editar`}
-                  aria-label={COPY.barbers.editLabel(barber.displayName)}
-                  className="text-primary text-sm font-medium underline-offset-4 hover:underline"
-                >
-                  {COPY.barbers.edit}
-                </Link>
+                <div className="flex flex-wrap items-center gap-4">
+                  <Link
+                    href={`/barberos/${barber.id}/editar`}
+                    aria-label={COPY.barbers.editLabel(barber.displayName)}
+                    className="text-primary text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    {COPY.barbers.edit}
+                  </Link>
+                  <Link
+                    href={`/barberos/${barber.id}/servicios`}
+                    aria-label={COPY.barberServices.manageLabel(barber.displayName)}
+                    className="text-primary text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    {COPY.barberServices.manage}
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           ))}

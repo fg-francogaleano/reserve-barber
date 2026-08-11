@@ -70,6 +70,7 @@ model Barber {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  services    BarberService[]
 
   // Uniqueness is per location, not per owner: the same first name at two
   // branches is legitimate; two identically-named barbers at one branch cannot
@@ -98,10 +99,42 @@ model Service {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  barbers         BarberService[]
 
   // Uniqueness is per owner, not per location: a service is offered by the
   // business as a whole and Service has no location relation (design D9).
   @@unique([ownerId, name])
   // Backs the dashboard list and the active-only count behind the cap.
   @@index([ownerId, isActive])
+}
+
+/// Join entity linking barbers to the services they can perform. Presence of a
+/// row is what makes a service bookable with a given barber — this table, not
+/// Service, is the gate to the public booking flow (data-model.md §7).
+///
+/// The same-owner rule is NOT expressible here: Barber has no ownerId column
+/// (ownership is derived through location), so no composite foreign key,
+/// unique constraint or CHECK can compare the two sides. It is enforced at
+/// write time in BarberServiceAssignmentService, which is therefore the ONLY
+/// permitted writer of this table (M4 design D6).
+model BarberService {
+  id        String  @id @default(cuid())
+  barberId  String
+  // Cascade, unlike Barber → Location's Restrict: there the child carries data
+  // of its own that must not vanish silently, here the row IS the relationship
+  // and has no meaning without either endpoint. Inert while the application has
+  // no hard-delete path — declared so it is already correct when one arrives
+  // (design D7).
+  barber    Barber  @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  // No updatedAt: the row carries no mutable field, so an assignment is created
+  // or destroyed, never edited.
+  createdAt DateTime @default(now())
+
+  @@unique([barberId, serviceId])
+  // Required IN ADDITION to the composite unique above, which only serves the
+  // barberId-leading direction. The bookability read and B2's "which barbers
+  // perform this service" query both lead with the service.
+  @@index([serviceId])
 }
