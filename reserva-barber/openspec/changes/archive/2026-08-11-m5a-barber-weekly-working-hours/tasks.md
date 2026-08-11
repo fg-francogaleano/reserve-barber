@@ -75,8 +75,8 @@
 
 - [x] 10.1 Update `docs/tech-debt.md` with anything found during implementation — T27 (split shift), T28 (1440-minute assumption), T29 (retroactive edits) added ahead of the code per the spec-first policy; nothing further surfaced during implementation
 - [x] 10.2 Tick M5a in `docs/roadmap.md` and split the M5 line into M5a and M5b
-- [ ] 10.3 `openspec validate`, then archive and sync
-- [ ] 10.4 Commit to `feat/m5a-barber-weekly-working-hours` and open the PR to `main`
+- [x] 10.3 `openspec validate`, then archive and sync — archived as `2026-08-11-m5a-barber-weekly-working-hours`; `barber-working-hours` created with 11 requirements, 6 more added across `data-persistence` and `barber-management`
+- [x] 10.4 Commit to `feat/m5a-barber-weekly-working-hours` and open the PR to `main` — commit `a209ce5`, PR #8
 
 ## 11. Notes from the run
 
