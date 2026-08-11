@@ -6,6 +6,7 @@ import { COPY } from '@/lib/copy';
 
 const mockListBarbers = vi.hoisted(() => vi.fn());
 const mockListOwnerLocations = vi.hoisted(() => vi.fn());
+const mockCountServicesByBarber = vi.hoisted(() => vi.fn());
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -49,10 +50,20 @@ vi.mock('@/server/application/services/LocationService', () => ({
   }),
 }));
 
+vi.mock('@/server/infrastructure/prisma/PrismaBarberServiceRepository', () => ({
+  PrismaBarberServiceRepository: vi.fn().mockImplementation(function () {
+    return { countServicesByBarber: mockCountServicesByBarber };
+  }),
+}));
+
 // Import AFTER mock registrations.
 import BarbersPage from './page';
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default for the tests that predate assignments: no barber has any.
+  mockCountServicesByBarber.mockResolvedValue(new Map<string, number>());
+});
 
 // ─── 9.6 — Empty state branches on location presence ──────────────────────────
 
@@ -106,5 +117,57 @@ describe('BarbersPage — empty state branching (task 9.6)', () => {
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
     expect(screen.queryByText(COPY.barbers.empty)).toBeNull();
     expect(screen.queryByText(COPY.barbers.emptyNoLocations)).toBeNull();
+  });
+});
+
+// ─── M4 — assigned-service count and the route into the editor ───────────────
+
+describe('BarbersPage — assigned services', () => {
+  const barberRow = (id: string, displayName: string) => ({
+    barber: { id, locationId: 'loc-1', displayName, bio: null, isActive: true },
+    locationName: 'Sucursal Centro',
+    locationIsActive: true,
+  });
+
+  beforeEach(() => {
+    mockListOwnerLocations.mockResolvedValue([
+      { id: 'loc-1', name: 'Sucursal Centro', isActive: true, ownerId: 'owner-1', address: null },
+    ]);
+  });
+
+  it('should_show_the_assigned_service_count_for_each_barber', async () => {
+    mockListBarbers.mockResolvedValue([barberRow('barber-1', 'Ana'), barberRow('barber-2', 'Luis')]);
+    mockCountServicesByBarber.mockResolvedValue(
+      new Map([
+        ['barber-1', 3],
+        ['barber-2', 1],
+      ])
+    );
+
+    render(await BarbersPage());
+
+    expect(screen.getByText(COPY.barberServices.assignedCount(3))).toBeInTheDocument();
+    expect(screen.getByText(COPY.barberServices.assignedCount(1))).toBeInTheDocument();
+  });
+
+  it('should_show_zero_rather_than_omitting_the_indicator', async () => {
+    mockListBarbers.mockResolvedValue([barberRow('barber-1', 'Ana')]);
+    mockCountServicesByBarber.mockResolvedValue(new Map<string, number>());
+
+    render(await BarbersPage());
+
+    // A barber assigned to nothing cannot be booked for anything — that is
+    // exactly the state the list has to make visible.
+    expect(screen.getByText(COPY.barberServices.assignedCount(0))).toBeInTheDocument();
+  });
+
+  it('should_link_to_the_assignment_editor_with_an_accessible_name', async () => {
+    mockListBarbers.mockResolvedValue([barberRow('barber-1', 'Ana')]);
+
+    render(await BarbersPage());
+
+    expect(
+      screen.getByRole('link', { name: COPY.barberServices.manageLabel('Ana') })
+    ).toHaveAttribute('href', '/barberos/barber-1/servicios');
   });
 });

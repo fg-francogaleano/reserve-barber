@@ -6,6 +6,7 @@ import { Service } from '@/server/domain/models/Service';
 // ─── Hoisted mock functions (must be defined before vi.mock hoisting) ─────────
 
 const mockListServices = vi.hoisted(() => vi.fn());
+const mockCountActiveBarbersByService = vi.hoisted(() => vi.fn());
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -39,10 +40,21 @@ vi.mock('@/server/application/services/ServiceCatalogService', () => ({
   }),
 }));
 
+vi.mock('@/server/infrastructure/prisma/PrismaBarberServiceRepository', () => ({
+  PrismaBarberServiceRepository: vi.fn().mockImplementation(function () {
+    return { countActiveBarbersByService: mockCountActiveBarbersByService };
+  }),
+}));
+
 // Import AFTER mock registrations.
 import ServicesPage from './page';
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default for the tests that predate assignments: nothing is assigned, so
+  // they exercise the not-bookable branch unless they say otherwise.
+  mockCountActiveBarbersByService.mockResolvedValue(new Map<string, number>());
+});
 
 describe('ServicesPage — empty state (task 9.6)', () => {
   it('should_show_the_empty_state_and_a_working_create_call_to_action', async () => {
@@ -151,5 +163,64 @@ describe('ServicesPage — rendering services', () => {
     render(await ServicesPage());
 
     expect(mockListServices).toHaveBeenCalledWith('owner-1');
+  });
+});
+
+// ─── M4 — bookability is a three-term conjunction ────────────────────────────
+
+describe('ServicesPage — bookability marker', () => {
+  const active = new Service('svc-1', 'Corte', null, '4500.00', 30, true);
+  const inactive = new Service('svc-2', 'Servicio Viejo', null, '1000.00', 15, false);
+
+  it('should_mark_a_service_with_no_assigned_barber', async () => {
+    mockListServices.mockResolvedValue([active]);
+    mockCountActiveBarbersByService.mockResolvedValue(new Map<string, number>());
+
+    render(await ServicesPage());
+
+    expect(screen.getByText(COPY.services.notBookableBadge)).toBeInTheDocument();
+    expect(screen.getByText(COPY.services.notBookableHint)).toBeInTheDocument();
+  });
+
+  it('should_mark_a_service_assigned_only_to_inactive_barbers', async () => {
+    mockListServices.mockResolvedValue([active]);
+    // The count excludes inactive barbers, so "assigned but all inactive"
+    // arrives here as zero.
+    mockCountActiveBarbersByService.mockResolvedValue(new Map([['svc-1', 0]]));
+
+    render(await ServicesPage());
+
+    expect(screen.getByText(COPY.services.notBookableBadge)).toBeInTheDocument();
+  });
+
+  it('should_mark_an_inactive_service_even_when_an_active_barber_performs_it', async () => {
+    mockListServices.mockResolvedValue([inactive]);
+    mockCountActiveBarbersByService.mockResolvedValue(new Map([['svc-2', 2]]));
+
+    render(await ServicesPage());
+
+    // Without the isActive term this service would read as bookable — the
+    // defect the original M3 wording would have shipped once M6 lands.
+    expect(screen.getByText(COPY.services.notBookableBadge)).toBeInTheDocument();
+  });
+
+  it('should_not_mark_an_active_service_with_an_active_assigned_barber', async () => {
+    mockListServices.mockResolvedValue([active]);
+    mockCountActiveBarbersByService.mockResolvedValue(new Map([['svc-1', 1]]));
+
+    render(await ServicesPage());
+
+    expect(screen.queryByText(COPY.services.notBookableBadge)).toBeNull();
+  });
+
+  it('should_convey_the_marker_by_text_not_by_colour_alone', async () => {
+    mockListServices.mockResolvedValue([active]);
+    mockCountActiveBarbersByService.mockResolvedValue(new Map<string, number>());
+
+    render(await ServicesPage());
+
+    // Exposed as a status so assistive technology reads it as part of the
+    // service, rather than skipping it as decoration.
+    expect(screen.getByRole('status')).toHaveTextContent(COPY.services.notBookableBadge);
   });
 });

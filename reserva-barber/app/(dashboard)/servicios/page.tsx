@@ -5,6 +5,7 @@ import { COPY } from '@/lib/copy';
 import { formatCurrency } from '@/lib/formatCurrency';
 import { ServiceCatalogService } from '@/server/application/services/ServiceCatalogService';
 import { PrismaServiceRepository } from '@/server/infrastructure/prisma/PrismaServiceRepository';
+import { PrismaBarberServiceRepository } from '@/server/infrastructure/prisma/PrismaBarberServiceRepository';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
 import { logger } from '@/server/infrastructure/logger';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
@@ -13,20 +14,37 @@ import type { Service } from '@/server/domain/models/Service';
 
 export const dynamic = 'force-dynamic';
 
-async function fetchServices(ownerId: string): Promise<Service[]> {
+async function fetchPageData(
+  ownerId: string
+): Promise<{ services: Service[]; activeBarberCounts: Map<string, number> }> {
+  const db = getPrismaClient();
   try {
-    return await new ServiceCatalogService(
-      new PrismaServiceRepository(getPrismaClient())
-    ).listServices(ownerId);
+    const [services, activeBarberCounts] = await Promise.all([
+      new ServiceCatalogService(new PrismaServiceRepository(db)).listServices(ownerId),
+      // One aggregate for the whole list, not one query per service (design D12).
+      new PrismaBarberServiceRepository(db).countActiveBarbersByService(ownerId),
+    ]);
+    return { services, activeBarberCounts };
   } catch (error) {
     logger.error('Failed to load servicios page data', toErrorLogContext('listServices', error));
     throw error;
   }
 }
 
+/**
+ * Bookability is the conjunction of three facts, derived at read time and never
+ * cached in a column (design D8). Dropping any one of them makes the dashboard
+ * state a lie: without `isActive` a deactivated service reads as bookable, and
+ * the count already excludes inactive barbers so a service performed only by
+ * inactive barbers does not qualify either.
+ */
+function isBookable(service: Service, activeBarberCounts: Map<string, number>): boolean {
+  return service.isActive && (activeBarberCounts.get(service.id) ?? 0) > 0;
+}
+
 export default async function ServicesPage() {
   const owner = await requireOwner();
-  const services = await fetchServices(owner.id);
+  const { services, activeBarberCounts } = await fetchPageData(owner.id);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-12">
@@ -66,6 +84,18 @@ export default async function ServicesPage() {
                     Client Component invites a hydration mismatch, since the
                     build's locale data and the browser's need not agree. */}
                 <p className="text-sm font-medium">{formatCurrency(service.price)}</p>
+                {!isBookable(service, activeBarberCounts) ? (
+                  // Text, not colour: the marker has to survive a greyscale
+                  // screen and a screen reader alike. `role="status"` puts it in
+                  // the accessible description rather than leaving it as
+                  // decoration that assistive technology skips.
+                  <p role="status" className="text-destructive text-xs font-medium">
+                    {COPY.services.notBookableBadge}
+                    <span className="text-muted-foreground block font-normal">
+                      {COPY.services.notBookableHint}
+                    </span>
+                  </p>
+                ) : null}
                 {service.description ? (
                   <p className="line-clamp-3 text-sm break-words">{service.description}</p>
                 ) : null}

@@ -256,6 +256,7 @@ export type ServiceWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"Service"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Service"> | Date | string
   owner?: Prisma.XOR<Prisma.OwnerScalarRelationFilter, Prisma.OwnerWhereInput>
+  barbers?: Prisma.BarberServiceListRelationFilter
 }
 
 export type ServiceOrderByWithRelationInput = {
@@ -269,6 +270,7 @@ export type ServiceOrderByWithRelationInput = {
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   owner?: Prisma.OwnerOrderByWithRelationInput
+  barbers?: Prisma.BarberServiceOrderByRelationAggregateInput
 }
 
 export type ServiceWhereUniqueInput = Prisma.AtLeast<{
@@ -286,6 +288,7 @@ export type ServiceWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"Service"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Service"> | Date | string
   owner?: Prisma.XOR<Prisma.OwnerScalarRelationFilter, Prisma.OwnerWhereInput>
+  barbers?: Prisma.BarberServiceListRelationFilter
 }, "id" | "ownerId_name">
 
 export type ServiceOrderByWithAggregationInput = {
@@ -330,6 +333,7 @@ export type ServiceCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   owner: Prisma.OwnerCreateNestedOneWithoutServicesInput
+  barbers?: Prisma.BarberServiceCreateNestedManyWithoutServiceInput
 }
 
 export type ServiceUncheckedCreateInput = {
@@ -342,6 +346,7 @@ export type ServiceUncheckedCreateInput = {
   isActive?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  barbers?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutServiceInput
 }
 
 export type ServiceUpdateInput = {
@@ -354,6 +359,7 @@ export type ServiceUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   owner?: Prisma.OwnerUpdateOneRequiredWithoutServicesNestedInput
+  barbers?: Prisma.BarberServiceUpdateManyWithoutServiceNestedInput
 }
 
 export type ServiceUncheckedUpdateInput = {
@@ -366,6 +372,7 @@ export type ServiceUncheckedUpdateInput = {
   isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  barbers?: Prisma.BarberServiceUncheckedUpdateManyWithoutServiceNestedInput
 }
 
 export type ServiceCreateManyInput = {
@@ -464,6 +471,11 @@ export type ServiceSumOrderByAggregateInput = {
   durationMinutes?: Prisma.SortOrder
 }
 
+export type ServiceScalarRelationFilter = {
+  is?: Prisma.ServiceWhereInput
+  isNot?: Prisma.ServiceWhereInput
+}
+
 export type ServiceCreateNestedManyWithoutOwnerInput = {
   create?: Prisma.XOR<Prisma.ServiceCreateWithoutOwnerInput, Prisma.ServiceUncheckedCreateWithoutOwnerInput> | Prisma.ServiceCreateWithoutOwnerInput[] | Prisma.ServiceUncheckedCreateWithoutOwnerInput[]
   connectOrCreate?: Prisma.ServiceCreateOrConnectWithoutOwnerInput | Prisma.ServiceCreateOrConnectWithoutOwnerInput[]
@@ -522,6 +534,20 @@ export type IntFieldUpdateOperationsInput = {
   divide?: number
 }
 
+export type ServiceCreateNestedOneWithoutBarbersInput = {
+  create?: Prisma.XOR<Prisma.ServiceCreateWithoutBarbersInput, Prisma.ServiceUncheckedCreateWithoutBarbersInput>
+  connectOrCreate?: Prisma.ServiceCreateOrConnectWithoutBarbersInput
+  connect?: Prisma.ServiceWhereUniqueInput
+}
+
+export type ServiceUpdateOneRequiredWithoutBarbersNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceCreateWithoutBarbersInput, Prisma.ServiceUncheckedCreateWithoutBarbersInput>
+  connectOrCreate?: Prisma.ServiceCreateOrConnectWithoutBarbersInput
+  upsert?: Prisma.ServiceUpsertWithoutBarbersInput
+  connect?: Prisma.ServiceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceUpdateToOneWithWhereWithoutBarbersInput, Prisma.ServiceUpdateWithoutBarbersInput>, Prisma.ServiceUncheckedUpdateWithoutBarbersInput>
+}
+
 export type ServiceCreateWithoutOwnerInput = {
   id?: string
   name: string
@@ -531,6 +557,7 @@ export type ServiceCreateWithoutOwnerInput = {
   isActive?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  barbers?: Prisma.BarberServiceCreateNestedManyWithoutServiceInput
 }
 
 export type ServiceUncheckedCreateWithoutOwnerInput = {
@@ -542,6 +569,7 @@ export type ServiceUncheckedCreateWithoutOwnerInput = {
   isActive?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  barbers?: Prisma.BarberServiceUncheckedCreateNestedManyWithoutServiceInput
 }
 
 export type ServiceCreateOrConnectWithoutOwnerInput = {
@@ -585,6 +613,70 @@ export type ServiceScalarWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"Service"> | Date | string
 }
 
+export type ServiceCreateWithoutBarbersInput = {
+  id?: string
+  name: string
+  description?: string | null
+  price: runtime.Decimal | runtime.DecimalJsLike | number | string
+  durationMinutes: number
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  owner: Prisma.OwnerCreateNestedOneWithoutServicesInput
+}
+
+export type ServiceUncheckedCreateWithoutBarbersInput = {
+  id?: string
+  ownerId: string
+  name: string
+  description?: string | null
+  price: runtime.Decimal | runtime.DecimalJsLike | number | string
+  durationMinutes: number
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ServiceCreateOrConnectWithoutBarbersInput = {
+  where: Prisma.ServiceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceCreateWithoutBarbersInput, Prisma.ServiceUncheckedCreateWithoutBarbersInput>
+}
+
+export type ServiceUpsertWithoutBarbersInput = {
+  update: Prisma.XOR<Prisma.ServiceUpdateWithoutBarbersInput, Prisma.ServiceUncheckedUpdateWithoutBarbersInput>
+  create: Prisma.XOR<Prisma.ServiceCreateWithoutBarbersInput, Prisma.ServiceUncheckedCreateWithoutBarbersInput>
+  where?: Prisma.ServiceWhereInput
+}
+
+export type ServiceUpdateToOneWithWhereWithoutBarbersInput = {
+  where?: Prisma.ServiceWhereInput
+  data: Prisma.XOR<Prisma.ServiceUpdateWithoutBarbersInput, Prisma.ServiceUncheckedUpdateWithoutBarbersInput>
+}
+
+export type ServiceUpdateWithoutBarbersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  price?: Prisma.DecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string
+  durationMinutes?: Prisma.IntFieldUpdateOperationsInput | number
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  owner?: Prisma.OwnerUpdateOneRequiredWithoutServicesNestedInput
+}
+
+export type ServiceUncheckedUpdateWithoutBarbersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  ownerId?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  price?: Prisma.DecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string
+  durationMinutes?: Prisma.IntFieldUpdateOperationsInput | number
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
 export type ServiceCreateManyOwnerInput = {
   id?: string
   name: string
@@ -605,6 +697,7 @@ export type ServiceUpdateWithoutOwnerInput = {
   isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  barbers?: Prisma.BarberServiceUpdateManyWithoutServiceNestedInput
 }
 
 export type ServiceUncheckedUpdateWithoutOwnerInput = {
@@ -616,6 +709,7 @@ export type ServiceUncheckedUpdateWithoutOwnerInput = {
   isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  barbers?: Prisma.BarberServiceUncheckedUpdateManyWithoutServiceNestedInput
 }
 
 export type ServiceUncheckedUpdateManyWithoutOwnerInput = {
@@ -630,6 +724,35 @@ export type ServiceUncheckedUpdateManyWithoutOwnerInput = {
 }
 
 
+/**
+ * Count Type ServiceCountOutputType
+ */
+
+export type ServiceCountOutputType = {
+  barbers: number
+}
+
+export type ServiceCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  barbers?: boolean | ServiceCountOutputTypeCountBarbersArgs
+}
+
+/**
+ * ServiceCountOutputType without action
+ */
+export type ServiceCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ServiceCountOutputType
+   */
+  select?: Prisma.ServiceCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * ServiceCountOutputType without action
+ */
+export type ServiceCountOutputTypeCountBarbersArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.BarberServiceWhereInput
+}
+
 
 export type ServiceSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -642,6 +765,8 @@ export type ServiceSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   createdAt?: boolean
   updatedAt?: boolean
   owner?: boolean | Prisma.OwnerDefaultArgs<ExtArgs>
+  barbers?: boolean | Prisma.Service$barbersArgs<ExtArgs>
+  _count?: boolean | Prisma.ServiceCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["service"]>
 
 export type ServiceSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -685,6 +810,8 @@ export type ServiceSelectScalar = {
 export type ServiceOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "ownerId" | "name" | "description" | "price" | "durationMinutes" | "isActive" | "createdAt" | "updatedAt", ExtArgs["result"]["service"]>
 export type ServiceInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   owner?: boolean | Prisma.OwnerDefaultArgs<ExtArgs>
+  barbers?: boolean | Prisma.Service$barbersArgs<ExtArgs>
+  _count?: boolean | Prisma.ServiceCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ServiceIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   owner?: boolean | Prisma.OwnerDefaultArgs<ExtArgs>
@@ -697,6 +824,7 @@ export type $ServicePayload<ExtArgs extends runtime.Types.Extensions.InternalArg
   name: "Service"
   objects: {
     owner: Prisma.$OwnerPayload<ExtArgs>
+    barbers: Prisma.$BarberServicePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1103,6 +1231,7 @@ readonly fields: ServiceFieldRefs;
 export interface Prisma__ServiceClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   owner<T extends Prisma.OwnerDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.OwnerDefaultArgs<ExtArgs>>): Prisma.Prisma__OwnerClient<runtime.Types.Result.GetResult<Prisma.$OwnerPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+  barbers<T extends Prisma.Service$barbersArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Service$barbersArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$BarberServicePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1539,6 +1668,30 @@ export type ServiceDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * Limit how many Services to delete.
    */
   limit?: number
+}
+
+/**
+ * Service.barbers
+ */
+export type Service$barbersArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the BarberService
+   */
+  select?: Prisma.BarberServiceSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the BarberService
+   */
+  omit?: Prisma.BarberServiceOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.BarberServiceInclude<ExtArgs> | null
+  where?: Prisma.BarberServiceWhereInput
+  orderBy?: Prisma.BarberServiceOrderByWithRelationInput | Prisma.BarberServiceOrderByWithRelationInput[]
+  cursor?: Prisma.BarberServiceWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.BarberServiceScalarFieldEnum | Prisma.BarberServiceScalarFieldEnum[]
 }
 
 /**

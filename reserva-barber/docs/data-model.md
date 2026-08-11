@@ -169,7 +169,7 @@ A bookable service offered by the business (e.g., haircut, beard trim), with a p
 - `price`: required, non-negative, at most **2 decimal places**, and not greater than the documented application maximum (`9,999,999.99`). Persisted as `Decimal(12, 2)` — the column is deliberately wider than the rule so that a numeric overflow, which PostgreSQL raises as an untyped error, is unreachable by construction rather than by handling.
 - **Price parsing (application layer):** the accepted decimal separator is `.` **or** `,`, because the platform and an es-AR keyboard disagree about which is correct. A value carrying a thousands separator (`4.500`, `4,500`) is **rejected as ambiguous** rather than interpreted — a wrong guess is a thousandfold pricing error. More than two decimal places is rejected, never silently rounded.
 - `durationMinutes`: required positive integer, a multiple of the slot granularity (`SLOT_GRANULARITY_MINUTES` = 5), between 5 and 480. The granularity constant lives in the domain layer because slot generation and booking sizing consume the same definition; a second definition of the grid would surface as appointments that cannot be booked rather than as a failing test.
-- **Availability rule (application layer):** a service is only exposed in the public booking flow if it has at least one assigned **active** barber via BarberService.
+- **Availability rule (application layer):** a service is exposed in the public booking flow only while it is itself **active** *and* has at least one assigned **active** barber via BarberService (§7). All three terms are load-bearing: a service that is inactive, unassigned, or assigned exclusively to inactive barbers is not bookable. Checking only the assignment would report a deactivated service as bookable.
 - **Ownership is stored, not derived.** Unlike `Barber` (§5), `Service` carries a real `ownerId` column, so every read and write scopes on that column rather than through a relation join. The derived-ownership pattern answers a schema that lacks an owner column and must not be applied to one that has it.
 - **Editing a price is not retroactive.** `Booking.priceAtBooking` (§11) is a deliberate historical snapshot; the live service price is never the source of truth for a past booking.
 
@@ -181,16 +181,26 @@ A bookable service offered by the business (e.g., haircut, beard trim), with a p
 ---
 
 ### 7. BarberService
-Join entity linking barbers to the services they can perform. Presence of a row is what makes a service bookable with a given barber.
+Join entity linking barbers to the services they can perform. Presence of a row is what makes a service bookable with a given barber — this table, not `Service`, is the gate to the public booking flow.
 
 **Fields:**
 - `id`: Unique identifier (PK, cuid)
 - `barberId`: Foreign key → Barber (required)
 - `serviceId`: Foreign key → Service (required)
+- `createdAt`: Timestamp. There is deliberately no `updatedAt`: the row carries no mutable field, so an assignment is created or destroyed, never edited.
 
 **Validation Rules:**
-- `barberId` + `serviceId`: unique together (no duplicate assignments)
-- Both referenced barber and service must belong to the same owner
+- `barberId` + `serviceId`: unique together, enforced by a composite unique constraint on `(barberId, serviceId)`. Unlike the name constraints of §4–§6, this one is **never surfaced to the owner as an error**: the write requests `skipDuplicates`, so a re-submitted assignment is absorbed rather than reported. A duplicate assignment is not a mistake anyone can be asked to correct — it is the same intent expressed twice.
+- **The same-owner rule has no database backing and is an application invariant.** Both referenced rows must belong to the same owner, but `Barber` has no `ownerId` column (§5 — ownership is derived through `location`), so no composite foreign key, unique constraint or `CHECK` can express the comparison. It is enforced at write time in exactly one place, and that choke point *is* the guarantee. Two consequences are binding: no code path may write this table except through that service, and the invariant is proven by an executable cross-owner test rather than asserted in a comment — a bulk insert bypasses relation validation entirely, so the foreign keys prove only that both ids exist, never that they agree about the owner.
+- **Assignment is a set operation against a rendered baseline, not a blind replace.** The editor submits two parallel multi-value fields: the ids it rendered, and the subset of those that were checked. Additions are `checked − stored`; removals are `(rendered − checked) ∩ stored`. Diffing against `stored` alone is rejected: the rendered list is a snapshot, so a stale tab would silently delete an assignment created after its own page load — and the loss is a service that quietly stops being bookable, not a field that has to be retyped. A conflict over an id both tabs rendered remains last-write-wins (`tech-debt.md` T8); a conflict over an id only one of them ever saw is now unreachable by construction.
+- **An empty selection is valid and means "this barber performs nothing".** With checkboxes, an all-unchecked form omits the key entirely, so an empty list is indistinguishable from a missing field unless the rendered-baseline field is read as the proof that a submission occurred. It must never be treated as a validation failure.
+- **A service may be *added* only while it is active, but an assignment already held over a service deactivated afterwards is a legal state, not a broken one.** The application therefore permits an inactive service to **remain** assigned while refusing to **add** one — the same shape as the barber/inactive-location exemption in §5, and decided from stored state rather than from the submission.
+- **Cardinality:** assignments per barber are bounded by the per-owner service cap (`MAX_SERVICES_PER_OWNER` = 50, §6). The submitted list is deduplicated and rejected above that bound *before* any database read, so a crafted submission cannot turn one save into an unbounded query.
+- **Deleting either side removes the assignment (`onDelete: Cascade`).** A join row has no meaning without both endpoints. This differs deliberately from `Barber → Location` (`Restrict`, §5): there the child carries data of its own that must not vanish silently, here the row *is* the relationship. The rule is inert today — the application has no hard-delete path, and M6 is deactivation — and exists so that whenever deletion does arrive it is already correct.
+
+**Derived reads:**
+- **Bookability of a service** is the conjunction of three facts, evaluated at read time and never cached in a column: the service is active, it has at least one BarberService row, and at least one of those barbers is active. Encoding only the middle term would report a deactivated service as bookable the moment M6 ships. A denormalized `Service.isBookable` flag is rejected — it would need invalidating on four distinct events (assign, unassign, barber deactivation, service deactivation) and is wrong the first time one is missed, whereas the count is a single indexed aggregate over a set bounded by the service cap.
+- `@@index([serviceId])` exists for that read and for the booking flow's "which barbers perform X" query. The composite unique constraint only serves the `barberId`-leading direction.
 
 **Relationships:**
 - `barber`: Many-to-one → Barber

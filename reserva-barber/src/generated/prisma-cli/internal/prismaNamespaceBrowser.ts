@@ -54,7 +54,8 @@ export const ModelName = {
   Owner: 'Owner',
   Location: 'Location',
   Barber: 'Barber',
-  Service: 'Service'
+  Service: 'Service',
+  BarberService: 'BarberService'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -124,6 +125,16 @@ export const ServiceScalarFieldEnum = {
 } as const
 
 export type ServiceScalarFieldEnum = (typeof ServiceScalarFieldEnum)[keyof typeof ServiceScalarFieldEnum]
+
+
+export const BarberServiceScalarFieldEnum = {
+  id: 'id',
+  barberId: 'barberId',
+  serviceId: 'serviceId',
+  createdAt: 'createdAt'
+} as const
+
+export type BarberServiceScalarFieldEnum = (typeof BarberServiceScalarFieldEnum)[keyof typeof BarberServiceScalarFieldEnum]
 
 
 export const SortOrder = {
