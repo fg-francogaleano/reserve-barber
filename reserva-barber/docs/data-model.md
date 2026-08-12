@@ -69,6 +69,25 @@ The public-facing profile shown to clients when they open the shared booking lin
 - `publicSlug`: required, unique, URL-safe (lowercase, hyphens), 3–60 characters
 - `photoUrl` / `coverUrl`: must point to an allowed image type (JPG, PNG, WEBP), max 5 MB, validated at upload
 
+**Storage and normalization rules (P1):**
+- `publicSlug` is **normalized before persistence** — diacritics stripped, lowercased, non-alphanumeric
+  runs collapsed to single hyphens, leading and trailing hyphens trimmed. The unique index compares
+  raw bytes, so the values it compares must already be canonical. This is the same rule
+  `Location.name` follows, and it is why no case- or accent-insensitive column type is used.
+- Uniqueness of `publicSlug` and of `ownerId` is enforced **by the database**, never by a
+  read-then-write. The check and the write are two round trips against a transaction-mode pooler and
+  may not share a connection.
+- `photoUrl` / `coverUrl` point into a **public** Supabase Storage bucket: these images are rendered
+  to unauthenticated clients, where signing a URL on every render would be the wrong mechanism. That
+  reasoning does not extend to assets with a different audience — `TransferReceipt` uses a separate
+  private bucket.
+- The image type is determined by **inspecting the file's leading bytes**, not by its declared
+  content type or extension, both of which are client-controlled. SVG is excluded deliberately: an
+  SVG served from a public origin is a script-execution surface.
+- The 5 MB ceiling is the **server-side** bound. The browser downscales and re-encodes each image to
+  roughly 500 KB before upload, which is also what removes capture metadata (EXIF, including GPS
+  coordinates) from anything published.
+
 **Relationships:**
 - `owner`: One-to-one → Owner
 - `socialLinks`: One-to-many → SocialLink
@@ -84,10 +103,18 @@ A single social network / external link displayed on the public profile.
 - `platform`: Social platform — enum `SocialPlatform` (`INSTAGRAM`, `FACEBOOK`, `TIKTOK`, `WHATSAPP`, `X`, `YOUTUBE`, `WEBSITE`) (required)
 - `url`: Full URL to the profile/page (max 500, required)
 - `orderIndex`: Display order on the profile (Int, required)
+- `createdAt`: Timestamp. There is deliberately **no `updatedAt`**: the set is replaced as a whole,
+  never edited row by row (the same write shape as `WorkingHours`).
 
 **Validation Rules:**
 - `url`: required, valid URL format
+- `url`: **protocol restricted to `http:` and `https:`**, checked by parsing the URL rather than by
+  pattern. These strings become `href` attributes on a page anonymous clients open, so a stored
+  `javascript:` URL is stored XSS — this is a security control, not a formatting rule.
 - `platform` + `businessProfileId`: unique together (one link per platform per profile)
+- At most one link per platform means at most **seven** links per profile. Duplicate platforms are
+  rejected during validation, before any write: reaching the database constraint aborts a
+  transaction whose images have already been uploaded.
 
 **Relationships:**
 - `businessProfile`: Many-to-one → BusinessProfile

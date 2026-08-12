@@ -150,6 +150,55 @@ here is what changed and why:
   broken is the first thing a client sees, not a dashboard control only the owner meets. Start with
   the re-verification above, not with the CSS.
 
+**P1 (2026-08-12) — MECHANISM FOUND. The symptom is real; the cause is almost certainly not this
+application.** Status moves from "needs investigation" to "needs one 30-second confirmation".
+
+Re-verified first, as this entry asked. The symptom **does reproduce**: a `<Link>` carrying
+`buttonVariants()` renders as dark text on a dark background. So the "artifact of the inspecting
+extension" hypothesis is dead in its original form — but a sharper version of it is now the answer.
+
+What was measured, in `next dev`, on a real anchor:
+
+- `bg-primary` computes `rgba(0,0,0,0)` on an `<a>`, and `rgb(237,237,237)` on a fresh `<div>`,
+  `<span>` **and** `<button>` carrying the identical class. So the utility works; anchors are singled
+  out.
+- Not about `href` (an `<a>` with none behaves the same), not `:visited`, not the cva string — a bare
+  `class="bg-primary"` is enough. An inline `style` on the same anchor paints normally, so nothing is
+  blocking paint.
+- Every other utility in the same string resolves: `h-9` gives 36px, `text-primary-foreground` gives
+  the right colour.
+- **The decisive test.** Injecting `a.bg-primary{background-color:rgb(9,9,9)}` **unlayered** wins and
+  paints. The *same rule* inside `@layer utilities` loses and stays transparent.
+
+That is the whole mechanism: **something unlayered sets `background-color` on anchors, and unlayered
+CSS beats anything inside a cascade layer regardless of specificity.** Tailwind v4 emits every
+utility into `@layer utilities`, so `bg-*` on an `<a>` cannot win — no amount of specificity would
+help, which is why nothing in the project looked like the culprit.
+
+The overriding rule is **in no stylesheet the page can enumerate**: a deep walk of
+`document.styleSheets` (descending through `@layer`, `@media`, `@supports`) finds no anchor
+background rule, and `document.adoptedStyleSheets` is empty. CSS injected by a browser extension via
+`chrome.scripting.insertCSS` behaves exactly like this — it applies, it is unlayered, and it is
+invisible to page JavaScript. The page also carries a `data-styled` (styled-components) `<style>`
+element that this project does not use, which is independent evidence that something is injecting
+into the page.
+
+**This also explains the original "not enumerable" clue**, which sent M1 and M3 hunting in the wrong
+place: the rule that could not be found was never `.bg-primary` — it was the invisible rule beating it.
+
+**What remains — 30 seconds, and it needs a human.** Open any dashboard page in a private window with
+extensions disabled, or in a different browser, and look at a link-styled-as-button. If it paints,
+the defect is not in the product, every workaround can be deleted, and this entry closes. If it does
+not, the cause is inside the app after all and this measurement narrows the search to "find the
+unlayered anchor rule".
+
+**The workaround stays until that check runs**, now carrying the diagnosis in its comment rather than
+a shrug. No fourth copy was added: P1's own editor uses real `<button>` elements and needed none.
+
+**Worth keeping regardless of the outcome:** any unlayered CSS — an extension, a user stylesheet, a
+third-party widget — silently defeats *every* Tailwind v4 utility, because they all live in a layer.
+That is a general fragility of this stack, not a quirk of anchors.
+
 ### T11 — Cross-owner isolation has no executable proof
 **Status:** **needs a test when it becomes possible** · **Effort:** ~1 h
 
@@ -327,6 +376,31 @@ careful:
 Reading `error.meta.target` to qualify the translation was re-rejected for the reason M3 gave: it
 drags Prisma's error shape into the application layer, which is what the boundary exists to prevent.
 
+**P1 (2026-08-11) — `meta.target` does not exist on this stack, and the boundary now has a
+precedent.** P1 is the first change that genuinely needs to tell two unique violations apart
+(`BusinessProfile.ownerId` versus `BusinessProfile.publicSlug`, plus `SocialLink(businessProfileId,
+platform)`), so it had to find out what a violation actually reports. Measured by
+`scripts/p1-gate-db.ts` against the real database:
+
+- `error.meta.target` is **absent**. Prisma 7 with the `@prisma/adapter-pg` driver adapter reports
+  the constraint at `meta.driverAdapterError.cause.constraint.fields`, as column names that arrive
+  **already quoted** (`['"publicSlug"']`). Any future attempt to qualify a translation must read
+  that, not `target` — the gate's first version asserted `target` and failed every probe.
+- The three constraints are cleanly distinguishable: `ownerId`, `publicSlug`, and
+  `businessProfileId,platform`.
+
+P1 resolves the tension this entry describes by **translating in the repository** rather than in the
+service: `PrismaBusinessProfileRepository` reads the driver structure — where Prisma is already known
+— and throws a domain error, so nothing Prisma-shaped crosses into the application layer. That is the
+same rule `data-persistence` already states for rows, applied to errors.
+
+This narrows the entry rather than closing it. `LocationService`, `BarberCatalogService` and
+`ServiceCatalogService` still catch a bare `P2002` in the application layer and still assume it can
+only mean one thing. The fix for them is now a known, demonstrated move rather than an open question.
+
+- **Trigger (unchanged in kind, cheaper now):** the first table in the catalogue paths to carry a
+  second unique constraint. Move that service's translation into its repository, following P1.
+
 - **Trigger:** any change that nests an assignment write inside a barber or service write, or a
   migration adding a **second reachable** unique constraint to `Barber` or `Service` themselves.
   The M4 trigger is discharged.
@@ -479,6 +553,43 @@ That is enough to notice but not enough to explain, and it differs from every ot
 The create path is unaffected: it carries form state and reports failures normally.
 
 - **Trigger:** the first report of an absence that would not delete, or any change that gives the list rows client state for another reason.
+
+### T32 — Unreferenced storage objects accumulate with no reclamation path
+**Status:** accepted · **Effort:** ~2–3 h (a sweep keyed on the owner prefix, or a `storagePath` column plus a scheduled job) · **Added:** P1 (2026-08-11)
+
+An image is uploaded **before** the database transaction opens, because storage is not transactional and a network round trip must not hold a transaction open on a pooled connection. When the transaction then fails, the uploaded object is referenced by nothing. It is logged with its key and left in place.
+
+Replacement has the same shape from the other end: the previous object is deleted best-effort after a successful save, and a failed delete is logged rather than raised, because a save that fails in order to reclaim a few hundred kilobytes is a worse outcome than the kilobytes.
+
+Accepted because the accumulation is bounded and small: one owner, a client-side downscale that caps each object at roughly 500 KB, and one orphan per failed save. What does not exist is any process that reclaims them — the log is the only inventory.
+
+**Do not fix this before B6.** Transfer receipts add a second bucket with identical orphan semantics and a *private* audience; one entry covering both is worth more than one written now that B6 would rewrite.
+
+- **Trigger:** B6 shipping (fix both buckets together), any measured storage growth that is not explained by real profile edits, or multi-owner tenancy.
+
+### T33 — Changing the public slug breaks every link already shared
+**Status:** accepted — owner's explicit decision · **Effort:** ~3–4 h (slug history table, lookup fallback, redirect) · **Added:** P1 (2026-08-11)
+
+`BusinessProfile.publicSlug` is editable. Changing it changes the public URL, and every link already handed out — WhatsApp messages, an Instagram bio, printed cards — stops resolving. There is no alias table and no redirect from a previous slug.
+
+The owner chose this knowingly over the two alternatives: freezing the slug after the first save (unrecoverable from a typo without a database edit) and keeping old slugs alive (a second table, and a story of its own). The mitigation shipped instead is a warning at the moment the slug is altered away from its stored value, which is the only moment it can be acted on — there is no way to learn afterwards who holds the old link.
+
+The cost is currently zero: B1 has not shipped, so no link resolves yet and none can have been usefully shared. The exposure begins the day the public page goes live.
+
+- **Trigger:** the first slug change made after B1 is live, or any owner report of a shared link that stopped working.
+
+### T34 — A controlled `<select>` needs a manual write-back after React's post-action form reset
+**Status:** accepted — measured workaround, isolated to one component · **Effort:** ~1 h to revisit when React or the form shape changes · **Added:** P1 (2026-08-12)
+
+React 19 resets an uncontrolled form once its action resolves. Controlling a value is the documented answer, and for text inputs it is enough — React restores the DOM value on its own. **It is not enough for `<select>`.** The reset drops the element to its first option, React's `value` prop is unchanged from the previous render, so no DOM write is scheduled and the element keeps reporting `""`.
+
+That is not cosmetic on this form: the social link set is replaced wholesale (design D7) and blank rows are discarded as absence, so a select silently reading `""` makes the next save delete a link the owner had already stored. Measured directly — the first save carried `WHATSAPP` and the second carried `""` with the row's URL still intact.
+
+`ProfileForm` therefore keeps a ref per select and writes the state value back to the DOM after every commit, which is the commit the reset arrives in. The effect has no dependency array on purpose.
+
+The cost is a piece of imperative DOM code inside an otherwise declarative form, and a rule that is easy to not know: **any future `<select>` inside a form with a Server Action needs the same treatment**, and nothing in the type system will say so. The two regression tests in `ProfileForm.test.tsx` assert on the submitted `FormData`, not on the DOM, so they will still catch it if the write-back is removed.
+
+- **Trigger:** a React upgrade that restores controlled selects after a form reset (delete the workaround and let the tests confirm), or the second `<select>` added to any action-backed form in this project — at which point this belongs in a shared component rather than copied.
 
 ### T16 — Session expiry during long free-text entry silently discards up to 500 characters
 **Status:** accepted · **Effort:** ~2–4 h (server-sent draft save or client-side autosave) · **Last evaluated:** M3 (2026-08-09)

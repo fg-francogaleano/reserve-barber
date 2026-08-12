@@ -221,6 +221,88 @@ export const COPY = {
     infrastructureError:
       'No pudimos guardar los cambios. Revisá la lista de ausencias antes de reintentar, por las dudas de que se haya guardado.',
   },
+  businessProfile: {
+    nav: 'Mi perfil',
+    heading: 'Mi perfil público',
+    intro:
+      'Esto es lo que ven tus clientes cuando abren tu link. El nombre y la dirección del link son obligatorios; el resto es opcional.',
+
+    businessNameLabel: 'Nombre de la barbería',
+    bioLabel: 'Descripción (opcional)',
+    bioHint: 'Contá en pocas líneas qué hace especial a tu barbería.',
+
+    photoLabel: 'Foto de perfil',
+    coverLabel: 'Imagen de portada',
+    imageChoose: 'Elegir imagen',
+    imageReplace: 'Cambiar',
+    imageRemove: 'Quitar',
+    imageEmpty: 'Sin imagen',
+    imageHint: 'JPG, PNG o WEBP. La achicamos automáticamente antes de subirla.',
+    // Two things the owner cannot discover on their own and would rather know
+    // before uploading than after.
+    imagePrivacyNote:
+      'Al subirla le quitamos los datos ocultos, incluida la ubicación donde fue tomada. Tené en cuenta que una imagen publicada puede seguir viéndose un rato aunque la cambies.',
+    imageProcessing: 'Preparando la imagen…',
+    imageUndecodable: 'No pudimos leer ese archivo como imagen. Probá con otra.',
+    imageUnsupportedType: 'El archivo tiene que ser JPG, PNG o WEBP.',
+    imageTooLarge: 'La imagen es demasiado grande.',
+    imageUploadFailed: 'No pudimos subir la imagen. Intentá de nuevo.',
+    // Distinct from the one above: nothing was attempted. The form said
+    // "reemplazar" and no file came with it, so telling the owner the upload
+    // failed would describe something that never happened.
+    imageReselect: 'Volvé a elegir la imagen y guardá de nuevo.',
+
+    slugLabel: 'Dirección de tu link',
+    slugHint: 'Solo minúsculas, números y guiones. Se arma sola a partir del nombre, pero podés cambiarla.',
+    slugRequired: 'Ingresá la dirección de tu link.',
+    slugTooShort: 'La dirección tiene que tener al menos 3 caracteres.',
+    // Shows the normalized value: the owner may have typed "Barbería Don Juan"
+    // and an error naming a string they never wrote reads as a bug.
+    slugTaken: (slug: string) => `La dirección "${slug}" ya está en uso. Probá con otra.`,
+    slugChangeWarning:
+      'Si cambiás la dirección, los links que ya compartiste dejan de funcionar. No hay forma de saber quién los tiene guardados.',
+
+    socialHeading: 'Redes y contactos',
+    socialIntro: 'Podés agregar un link por red.',
+    socialEmpty: 'Todavía no agregaste ninguna red.',
+    socialAdd: 'Agregar red',
+    socialRemove: 'Quitar',
+    socialPlatformLabel: 'Red',
+    socialUrlLabel: 'Link',
+    socialIncomplete: 'Completá la red y el link, o dejá la fila vacía.',
+    socialUnknownPlatform: 'Elegí una red de la lista.',
+    socialDuplicatePlatform: 'Ya agregaste esa red más arriba.',
+    socialInvalidUrl: 'El link no es válido. Tiene que empezar con http:// o https://.',
+    socialInvalidProtocol: 'El link tiene que empezar con http:// o https://.',
+    socialUrlTooLong: 'El link es demasiado largo.',
+    socialTooMany: 'Podés agregar como máximo un link por red.',
+
+    linkHeading: 'Tu link para compartir',
+    linkCopy: 'Copiar',
+    linkCopied: '¡Copiado!',
+    linkCopyFailed: 'No pudimos copiarlo. Seleccionalo y copialo a mano.',
+    // The link is real and correct, and it does not resolve yet: the public page
+    // ships with B1. Saying so is cheaper than an owner sharing it and sending
+    // their clients to a login screen.
+    linkNotPublishedYet:
+      'Todavía no está publicado: la página que ven tus clientes se habilita en el próximo paso. Guardá el link, pero no lo compartas aún.',
+    linkBeforeSave: 'Guardá el perfil para obtener tu link.',
+
+    nameRequired: 'Ingresá el nombre de tu barbería.',
+    nameLength: 'El nombre tiene que tener entre 2 y 120 caracteres.',
+    bioTooLong: 'La descripción no puede superar los 1000 caracteres.',
+
+    save: 'Guardar cambios',
+    saving: 'Guardando…',
+    // An upload through a Server Action cannot report progress, so several
+    // seconds on a mobile connection is indistinguishable from a frozen page
+    // without this.
+    savingHint: 'Estamos subiendo tus imágenes. No cierres esta pestaña.',
+    saved: 'Listo, guardamos tu perfil.',
+    alreadyExists: 'Tu perfil ya estaba guardado. Recargá la página y volvé a intentar.',
+    infrastructureError:
+      'No pudimos guardar los cambios. Revisá el perfil antes de reintentar, por las dudas de que se haya guardado.',
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

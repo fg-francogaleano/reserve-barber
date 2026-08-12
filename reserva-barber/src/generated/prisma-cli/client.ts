@@ -50,6 +50,23 @@ export { Prisma }
  */
 export type Owner = Prisma.OwnerModel
 /**
+ * Model BusinessProfile
+ * The public-facing brand shown to clients at `/b/{publicSlug}`. Brand-level
+ * rather than per-location: the client picks a branch inside the booking flow
+ * (data-model.md §2).
+ * 
+ * Ownership is STORED, like Service and unlike Barber: `ownerId` is a real
+ * column, so every read and write scopes on it directly rather than through a
+ * relation join.
+ */
+export type BusinessProfile = Prisma.BusinessProfileModel
+/**
+ * Model SocialLink
+ * A single social network link displayed on the public profile
+ * (data-model.md §3).
+ */
+export type SocialLink = Prisma.SocialLinkModel
+/**
  * Model Location
  * A physical barbershop branch owned by the Owner.
  */

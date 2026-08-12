@@ -33,6 +33,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           >
             {COPY.services.nav}
           </Link>
+          <Link href="/perfil" className="text-sm font-medium underline-offset-4 hover:underline">
+            {COPY.businessProfile.nav}
+          </Link>
         </nav>
         <span className="text-muted-foreground text-sm">{owner.email}</span>
         <form action={logoutAction}>
