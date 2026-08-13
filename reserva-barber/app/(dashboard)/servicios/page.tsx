@@ -50,11 +50,8 @@ export default async function ServicesPage() {
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-12">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-semibold tracking-tight">{COPY.services.heading}</h1>
-        {/* T10 workaround: the variant classes go on an inner <span>, because no
-            background utility resolves on an <a>. Re-deferred at M3 with a
-            sharpened next step — see docs/tech-debt.md. */}
-        <Link href="/servicios/nuevo" className="inline-flex">
-          <span className={buttonVariants()}>{COPY.services.create}</span>
+        <Link href="/servicios/nuevo" className={buttonVariants()}>
+          {COPY.services.create}
         </Link>
       </div>
 

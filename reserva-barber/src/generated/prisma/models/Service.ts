@@ -526,14 +526,6 @@ export type DecimalFieldUpdateOperationsInput = {
   divide?: runtime.Decimal | runtime.DecimalJsLike | number | string
 }
 
-export type IntFieldUpdateOperationsInput = {
-  set?: number
-  increment?: number
-  decrement?: number
-  multiply?: number
-  divide?: number
-}
-
 export type ServiceCreateNestedOneWithoutBarbersInput = {
   create?: Prisma.XOR<Prisma.ServiceCreateWithoutBarbersInput, Prisma.ServiceUncheckedCreateWithoutBarbersInput>
   connectOrCreate?: Prisma.ServiceCreateOrConnectWithoutBarbersInput

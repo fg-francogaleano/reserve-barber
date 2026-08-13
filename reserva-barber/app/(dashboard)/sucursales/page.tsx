@@ -38,13 +38,9 @@ export default async function LocationsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-semibold tracking-tight">{COPY.locations.manageHeading}</h1>
         {/* The Button primitive renders a real <button>; a navigation control
-            must be a link, so it borrows the variant classes instead.
-            The classes sit on an inner <span>, not on the <a>: in this app no
-            background utility resolves on an anchor (verified in the browser —
-            `bg-primary` paints a <div> and a <span> but never an <a>), which
-            rendered this call to action as dark text on a dark background. */}
-        <Link href="/sucursales/nueva" className="inline-flex">
-          <span className={buttonVariants()}>{COPY.locations.create}</span>
+            must be a link, so it borrows the variant classes instead. */}
+        <Link href="/sucursales/nueva" className={buttonVariants()}>
+          {COPY.locations.create}
         </Link>
       </div>
 

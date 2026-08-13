@@ -34,6 +34,71 @@ model Owner {
   updatedAt  DateTime  @updatedAt
   locations  Location[]
   services   Service[]
+  // Optional, and it stays optional: no profile row exists until the owner
+  // saves the editor for the first time. The absence is a normal state the
+  // editor renders as an empty form, not an error (data-model.md §2).
+  businessProfile BusinessProfile?
+}
+
+/// The public-facing brand shown to clients at `/b/{publicSlug}`. Brand-level
+/// rather than per-location: the client picks a branch inside the booking flow
+/// (data-model.md §2).
+///
+/// Ownership is STORED, like Service and unlike Barber: `ownerId` is a real
+/// column, so every read and write scopes on it directly rather than through a
+/// relation join.
+model BusinessProfile {
+  id           String   @id @default(cuid())
+  ownerId      String   @unique
+  owner        Owner    @relation(fields: [ownerId], references: [id])
+  businessName String   @db.VarChar(120)
+  bio          String?  @db.VarChar(1000)
+  photoUrl     String?
+  coverUrl     String?
+  // Normalized before persistence — lowercased, diacritics stripped, hyphenated
+  // — so this index compares already-canonical values. The index compares raw
+  // bytes; a case-insensitive column type is deliberately NOT used to
+  // compensate for values that should have arrived canonical (design D10).
+  publicSlug   String   @unique @db.VarChar(60)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  socialLinks  SocialLink[]
+}
+
+/// A single social network link displayed on the public profile
+/// (data-model.md §3).
+model SocialLink {
+  id                String          @id @default(cuid())
+  businessProfileId String
+  // Cascade for the same reason as BarberService: the row IS the relationship
+  // and has no meaning without either endpoint. Inert while the application has
+  // no hard-delete path — declared so it is already correct when one arrives.
+  businessProfile   BusinessProfile @relation(fields: [businessProfileId], references: [id], onDelete: Cascade)
+  platform          SocialPlatform
+  url               String          @db.VarChar(500)
+  orderIndex        Int
+  // No updatedAt: the set is replaced as a whole inside one transaction rather
+  // than edited row by row, the same write shape as WorkingHours. An additive
+  // write would double the set on a retry after a committed-but-timed-out save.
+  createdAt         DateTime        @default(now())
+
+  // One link per platform per profile. Also what bounds the set at seven
+  // without a separate count, and what makes a retried insert a constraint
+  // violation rather than a duplicate.
+  @@unique([businessProfileId, platform])
+  // Backs the ordered read behind the editor and the public profile.
+  @@index([businessProfileId, orderIndex])
+}
+
+/// The platforms a public profile can link to (data-model.md §3).
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  WHATSAPP
+  X
+  YOUTUBE
+  WEBSITE
 }
 
 /// A physical barbershop branch owned by the Owner.

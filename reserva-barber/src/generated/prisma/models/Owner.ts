@@ -187,6 +187,7 @@ export type OwnerWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"Owner"> | Date | string
   locations?: Prisma.LocationListRelationFilter
   services?: Prisma.ServiceListRelationFilter
+  businessProfile?: Prisma.XOR<Prisma.BusinessProfileNullableScalarRelationFilter, Prisma.BusinessProfileWhereInput> | null
 }
 
 export type OwnerOrderByWithRelationInput = {
@@ -197,6 +198,7 @@ export type OwnerOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   locations?: Prisma.LocationOrderByRelationAggregateInput
   services?: Prisma.ServiceOrderByRelationAggregateInput
+  businessProfile?: Prisma.BusinessProfileOrderByWithRelationInput
 }
 
 export type OwnerWhereUniqueInput = Prisma.AtLeast<{
@@ -210,6 +212,7 @@ export type OwnerWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"Owner"> | Date | string
   locations?: Prisma.LocationListRelationFilter
   services?: Prisma.ServiceListRelationFilter
+  businessProfile?: Prisma.XOR<Prisma.BusinessProfileNullableScalarRelationFilter, Prisma.BusinessProfileWhereInput> | null
 }, "id" | "email" | "authUserId">
 
 export type OwnerOrderByWithAggregationInput = {
@@ -242,6 +245,7 @@ export type OwnerCreateInput = {
   updatedAt?: Date | string
   locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
   services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
+  businessProfile?: Prisma.BusinessProfileCreateNestedOneWithoutOwnerInput
 }
 
 export type OwnerUncheckedCreateInput = {
@@ -252,6 +256,7 @@ export type OwnerUncheckedCreateInput = {
   updatedAt?: Date | string
   locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
   services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
+  businessProfile?: Prisma.BusinessProfileUncheckedCreateNestedOneWithoutOwnerInput
 }
 
 export type OwnerUpdateInput = {
@@ -262,6 +267,7 @@ export type OwnerUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
   services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
+  businessProfile?: Prisma.BusinessProfileUpdateOneWithoutOwnerNestedInput
 }
 
 export type OwnerUncheckedUpdateInput = {
@@ -272,6 +278,7 @@ export type OwnerUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
   services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+  businessProfile?: Prisma.BusinessProfileUncheckedUpdateOneWithoutOwnerNestedInput
 }
 
 export type OwnerCreateManyInput = {
@@ -339,6 +346,20 @@ export type DateTimeFieldUpdateOperationsInput = {
   set?: Date | string
 }
 
+export type OwnerCreateNestedOneWithoutBusinessProfileInput = {
+  create?: Prisma.XOR<Prisma.OwnerCreateWithoutBusinessProfileInput, Prisma.OwnerUncheckedCreateWithoutBusinessProfileInput>
+  connectOrCreate?: Prisma.OwnerCreateOrConnectWithoutBusinessProfileInput
+  connect?: Prisma.OwnerWhereUniqueInput
+}
+
+export type OwnerUpdateOneRequiredWithoutBusinessProfileNestedInput = {
+  create?: Prisma.XOR<Prisma.OwnerCreateWithoutBusinessProfileInput, Prisma.OwnerUncheckedCreateWithoutBusinessProfileInput>
+  connectOrCreate?: Prisma.OwnerCreateOrConnectWithoutBusinessProfileInput
+  upsert?: Prisma.OwnerUpsertWithoutBusinessProfileInput
+  connect?: Prisma.OwnerWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.OwnerUpdateToOneWithWhereWithoutBusinessProfileInput, Prisma.OwnerUpdateWithoutBusinessProfileInput>, Prisma.OwnerUncheckedUpdateWithoutBusinessProfileInput>
+}
+
 export type OwnerCreateNestedOneWithoutLocationsInput = {
   create?: Prisma.XOR<Prisma.OwnerCreateWithoutLocationsInput, Prisma.OwnerUncheckedCreateWithoutLocationsInput>
   connectOrCreate?: Prisma.OwnerCreateOrConnectWithoutLocationsInput
@@ -367,6 +388,62 @@ export type OwnerUpdateOneRequiredWithoutServicesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.OwnerUpdateToOneWithWhereWithoutServicesInput, Prisma.OwnerUpdateWithoutServicesInput>, Prisma.OwnerUncheckedUpdateWithoutServicesInput>
 }
 
+export type OwnerCreateWithoutBusinessProfileInput = {
+  id?: string
+  email: string
+  authUserId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
+  services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
+}
+
+export type OwnerUncheckedCreateWithoutBusinessProfileInput = {
+  id?: string
+  email: string
+  authUserId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
+  services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
+}
+
+export type OwnerCreateOrConnectWithoutBusinessProfileInput = {
+  where: Prisma.OwnerWhereUniqueInput
+  create: Prisma.XOR<Prisma.OwnerCreateWithoutBusinessProfileInput, Prisma.OwnerUncheckedCreateWithoutBusinessProfileInput>
+}
+
+export type OwnerUpsertWithoutBusinessProfileInput = {
+  update: Prisma.XOR<Prisma.OwnerUpdateWithoutBusinessProfileInput, Prisma.OwnerUncheckedUpdateWithoutBusinessProfileInput>
+  create: Prisma.XOR<Prisma.OwnerCreateWithoutBusinessProfileInput, Prisma.OwnerUncheckedCreateWithoutBusinessProfileInput>
+  where?: Prisma.OwnerWhereInput
+}
+
+export type OwnerUpdateToOneWithWhereWithoutBusinessProfileInput = {
+  where?: Prisma.OwnerWhereInput
+  data: Prisma.XOR<Prisma.OwnerUpdateWithoutBusinessProfileInput, Prisma.OwnerUncheckedUpdateWithoutBusinessProfileInput>
+}
+
+export type OwnerUpdateWithoutBusinessProfileInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  authUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
+  services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
+}
+
+export type OwnerUncheckedUpdateWithoutBusinessProfileInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  authUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
+  services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+}
+
 export type OwnerCreateWithoutLocationsInput = {
   id?: string
   email: string
@@ -374,6 +451,7 @@ export type OwnerCreateWithoutLocationsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
+  businessProfile?: Prisma.BusinessProfileCreateNestedOneWithoutOwnerInput
 }
 
 export type OwnerUncheckedCreateWithoutLocationsInput = {
@@ -383,6 +461,7 @@ export type OwnerUncheckedCreateWithoutLocationsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
+  businessProfile?: Prisma.BusinessProfileUncheckedCreateNestedOneWithoutOwnerInput
 }
 
 export type OwnerCreateOrConnectWithoutLocationsInput = {
@@ -408,6 +487,7 @@ export type OwnerUpdateWithoutLocationsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
+  businessProfile?: Prisma.BusinessProfileUpdateOneWithoutOwnerNestedInput
 }
 
 export type OwnerUncheckedUpdateWithoutLocationsInput = {
@@ -417,6 +497,7 @@ export type OwnerUncheckedUpdateWithoutLocationsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+  businessProfile?: Prisma.BusinessProfileUncheckedUpdateOneWithoutOwnerNestedInput
 }
 
 export type OwnerCreateWithoutServicesInput = {
@@ -426,6 +507,7 @@ export type OwnerCreateWithoutServicesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
+  businessProfile?: Prisma.BusinessProfileCreateNestedOneWithoutOwnerInput
 }
 
 export type OwnerUncheckedCreateWithoutServicesInput = {
@@ -435,6 +517,7 @@ export type OwnerUncheckedCreateWithoutServicesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
+  businessProfile?: Prisma.BusinessProfileUncheckedCreateNestedOneWithoutOwnerInput
 }
 
 export type OwnerCreateOrConnectWithoutServicesInput = {
@@ -460,6 +543,7 @@ export type OwnerUpdateWithoutServicesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
+  businessProfile?: Prisma.BusinessProfileUpdateOneWithoutOwnerNestedInput
 }
 
 export type OwnerUncheckedUpdateWithoutServicesInput = {
@@ -469,6 +553,7 @@ export type OwnerUncheckedUpdateWithoutServicesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
+  businessProfile?: Prisma.BusinessProfileUncheckedUpdateOneWithoutOwnerNestedInput
 }
 
 
@@ -519,6 +604,7 @@ export type OwnerSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   updatedAt?: boolean
   locations?: boolean | Prisma.Owner$locationsArgs<ExtArgs>
   services?: boolean | Prisma.Owner$servicesArgs<ExtArgs>
+  businessProfile?: boolean | Prisma.Owner$businessProfileArgs<ExtArgs>
   _count?: boolean | Prisma.OwnerCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["owner"]>
 
@@ -550,6 +636,7 @@ export type OwnerOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = ru
 export type OwnerInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   locations?: boolean | Prisma.Owner$locationsArgs<ExtArgs>
   services?: boolean | Prisma.Owner$servicesArgs<ExtArgs>
+  businessProfile?: boolean | Prisma.Owner$businessProfileArgs<ExtArgs>
   _count?: boolean | Prisma.OwnerCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type OwnerIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -560,6 +647,7 @@ export type $OwnerPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   objects: {
     locations: Prisma.$LocationPayload<ExtArgs>[]
     services: Prisma.$ServicePayload<ExtArgs>[]
+    businessProfile: Prisma.$BusinessProfilePayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -963,6 +1051,7 @@ export interface Prisma__OwnerClient<T, Null = never, ExtArgs extends runtime.Ty
   readonly [Symbol.toStringTag]: "PrismaPromise"
   locations<T extends Prisma.Owner$locationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$locationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LocationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   services<T extends Prisma.Owner$servicesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$servicesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ServicePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  businessProfile<T extends Prisma.Owner$businessProfileArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$businessProfileArgs<ExtArgs>>): Prisma.Prisma__BusinessProfileClient<runtime.Types.Result.GetResult<Prisma.$BusinessProfilePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1435,6 +1524,25 @@ export type Owner$servicesArgs<ExtArgs extends runtime.Types.Extensions.Internal
   take?: number
   skip?: number
   distinct?: Prisma.ServiceScalarFieldEnum | Prisma.ServiceScalarFieldEnum[]
+}
+
+/**
+ * Owner.businessProfile
+ */
+export type Owner$businessProfileArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the BusinessProfile
+   */
+  select?: Prisma.BusinessProfileSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the BusinessProfile
+   */
+  omit?: Prisma.BusinessProfileOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.BusinessProfileInclude<ExtArgs> | null
+  where?: Prisma.BusinessProfileWhereInput
 }
 
 /**

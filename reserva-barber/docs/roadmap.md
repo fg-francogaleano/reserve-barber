@@ -34,7 +34,9 @@ Everything required for a minimally usable product: the owner can set up the bus
 
 ### 1b. Public presence & payment setup
 
-- [ ] **P1** — As the owner, I want to edit my public profile (business name, bio, profile/cover images, social links) and get my shareable booking link, so that clients see my brand when they open it. — *depends on: A1; images require Supabase Storage setup*
+- [x] **P1** — As the owner, I want to edit my public profile (business name, bio, profile/cover images, social links) and get my shareable booking link, so that clients see my brand when they open it. — *depends on: A1; images require Supabase Storage setup*
+  - Carried the Supabase Storage setup, as planned: a public bucket whose write policy confines the authenticated role to its own `auth.uid()` prefix, proven from both sides against real infrastructure. No new secret — the upload runs as the owner's own session, never a service role.
+  - The shareable link is rendered and disclosed as not yet published. It resolves to `/b/{slug}`, which redirects to `/login` until **B1** ships the public page.
 - [ ] **PC1** — As the owner, I want to save my bank transfer details (CBU/CVU or alias, holder name), so that clients can pay the deposit by transfer. — *depends on: A1*
 - [ ] **PC2** — As the owner, I want to save my Mercado Pago credentials (Access Token, Public Key), so that clients can pay the deposit online. — *depends on: A1*
 - [ ] **PC3** — As the owner, I want to configure the deposit policy (fixed amount or percentage of the service price), so that every booking charges the right deposit. — *depends on: PC1 or PC2 (at least one payment method configured)*

@@ -385,6 +385,8 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 export const ModelName = {
   Owner: 'Owner',
+  BusinessProfile: 'BusinessProfile',
+  SocialLink: 'SocialLink',
   Location: 'Location',
   Barber: 'Barber',
   Service: 'Service',
@@ -406,7 +408,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "owner" | "location" | "barber" | "service" | "barberService" | "workingHours" | "timeOff"
+    modelProps: "owner" | "businessProfile" | "socialLink" | "location" | "barber" | "service" | "barberService" | "workingHours" | "timeOff"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -481,6 +483,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.OwnerCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.OwnerCountAggregateOutputType> | number
+        }
+      }
+    }
+    BusinessProfile: {
+      payload: Prisma.$BusinessProfilePayload<ExtArgs>
+      fields: Prisma.BusinessProfileFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.BusinessProfileFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.BusinessProfileFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>
+        }
+        findFirst: {
+          args: Prisma.BusinessProfileFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.BusinessProfileFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>
+        }
+        findMany: {
+          args: Prisma.BusinessProfileFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>[]
+        }
+        create: {
+          args: Prisma.BusinessProfileCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>
+        }
+        createMany: {
+          args: Prisma.BusinessProfileCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.BusinessProfileCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>[]
+        }
+        delete: {
+          args: Prisma.BusinessProfileDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>
+        }
+        update: {
+          args: Prisma.BusinessProfileUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>
+        }
+        deleteMany: {
+          args: Prisma.BusinessProfileDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.BusinessProfileUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.BusinessProfileUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>[]
+        }
+        upsert: {
+          args: Prisma.BusinessProfileUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BusinessProfilePayload>
+        }
+        aggregate: {
+          args: Prisma.BusinessProfileAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateBusinessProfile>
+        }
+        groupBy: {
+          args: Prisma.BusinessProfileGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.BusinessProfileGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.BusinessProfileCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.BusinessProfileCountAggregateOutputType> | number
+        }
+      }
+    }
+    SocialLink: {
+      payload: Prisma.$SocialLinkPayload<ExtArgs>
+      fields: Prisma.SocialLinkFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.SocialLinkFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.SocialLinkFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>
+        }
+        findFirst: {
+          args: Prisma.SocialLinkFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.SocialLinkFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>
+        }
+        findMany: {
+          args: Prisma.SocialLinkFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>[]
+        }
+        create: {
+          args: Prisma.SocialLinkCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>
+        }
+        createMany: {
+          args: Prisma.SocialLinkCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.SocialLinkCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>[]
+        }
+        delete: {
+          args: Prisma.SocialLinkDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>
+        }
+        update: {
+          args: Prisma.SocialLinkUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>
+        }
+        deleteMany: {
+          args: Prisma.SocialLinkDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.SocialLinkUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.SocialLinkUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>[]
+        }
+        upsert: {
+          args: Prisma.SocialLinkUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocialLinkPayload>
+        }
+        aggregate: {
+          args: Prisma.SocialLinkAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateSocialLink>
+        }
+        groupBy: {
+          args: Prisma.SocialLinkGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SocialLinkGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.SocialLinkCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SocialLinkCountAggregateOutputType> | number
         }
       }
     }
@@ -978,6 +1128,33 @@ export const OwnerScalarFieldEnum = {
 export type OwnerScalarFieldEnum = (typeof OwnerScalarFieldEnum)[keyof typeof OwnerScalarFieldEnum]
 
 
+export const BusinessProfileScalarFieldEnum = {
+  id: 'id',
+  ownerId: 'ownerId',
+  businessName: 'businessName',
+  bio: 'bio',
+  photoUrl: 'photoUrl',
+  coverUrl: 'coverUrl',
+  publicSlug: 'publicSlug',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type BusinessProfileScalarFieldEnum = (typeof BusinessProfileScalarFieldEnum)[keyof typeof BusinessProfileScalarFieldEnum]
+
+
+export const SocialLinkScalarFieldEnum = {
+  id: 'id',
+  businessProfileId: 'businessProfileId',
+  platform: 'platform',
+  url: 'url',
+  orderIndex: 'orderIndex',
+  createdAt: 'createdAt'
+} as const
+
+export type SocialLinkScalarFieldEnum = (typeof SocialLinkScalarFieldEnum)[keyof typeof SocialLinkScalarFieldEnum]
+
+
 export const LocationScalarFieldEnum = {
   id: 'id',
   ownerId: 'ownerId',
@@ -1113,6 +1290,34 @@ export type ListDateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaM
 
 
 /**
+ * Reference to a field of type 'SocialPlatform'
+ */
+export type EnumSocialPlatformFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'SocialPlatform'>
+    
+
+
+/**
+ * Reference to a field of type 'SocialPlatform[]'
+ */
+export type ListEnumSocialPlatformFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'SocialPlatform[]'>
+    
+
+
+/**
+ * Reference to a field of type 'Int'
+ */
+export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
+    
+
+
+/**
+ * Reference to a field of type 'Int[]'
+ */
+export type ListIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int[]'>
+    
+
+
+/**
  * Reference to a field of type 'Boolean'
  */
 export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
@@ -1130,20 +1335,6 @@ export type DecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel,
  * Reference to a field of type 'Decimal[]'
  */
 export type ListDecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal[]'>
-    
-
-
-/**
- * Reference to a field of type 'Int'
- */
-export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
-    
-
-
-/**
- * Reference to a field of type 'Int[]'
- */
-export type ListIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int[]'>
     
 
 
@@ -1271,6 +1462,8 @@ export type PrismaClientOptions = ({
 }
 export type GlobalOmitConfig = {
   owner?: Prisma.OwnerOmit
+  businessProfile?: Prisma.BusinessProfileOmit
+  socialLink?: Prisma.SocialLinkOmit
   location?: Prisma.LocationOmit
   barber?: Prisma.BarberOmit
   service?: Prisma.ServiceOmit

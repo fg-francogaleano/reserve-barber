@@ -38,6 +38,18 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Owner credentials for the P1 storage gate. The gate signs in as the owner
+# because that is exactly how the application uploads — see design.md D13 — so
+# it needs a real password. Kept out of `.env`/`.dev.vars` deliberately: those
+# are loaded by the application, and a credential the running app never needs
+# must not live where the running app can read it.
+#
+# Matched loosely on purpose. The canonical name is `.gate-credentials.json`,
+# but a file holding a password must not become committable because someone
+# dropped the leading dot — which is exactly what happened the first time.
+scripts/*gate-credentials*.json
+scripts/*credentials*.json
+
 # cloudflare / wrangler
 .dev.vars
 .wrangler/

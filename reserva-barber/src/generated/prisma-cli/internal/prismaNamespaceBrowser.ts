@@ -52,6 +52,8 @@ export const AnyNull = runtime.AnyNull
 
 export const ModelName = {
   Owner: 'Owner',
+  BusinessProfile: 'BusinessProfile',
+  SocialLink: 'SocialLink',
   Location: 'Location',
   Barber: 'Barber',
   Service: 'Service',
@@ -85,6 +87,33 @@ export const OwnerScalarFieldEnum = {
 } as const
 
 export type OwnerScalarFieldEnum = (typeof OwnerScalarFieldEnum)[keyof typeof OwnerScalarFieldEnum]
+
+
+export const BusinessProfileScalarFieldEnum = {
+  id: 'id',
+  ownerId: 'ownerId',
+  businessName: 'businessName',
+  bio: 'bio',
+  photoUrl: 'photoUrl',
+  coverUrl: 'coverUrl',
+  publicSlug: 'publicSlug',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type BusinessProfileScalarFieldEnum = (typeof BusinessProfileScalarFieldEnum)[keyof typeof BusinessProfileScalarFieldEnum]
+
+
+export const SocialLinkScalarFieldEnum = {
+  id: 'id',
+  businessProfileId: 'businessProfileId',
+  platform: 'platform',
+  url: 'url',
+  orderIndex: 'orderIndex',
+  createdAt: 'createdAt'
+} as const
+
+export type SocialLinkScalarFieldEnum = (typeof SocialLinkScalarFieldEnum)[keyof typeof SocialLinkScalarFieldEnum]
 
 
 export const LocationScalarFieldEnum = {

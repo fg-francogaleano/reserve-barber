@@ -54,8 +54,8 @@ export default async function BarbersPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-semibold tracking-tight">{COPY.barbers.heading}</h1>
         {hasLocations ? (
-          <Link href="/barberos/nuevo" className="inline-flex">
-            <span className={buttonVariants()}>{COPY.barbers.create}</span>
+          <Link href="/barberos/nuevo" className={buttonVariants()}>
+            {COPY.barbers.create}
           </Link>
         ) : null}
       </div>
