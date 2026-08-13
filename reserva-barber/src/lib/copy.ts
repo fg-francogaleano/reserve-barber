@@ -303,6 +303,59 @@ export const COPY = {
     infrastructureError:
       'No pudimos guardar los cambios. Revisá el perfil antes de reintentar, por las dudas de que se haya guardado.',
   },
+  transfer: {
+    nav: 'Transferencia',
+    heading: 'Datos para transferencia',
+    intro:
+      'Estos son los datos que ven tus clientes cuando eligen pagar la seña por transferencia.',
+    formHeading: 'Cuenta de destino',
+    currentHeading: 'Datos guardados',
+    emptyState: 'Todavía no cargaste datos para recibir transferencias.',
+    cbuLabel: 'CBU o CVU (opcional si cargás un alias)',
+    cbuHelp: 'Son 22 números. Podés pegarlo con espacios o guiones.',
+    aliasLabel: 'Alias (opcional si cargás un CBU)',
+    aliasHelp: 'Entre 6 y 20 caracteres. Se guarda en minúscula.',
+    holderLabel: 'Titular de la cuenta',
+    holderHelp: 'El nombre que tu cliente va a ver al transferir.',
+    submit: 'Guardar',
+    submitting: 'Guardando…',
+    saved: 'Datos guardados.',
+
+    // Each rejection names its own mistake. Telling an owner who mistyped one
+    // digit that their CBU is "inválido" explains the wrong thing.
+    cbuInvalidLength: 'El CBU o CVU tiene que tener exactamente 22 números.',
+    cbuInvalidChars: 'El CBU o CVU solo puede tener números.',
+    cbuInvalidChecksum:
+      'Ese CBU o CVU no es válido; revisá si se te escapó algún número. Fijate que no quede ningún dígito cambiado de lugar.',
+    aliasInvalidLength: 'El alias tiene que tener entre 6 y 20 caracteres.',
+    aliasInvalidChars:
+      'El alias solo puede tener letras, números, puntos y guiones, y no puede empezar ni terminar con punto o guion.',
+    holderRequired: 'Cargá el nombre del titular de la cuenta.',
+    holderInvalidLength: 'El nombre del titular tiene que tener entre 2 y 120 caracteres.',
+    holderInvalidChars:
+      'El nombre del titular solo puede tener letras, espacios, apóstrofes, puntos y guiones.',
+    noDestination: 'Cargá un CBU/CVU o un alias para poder recibir transferencias.',
+
+    // The confirmation step (design D14). The alias namespace has no check
+    // digit, so this is the only defence against a valid alias that belongs to
+    // somebody else.
+    confirmHeading: 'Confirmá la cuenta de destino',
+    confirmIntro:
+      'Revisá que sea exactamente tu cuenta. A partir de ahora, las señas de tus clientes van a ir acá.',
+    confirmClearIntro:
+      'Vas a borrar tus datos de transferencia. Tus clientes no van a poder pagar la seña por transferencia.',
+    confirmCbuLabel: 'CBU o CVU',
+    confirmAliasLabel: 'Alias',
+    confirmHolderLabel: 'Titular',
+    confirmNone: '—',
+    confirmSubmit: 'Sí, es correcta',
+    confirmCancel: 'Volver a editar',
+
+    noMethodWarning:
+      'No te queda ningún medio de pago configurado, así que no vas a poder recibir reservas. Cargá Mercado Pago o volvé a cargar tus datos de transferencia.',
+    infrastructureError:
+      'No pudimos guardar los cambios. Recargá la página para ver qué quedó guardado.',
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

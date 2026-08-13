@@ -130,3 +130,25 @@ export type WorkingHours = Prisma.WorkingHoursModel
  * naming invited a `date`, and a date has no instant.
  */
 export type TimeOff = Prisma.TimeOffModel
+/**
+ * Model PaymentConfig
+ * The owner's shared payment configuration, applied across all locations
+ * (data-model.md §14).
+ * 
+ * Unlike every other entity here, this is a SINGLE ROW written by three
+ * separate stories: PC1 the transfer destination, PC2 the Mercado Pago
+ * credentials, PC3 the deposit policy. Two consequences are load-bearing:
+ * 
+ * 1. The whole table is created in one migration, including the columns PC2
+ * and PC3 will use. A single-row entity assembled across three migrations
+ * is three chances for the three stories to disagree about its shape, and
+ * each later migration would ALTER a table already holding live payment
+ * data (PC1 design D1).
+ * 2. Every write MUST name only its own columns. A whole-entity write would
+ * silently reset the other two stories' columns while reporting success —
+ * the worst shape a data bug can take (PC1 design D5).
+ * 
+ * The row is created by the owner's first save. No migration, seed or
+ * provisioning script may create it.
+ */
+export type PaymentConfig = Prisma.PaymentConfigModel

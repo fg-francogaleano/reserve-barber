@@ -20,3 +20,11 @@ export const SocialPlatform = {
 } as const
 
 export type SocialPlatform = (typeof SocialPlatform)[keyof typeof SocialPlatform]
+
+
+export const DepositType = {
+  FIXED: 'FIXED',
+  PERCENT: 'PERCENT'
+} as const
+
+export type DepositType = (typeof DepositType)[keyof typeof DepositType]

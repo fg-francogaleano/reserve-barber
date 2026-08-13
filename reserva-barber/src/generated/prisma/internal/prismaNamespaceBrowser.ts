@@ -59,7 +59,8 @@ export const ModelName = {
   Service: 'Service',
   BarberService: 'BarberService',
   WorkingHours: 'WorkingHours',
-  TimeOff: 'TimeOff'
+  TimeOff: 'TimeOff',
+  PaymentConfig: 'PaymentConfig'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -190,6 +191,23 @@ export const TimeOffScalarFieldEnum = {
 } as const
 
 export type TimeOffScalarFieldEnum = (typeof TimeOffScalarFieldEnum)[keyof typeof TimeOffScalarFieldEnum]
+
+
+export const PaymentConfigScalarFieldEnum = {
+  id: 'id',
+  ownerId: 'ownerId',
+  mpAccessToken: 'mpAccessToken',
+  mpPublicKey: 'mpPublicKey',
+  transferCbuCvu: 'transferCbuCvu',
+  transferAlias: 'transferAlias',
+  transferHolderName: 'transferHolderName',
+  depositType: 'depositType',
+  depositValue: 'depositValue',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PaymentConfigScalarFieldEnum = (typeof PaymentConfigScalarFieldEnum)[keyof typeof PaymentConfigScalarFieldEnum]
 
 
 export const SortOrder = {
