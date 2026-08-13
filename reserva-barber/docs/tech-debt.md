@@ -113,7 +113,7 @@ so the next set-valued write does not have to rediscover which class it belongs 
   being able to bound removals by what was displayed.
 
 ### T10 — No background utility resolves on an `<a>` element
-**Status:** **needs investigation — re-deferred at M3** · **Effort:** ~1 h to diagnose, unknown to fix · **Last evaluated:** M3 (2026-08-09)
+**Status:** **CLOSED at P1 (2026-08-12) — never a defect in this application** · **Resolution:** the three workarounds were deleted; see the closing note at the end of this entry
 
 Verified in the browser during M1: `bg-primary` and `bg-muted` paint a `<div>` and a `<span>`, and
 **never** an `<a>` — the anchor computes `background-color: rgba(0,0,0,0)` with the class present in
@@ -198,6 +198,33 @@ a shrug. No fourth copy was added: P1's own editor uses real `<button>` elements
 **Worth keeping regardless of the outcome:** any unlayered CSS — an extension, a user stylesheet, a
 third-party widget — silently defeats *every* Tailwind v4 utility, because they all live in a layer.
 That is a general fragility of this stack, not a quirk of anchors.
+
+**CLOSING NOTE — P1 (2026-08-12). The check ran, and the answer is that the application was never
+at fault.** An `<a class="bg-primary">` was compared against a `<div>`, a `<span>` and a `<button>`
+carrying the same class, on `/login` of the deployed Worker, in a Chrome incognito window with
+extensions disabled **and** in a different browser. In both, the anchor painted like everything else.
+The defect only reproduces in the developer's ordinary Chrome profile, which is where the injected
+unlayered rule lives.
+
+**The three workarounds were deleted** — `sucursales`, `barberos` and `servicios` now put
+`buttonVariants()` directly on the `<Link>`, which is the ordinary shadcn/ui pattern. What the entry
+had feared — a fourth silent copy — never happened: P1's own editor uses real `<button>` elements.
+
+Three things this cost, and they are the reason the entry is worth reading rather than deleting:
+
+- **The original clue pointed at the wrong place for three milestones.** "The `.bg-primary` rule is
+  not enumerable from the page" was read as "the stylesheet is unreadable", so M1 and M3 both went
+  hunting for a rule inside the project. The unenumerable rule was never `.bg-primary` — it was the
+  invisible one beating it.
+- **A workaround outlived its justification by two milestones** because re-verifying the symptom was
+  never the first step. The M3 evaluation finally said so, and it took five minutes when it ran.
+- **The failure is invisible to every automated check.** Tests pass, the class is in the CSS, the
+  computed style is wrong only in one browser profile. Nothing but looking would have found it, and
+  nothing but looking *somewhere else* would have cleared it.
+
+Still true and worth carrying forward: unlayered CSS defeats every Tailwind v4 utility regardless of
+specificity. If a control ever renders unstyled again with its class present and the stylesheet
+intact, check a clean browser profile **before** touching the code.
 
 ### T11 — Cross-owner isolation has no executable proof
 **Status:** **needs a test when it becomes possible** · **Effort:** ~1 h

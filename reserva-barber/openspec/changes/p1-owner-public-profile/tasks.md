@@ -124,6 +124,8 @@
 - [x] 12.1 Re-verify the symptom first, per `docs/tech-debt.md:143` — the inspecting extension is a live explanation and this is a five-minute check
 - [x] 12.2 If it reproduces, read the generated stylesheet from the build output rather than the live DOM, as the entry recommends
 - [x] 12.3 Fix it, or record the finding in the T10 entry and stop. A fourth undocumented copy of the inner-`<span>` workaround is not an acceptable outcome
+  - **T10 is closed, and the application was never at fault.** The comparison ran on `/login` of the deployed Worker in a Chrome incognito window with extensions disabled and in a different browser: the `<a>` painted like the `<div>`, `<span>` and `<button>` beside it. The defect only reproduces in the ordinary Chrome profile, where the injected unlayered rule lives.
+  - The three workarounds in `sucursales`, `barberos` and `servicios` were deleted; those pages now put `buttonVariants()` straight on the `<Link>`. No fourth copy was ever added — P1's editor uses real `<button>` elements.
 
 ## 13. Verification and delivery
 
