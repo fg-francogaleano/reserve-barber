@@ -414,13 +414,20 @@ The owner's shared payment configuration, applied across all locations: Mercado 
 - `transferAlias`: Bank transfer alias (max 60, optional)
 - `transferHolderName`: Account holder name shown to clients (max 120, optional)
 - `depositType`: How the deposit is computed — enum `DepositType` (`FIXED`, `PERCENT`) (required, default: `PERCENT`)
-- `depositValue`: Fixed amount (ARS) or percentage (0–100) depending on `depositType` (Decimal, required)
+- `depositValue`: Fixed amount (ARS) or percentage (0–100) depending on `depositType` (Decimal, **optional until the deposit policy is configured**)
 - `createdAt` / `updatedAt`: Timestamps
+
+> **Why `depositValue` is nullable.** The row is created by whichever payment story the owner completes first — saving a transfer destination creates it before any deposit policy has been chosen. A required column would force that first write to invent a percentage the owner never selected, and "not configured" would become indistinguishable from "configured to that value". A null means exactly what it says. The consequence is that the guarantee "this business can accept bookings" is no longer expressible as a column constraint; it is the application gate stated below.
 
 **Validation Rules:**
 - `mpAccessToken` must never be exposed to the client/browser; only `mpPublicKey` is safe to send to the frontend
-- At least one payment method must be fully configured before the public booking flow can accept bookings (MP credentials present, and/or transfer CBU/CVU/alias present)
-- `depositValue`: required; if `PERCENT`, must be between 1 and 100; if `FIXED`, must be > 0
+- Reads serving the public booking flow must use a projection that selects only the transfer fields. `mpAccessToken` lives in this row, and a projection that does not carry it cannot leak it
+- **Bookability gate (application rule, not a column constraint):** before the public booking flow may accept a booking, the owner must have *both* at least one fully configured payment method (MP credentials present, and/or transfer destination present) *and* a non-null `depositValue`. Enforced at the entry to the booking flow; no database constraint can express it, because each half is written by a different story
+- `depositValue`: when present, if `PERCENT` it must be between 1 and 100; if `FIXED` it must be > 0. It is absent only while the deposit policy is unconfigured
+- Transfer destination: `transferCbuCvu` is stored as digits only and must be exactly 22 digits with valid check digits; `transferAlias` is stored trimmed and lowercased. Either alone is sufficient; both may be present, in which case the CBU/CVU is the primary destination shown to clients
+- `transferHolderName` is **required whenever `transferCbuCvu` or `transferAlias` is present**, and must be absent when both are. It is nullable at the column level only because the whole transfer destination is optional — a destination with no holder name is unusable, since the client cannot confirm from their bank's screen that they are paying the right business
+- The three transfer fields are not secrets and are not encrypted: they are displayed verbatim to every client who chooses transfer. Only `mpAccessToken` is encrypted at rest
+- A write configuring one payment method must not modify the columns belonging to another. Three stories share this row, and a whole-entity write would silently reset the other two while reporting success
 
 **Relationships:**
 - `owner`: One-to-one → Owner

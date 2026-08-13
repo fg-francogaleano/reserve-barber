@@ -683,3 +683,63 @@ either actions file for any reason" — is exactly what happened.
 `app/(dashboard)/sucursales/actions.ts` is unchanged and still has the exposure. M4 has no reason to
 open that file, and editing a closed change's behaviour without touching its artifacts is what §7
 forbids. **The original trigger still stands for it.**
+
+### T35 — No audit trail for changes to the transfer destination
+**Status:** accepted · **Effort:** ~3 h · **Added:** PC1 (2026-08-13)
+
+`PaymentConfig.updatedAt` is overwritten on every save, so there is no record of what the CBU/alias
+was before a change or when it changed. This is the only value in the product whose corruption moves
+real money: if a client's deposit lands in an account nobody recognizes, there is nothing to
+reconstruct a timeline from.
+
+What exists instead is a structured log line per successful write carrying the **previous and new
+last four digits** plus presence flags — enough to answer "when did this change" from the log stream,
+and never enough to expose the account itself. That was chosen over building a `PaymentConfigAudit`
+table now, which would be forensics for an incident class that may never occur; the log line is what
+makes the incident investigable if it does.
+
+The gap is retention: Cloudflare Workers logs are not kept indefinitely, so an incident discovered
+months later has nothing to read.
+
+- **Trigger:** the first report of a deposit that did not arrive — or PC2, if the same table starts
+  holding Mercado Pago credentials whose rotation deserves the same treatment.
+
+### T36 — Two tabs editing the transfer destination is last-write-wins
+**Status:** accepted · **Effort:** ~1 h · **Added:** PC1 (2026-08-13)
+
+The save carries no concurrency token, so two tabs editing the destination resolve by whichever
+commits last. No warning, no conflict.
+
+Accepted because producing the conflict requires **one person to race themselves**: the product has
+exactly one administrative user, and `docs/base-standards.md` §4 fixes that for this version. The
+blast radius is also bounded by design D5 — the write names only the three transfer columns, so a
+lost update cannot reach across into PC2's credentials or PC3's deposit policy.
+
+The confirmation step (design D14) partially covers it by accident: the second tab's save shows the
+owner the destination it is about to store, which is where they would notice it is not the one they
+just saved in the other tab.
+
+- **Trigger:** the first story that introduces a second administrative user or any shared-account
+  access. At that point the fix is an `updatedAt` token in a hidden field, compared at write time.
+
+### T37 — The transfer editor's no-JavaScript path is reasoned, not verified
+**Status:** accepted · **Effort:** ~20 min · **Added:** PC1 (2026-08-13)
+
+`frontend-standards.md` requires that forms submit correctly before hydration and with JavaScript
+disabled, and the transfer editor is built to satisfy it: a native `<form action={serverAction}>`,
+uncontrolled inputs, no `onClick` handlers, the confirmation step rendered as **server-returned form
+state** rather than a dialog, and the "Volver a editar" control implemented as a submit button
+carrying `name`/`value` rather than a script.
+
+Every one of those is a design choice made for this reason — but the path was never actually driven
+with JavaScript off. Every other verification for PC1 ran with it on.
+
+The specific thing worth checking is the **confirmation round trip**, not the plain save: it is the
+only two-step flow in the dashboard, and it is the step that stands between a mistyped destination
+and a client's deposit reaching a stranger. If it silently required JavaScript, the owner most likely
+to meet the failure is one on a locked-down or ancient browser, and they would be confirming nothing
+while believing they had.
+
+- **Trigger:** the next change that touches `TransferDetailsForm.tsx`, or the first report of the
+  confirmation screen behaving oddly. PC2 and PC3 both build forms on this page and are the natural
+  moment to check all three at once.
