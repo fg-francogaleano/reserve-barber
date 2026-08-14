@@ -230,7 +230,7 @@ import { cn } from '@/lib/utils';
 
 **House pattern:** a native `<form action={serverAction}>` with uncontrolled shadcn/ui inputs. The client component calls `useActionState` to hold what the action returned (form-level error, field errors) and `useFormStatus` in a small child for the pending state. Validation lives in **one** place — a Zod schema executed inside the action — so the browser and the server can never disagree about what is valid.
 
-Why this over React Hook Form: the form still submits before hydration and with JavaScript disabled, there is a single validation source instead of two that drift apart, and no extra dependency is carried for what are usually a handful of inputs. Reach for a client-side form library only when a form genuinely needs per-keystroke interactivity (cross-field live calculations, dynamic field arrays) — the multi-step booking wizard is the plausible candidate, not a two-field settings form.
+Why this over React Hook Form: the form still submits before hydration (**but not with JavaScript disabled — see the note below and T44**), there is a single validation source instead of two that drift apart, and no extra dependency is carried for what are usually a handful of inputs. Reach for a client-side form library only when a form genuinely needs per-keystroke interactivity (cross-field live calculations, dynamic field arrays) — the multi-step booking wizard is the plausible candidate, not a two-field settings form.
 
 - **Disable the submit button while submitting** to prevent double booking/payment. Note this state only exists after hydration; the server must remain the real guard against duplicate submissions.
 - Surface field-level and form-level errors accessibly, and **preserve what the user typed** when a submission is rejected — a validation error that clears the form is worse than the error it reports.
@@ -239,6 +239,17 @@ Why this over React Hook Form: the form still submits before hydration and with 
 **A numeric or monetary field uses `type="text"` with `inputMode="decimal"` — never `type="number"`.** A number-typed control submits an **empty string** when the browser's own parser rejects what was typed, and an es-AR keyboard's `4500,50` is exactly such a value in Chrome. Three failures follow at once: the server reports a missing price for a price that was typed; the echo-back that preserves input on rejection has nothing to echo; and "missing" becomes indistinguishable from "malformed". `inputMode="decimal"` still raises the numeric keypad on touch devices, which was the only real benefit on offer.
 
 For the same reason, no form control may carry `min`, `max`, `step`, or `pattern`. Each lets the browser block the submission with a message in the **browser's** locale, from a string that exists nowhere in the copy module — so the validation the specification describes would not be the validation the user meets, and the server-side rule would never run. `required` is retained: it never alters a value. Parsing and range checking are the server's job, and the server accepts both `.` and `,` as the decimal separator.
+
+> ⚠ **The "with JavaScript disabled" half of this promise does not currently hold** — measured
+> against a production build during PC2 (2026-08-14). Two causes, both above the level of any
+> individual form: the `(dashboard)` segment's Suspense boundary stops client components rendering at
+> all, and `useActionState` does not restore its returned state after a no-JavaScript POST, so a
+> submission is accepted and nothing is reported back. See **T44**.
+>
+> The conventions below are still the right ones and are still required — they are what makes the
+> promise *achievable* once T44 is decided, and they are what keeps forms working **before
+> hydration**, which does hold. What must stop is writing "and with JavaScript disabled" as though it
+> were true today.
 
 **Select controls backed by another table must use a native `<select>`, not shadcn/Radix `Select`.** Radix's `Select` renders a button and a portalled listbox — it is not a form-associated control — so without a hidden mirror input and a client-side sync it submits nothing. A native `<select>` styled with the same ring/border tokens as `Input` preserves the house promise that the form submits correctly before hydration and with JavaScript disabled. The valid option set is always re-verified server-side at write time; what the browser renders is a UX affordance, not a security boundary.
 

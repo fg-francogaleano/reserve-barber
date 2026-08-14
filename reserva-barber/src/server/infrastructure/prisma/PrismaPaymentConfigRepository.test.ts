@@ -25,6 +25,7 @@ function row(overrides: Record<string, unknown> = {}) {
     transferHolderName: 'Barberia Franco',
     depositType: 'PERCENT',
     depositValue: null,
+    updatedAt: new Date('2026-08-13T12:00:00Z'),
     ...overrides,
   };
 }
@@ -50,6 +51,9 @@ describe('PrismaPaymentConfigRepository - the dashboard read', () => {
         transferHolderName: true,
         depositType: true,
         depositValue: true,
+        // PC2: lets the dashboard tell a completed rotation from an uncertain
+        // one without ever handling the token.
+        updatedAt: true,
         mpAccessToken: true,
       },
     });

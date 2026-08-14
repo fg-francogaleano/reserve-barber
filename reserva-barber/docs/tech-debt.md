@@ -684,8 +684,138 @@ either actions file for any reason" — is exactly what happened.
 open that file, and editing a closed change's behaviour without touching its artifacts is what §7
 forbids. **The original trigger still stands for it.**
 
+### T43 — No account-switch warning when Mercado Pago is unreachable
+**Status:** accepted · **Effort:** ~2 h · **Added:** PC2 (2026-08-13)
+
+Replacing Mercado Pago credentials with a **stranger's** — valid, live, but belonging to someone
+else — is the failure that sends every future deposit elsewhere, and no format check can catch it.
+
+PC2 answers it by naming the account on the confirmation screen, from what Mercado Pago returns
+during verification. That works **only when Mercado Pago is reachable.** When it is not, the save
+still proceeds (by design: a third party being down must not block a settings save) and the
+confirmation falls back to four characters of the token, which tells the owner almost nothing.
+
+An offline version was built and withdrawn. It compared the token's trailing numeric segment across
+the old and new credentials, on the belief that the segment is the Mercado Pago account id — true of
+the OAuth reference example, false of real panel-issued credentials, where the segment read
+`1325562541` against a User ID of `156842883`. A comparison of two meaningless numbers is worse than
+none: a false "different account" trains the owner to dismiss the warning, and a false "same account"
+suppresses it in the one case it exists for.
+
+Closing it properly means storing the **verified** account id — the one Mercado Pago returns — so a
+later replacement can be compared against it without another call. That needs a column and a
+migration, which PC2 otherwise avoided entirely.
+
+- **Trigger:** B5, which is the first story to call Mercado Pago with the stored token in anger and
+  therefore the first that can record the verified account id as a by-product; or the first report of
+  payments arriving in an unexpected account.
+
+### T42 — Nothing warns an owner who ships with test credentials
+**Status:** accepted · **Effort:** ~2 h · **Added:** PC2 (2026-08-13)
+
+PC2 set out to render a persistent banner whenever the stored Mercado Pago credentials were test
+ones, so an owner could not publish their booking link and silently take bookings that never charge.
+
+**That protection does not exist**, because the signal it was built on turned out not to be one.
+Mercado Pago's "Tus integraciones" panel issues the `APP_USR-` prefix for **test and production
+alike** — confirmed against a real account during verification. Only the legacy `TEST-` prefix
+identifies a test credential, and current accounts do not produce it.
+
+What was removed is the *claim*: the page previously printed `Entorno: Producción` for every
+`APP_USR-` credential, which was false for test ones and read as confirmation. It now shows the
+account id, which is a fact, and says nothing about the environment it cannot determine.
+
+Nothing available closes the gap. No documented Mercado Pago call distinguishes a test credential,
+and the credential string does not carry it. The two candidates, neither taken:
+
+- **The owner declares it** with a checkbox. Needs a new column and a migration, and its protection
+  is only as good as the owner remembering to tick — and to untick.
+- **Infer it from an undocumented response field**, on top of `/users/me`, which is already
+  undocumented. A safety banner resting on that can vanish without notice.
+
+What partially covers it today is **D6a**: switching from test to production credentials changes the
+Mercado Pago account, and the confirmation states that prominently. That catches the *transition*,
+not the steady state of having shipped with the wrong ones.
+
+**A lead worth following, found after this entry was written.** During the live verification, Mercado
+Pago's verification response named the account **`TEST_USER_1842645601`**. The credential string says
+nothing about the environment — but the **account nickname does**, explicitly, for a test account.
+
+That is a real signal and it costs nothing: the verifier already makes that call and already reads
+`nickname`. It carries the same caveat as everything else resting on `/users/me` — undocumented, so
+it may change without notice — which makes it usable as a *hint that raises a warning*, never as the
+thing a "you are safe to launch" claim depends on. Consider it evidence to confirm rather than a
+mechanism to adopt untested: the pattern to check is whether test accounts reliably carry a
+recognisable marker, against more than one account.
+
+- **Trigger:** PC3, which builds the payment-readiness view and is the first story that knows whether
+  the business is ready to take real money — that view is where "are these credentials live?" belongs,
+  and it can ask the owner once, in context, instead of on a settings form. Start from the lead above.
+
+### T38 — No key-rotation or re-encryption tooling
+**Status:** accepted · **Effort:** ~3 h · **Added:** PC2 (2026-08-13)
+
+`PAYMENT_CREDENTIALS_KEY` encrypts `PaymentConfig.mpAccessToken`. The stored envelope carries a `v1`
+version marker precisely so a key or algorithm change can identify what it is reading — but **nothing
+performs the rotation**. There is no re-encryption script and no dual-key read path, so rotating the
+key today makes every stored credential unreadable at once.
+
+The `v1` marker is the whole preparation: adding a `v2` and a read path that accepts both is the
+shape of the fix, and it was left undone because a rotation nobody has needed is speculative work on
+the project's most sensitive column.
+
+- **Trigger:** a suspected key compromise, the first additional secret stored in this table, or PC3
+  if it adds one.
+
+### T39 — A lost key is unrecoverable, and only the dashboard says so
+**Status:** accepted · **Effort:** ~0 (documented, not fixed) · **Added:** PC2 (2026-08-13)
+
+If the key is lost, or rotated without T38's re-encryption, every stored Mercado Pago credential is
+permanently unreadable. The recovery *is* re-pasting them, which is acceptable — the credentials
+still exist in the owner's Mercado Pago panel.
+
+What was built is the reporting: the dashboard decrypts on load and renders an **Unreadable** state
+distinct from both "configured" and "not configured", with re-entry offered inline (design D12).
+Without it the page would render a healthy "configured" panel and B5 would meet the failure in a
+client's checkout.
+
+The gap: **only that page reports it.** Nothing checks proactively, so an owner who does not visit
+`/mercado-pago` learns about it when a payment fails.
+
+- **Trigger:** B5 shipping, which is the first code that reads the token for real — it should surface
+  the same distinction rather than treating an unreadable credential as an absent one.
+
+### T40 — The public key cannot be proven to belong to the verified account
+**Status:** accepted · **Effort:** unknown — may not be possible · **Added:** PC2 (2026-08-13)
+
+PC2 verifies the **access token** against Mercado Pago and shows the owner which account it belongs
+to. It does **not** prove the *public key* belongs to that same account: no available call ties the
+two, and the public key's body is an opaque UUID that encodes nothing.
+
+Three checks narrow it — shape validation that rejects each credential in the other's field
+(design D9), the environment-consistency rule (D8), and the account-identity confirmation (D6) — so
+the plausible mistakes are covered. The residual case is a well-formed public key from a *different*
+account of the owner's own, which would produce a checkout that initializes against one account while
+charges are created on another.
+
+- **Trigger:** the first report of a Mercado Pago payment that initializes but does not complete, or
+  any Mercado Pago API change that exposes the public key's owner.
+
+### T41 — `intent` values are not namespaced per form
+**Status:** accepted · **Effort:** ~30 min · **Added:** PC2 (2026-08-13)
+
+Both PC1's and PC2's editors carry the owner's confirmation answer on the pressed button as `intent`,
+with values like `confirm` and `edit`. They live on separate pages today, so nothing collides.
+
+PC3 adds the deposit policy to this settings area. If two forms ever share one page, `FormData.get`
+returns the **first** value for a name — the same hazard the button-not-hidden-field rule exists for,
+one level up — and one form's confirmation could be consumed by the other's action.
+
+- **Trigger:** PC3, or any change that puts two confirming forms on one page. The fix is prefixing
+  the values (`mp-confirm`, `deposit-confirm`) before the second form lands, not after.
+
 ### T35 — No audit trail for changes to the transfer destination
-**Status:** accepted · **Effort:** ~3 h · **Added:** PC1 (2026-08-13)
+**Status:** accepted · **Effort:** ~3 h · **Added:** PC1 (2026-08-13) · **Re-scoped:** PC2 (2026-08-13)
 
 `PaymentConfig.updatedAt` is overwritten on every save, so there is no record of what the CBU/alias
 was before a change or when it changed. This is the only value in the product whose corruption moves
@@ -701,8 +831,22 @@ makes the incident investigable if it does.
 The gap is retention: Cloudflare Workers logs are not kept indefinitely, so an incident discovered
 months later has nothing to read.
 
-- **Trigger:** the first report of a deposit that did not arrive — or PC2, if the same table starts
-  holding Mercado Pago credentials whose rotation deserves the same treatment.
+**PC2 re-scoped this rather than closing it.** The same table now holds Mercado Pago credentials, and
+its trigger named that case. PC2 applied the same treatment instead of building the audit table: each
+successful credential write logs `previousTokenLastFour` alongside `tokenLastFour`, plus the
+environment and whether Mercado Pago verified the pair — enough to reconstruct *when the account
+changed* from the log stream, and never enough to expose a credential.
+
+Credential rotation is in one way better covered than the transfer destination: the account id is
+recoverable from the token itself, so a switch between Mercado Pago accounts is stated to the owner
+at the moment they make it (design D6a), not merely reconstructable afterwards. The transfer
+destination has no equivalent — no checksum can tell whose account a valid alias is.
+
+The retention gap is unchanged and now covers both.
+
+- **Trigger:** the first report of a deposit that did not arrive, or of payments arriving in an
+  unexpected Mercado Pago account. At that point the log stream is what gets read, and if it has
+  already rolled over, the audit table becomes work rather than debt.
 
 ### T36 — Two tabs editing the transfer destination is last-write-wins
 **Status:** accepted · **Effort:** ~1 h · **Added:** PC1 (2026-08-13)
@@ -722,6 +866,41 @@ just saved in the other tab.
 - **Trigger:** the first story that introduces a second administrative user or any shared-account
   access. At that point the fix is an `updatedAt` token in a hidden field, compared at write time.
 
+### T44 — The no-JavaScript promise is false for every dashboard form
+**Status:** **needs a decision** · **Effort:** unknown — see the two causes · **Added:** PC2 (2026-08-14)
+
+`docs/frontend-standards.md` states "the house promise that the form submits correctly before
+hydration and with JavaScript disabled". **That promise does not hold anywhere in the dashboard.**
+Measured with JavaScript disabled, in a **production build**, not just `next dev`:
+
+**Cause 1 — the form does not render.** `app/(dashboard)/loading.tsx` wraps the whole segment in a
+Suspense boundary. Its content is streamed and attached by inline scripts, so with JavaScript off the
+client components inside never appear: the page renders its heading and its server-rendered cards,
+and the `<form>` is simply absent. `/login` has no `loading.tsx` and its form renders correctly — that
+is the control that identifies the cause. Removing the **group-level** file makes the form appear;
+removing only the per-route one does nothing.
+
+**Cause 2 — and this is the harder one — the form gives no feedback.** With the form rendered, a
+submission that must produce an error produced none: `useActionState` does not restore its returned
+state after a no-JavaScript POST unless a `permalink` is supplied. The action runs, the page
+re-renders from the **initial** state, and the owner sees an unchanged form. No error, no
+confirmation, no success. Nothing is written, so it is safe — but it is silent, and a confirmation
+step that can never be reached is a confirmation step that does not exist.
+
+Cause 2 makes fixing cause 1 pointless on its own, which is why nothing was changed: removing the
+loading skeletons across ten routes would buy a form that renders and still says nothing.
+
+Options, none taken:
+- **Accept it and amend `frontend-standards.md`**, so the project stops claiming something untrue.
+  Cheapest, and honest. The claim currently misleads every future story that reads the standard.
+- **Supply `permalink` to `useActionState`** on the forms that matter, and drop the group-level
+  `loading.tsx`. Restores the promise; costs the skeletons and needs a per-form URL.
+- **Server-render the error state from the URL** instead of from action state. Largest change.
+
+- **Trigger:** PC3 and the booking flow both add forms and would inherit the same behaviour — and B4
+  onward, the forms are used by *clients*, not by the single owner, so the population that might have
+  JavaScript disabled stops being one person. Decide before the public flow ships.
+
 ### T37 — The transfer editor's no-JavaScript path is reasoned, not verified
 **Status:** accepted · **Effort:** ~20 min · **Added:** PC1 (2026-08-13)
 
@@ -740,6 +919,20 @@ and a client's deposit reaching a stranger. If it silently required JavaScript, 
 to meet the failure is one on a locked-down or ancient browser, and they would be confirming nothing
 while believing they had.
 
-- **Trigger:** the next change that touches `TransferDetailsForm.tsx`, or the first report of the
-  confirmation screen behaving oddly. PC2 and PC3 both build forms on this page and are the natural
-  moment to check all three at once.
+- ~~**Trigger:** the next change that touches `TransferDetailsForm.tsx`~~ — **fired, and answered.**
+
+**CLOSED by PC2 (2026-08-14). The answer is no: it silently requires JavaScript.**
+
+Verified with JavaScript disabled against a production build, on both `/transferencia` and
+`/mercado-pago`. The suspicion recorded above was correct, and understated: the confirmation does not
+merely fail to work, the **form does not render at all**, and when forced to render it accepts
+submissions and reports nothing back.
+
+Every design choice listed above was made correctly — native `<form action={serverAction}>`,
+uncontrolled inputs, no `onClick` handlers, the confirmation as server-returned form state, the
+cancel control as a submit button carrying `name`/`value`. None of them was the problem. The
+promise is broken one level up, by the framework's streaming boundary and by `useActionState`'s
+state not surviving a no-JavaScript POST.
+
+That is why this closes rather than becoming a PC2 fix: the cause is project-wide, not in either
+form, and the remedy is a decision about the whole dashboard. It moves to **T44**.

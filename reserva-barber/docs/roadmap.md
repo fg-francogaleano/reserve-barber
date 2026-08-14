@@ -38,7 +38,12 @@ Everything required for a minimally usable product: the owner can set up the bus
   - Carried the Supabase Storage setup, as planned: a public bucket whose write policy confines the authenticated role to its own `auth.uid()` prefix, proven from both sides against real infrastructure. No new secret — the upload runs as the owner's own session, never a service role.
   - The shareable link is rendered and disclosed as not yet published. It resolves to `/b/{slug}`, which redirects to `/login` until **B1** ships the public page.
 - [x] **PC1** — As the owner, I want to save my bank transfer details (CBU/CVU or alias, holder name), so that clients can pay the deposit by transfer. — *depends on: A1*
-- [ ] **PC2** — As the owner, I want to save my Mercado Pago credentials (Access Token, Public Key), so that clients can pay the deposit online. — *depends on: A1*
+- [x] **PC2** — As the owner, I want to save my Mercado Pago credentials (Access Token, Public Key), so that clients can pay the deposit online. — *depends on: A1*
+  - Carried the project's first credential encryption: AES-256-GCM over Web Crypto, a versioned `v1.<iv>.<ciphertext>` envelope, a fresh IV per write, and the owner plus a purpose bound as additional authenticated data. New Wrangler secret `PAYMENT_CREDENTIALS_KEY`, validated at this feature's composition root rather than globally, so a deploy that forgets it breaks one page instead of the dashboard. No migration — PC1 created both columns.
+  - The access token is write-only: an empty field means *unchanged*, removal is an explicit intent, and the token never reaches the browser in any state, including the confirmation.
+  - Credentials are verified against Mercado Pago before storage. A definitive rejection blocks the write; an unreachable Mercado Pago saves anyway and says so, because refusing to save when a third party is down would be this feature failing for a reason unrelated to the owner's input.
+  - The confirmation names the Mercado Pago **account**, and states prominently when a replacement switches accounts — the account id comes out of the token offline, so that warning holds even when Mercado Pago cannot be reached. It is the only thing separating a routine rotation from redirecting every future deposit.
+  - The page has four states, not three: credentials that cannot be decrypted are their own, because a presence flag alone would render a healthy-looking page over an unusable token and leave B5 to discover it in a real payment.
 - [ ] **PC3** — As the owner, I want to configure the deposit policy (fixed amount or percentage of the service price), so that every booking charges the right deposit. — *depends on: PC1 or PC2 (at least one payment method configured)*
 
 ### 1c. Public booking flow

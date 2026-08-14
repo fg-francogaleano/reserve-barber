@@ -42,6 +42,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           >
             {COPY.transfer.nav}
           </Link>
+          <Link
+            href="/mercado-pago"
+            className="text-sm font-medium underline-offset-4 hover:underline"
+          >
+            {COPY.mercadoPago.nav}
+          </Link>
         </nav>
         <span className="text-muted-foreground text-sm">{owner.email}</span>
         <form action={logoutAction}>

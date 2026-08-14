@@ -15,6 +15,22 @@ const TIME_FORMATTER = new Intl.DateTimeFormat('es-AR', {
 });
 
 /**
+ * Renders an instant as date and time in business local time (PC2).
+ *
+ * Formatted on the **server**, like everything else here: doing it in a Client
+ * Component invites a hydration mismatch, because the build's locale data and
+ * the browser's need not agree.
+ *
+ * Used for "last changed" on the Mercado Pago page, where the time of day
+ * matters — it is one of the two facts that let an owner tell a completed
+ * credential rotation from one whose outcome was never acknowledged, and two
+ * saves on the same day are exactly when that question gets asked.
+ */
+export function formatDateTime(instant: Date): string {
+  return `${DATE_FORMATTER.format(instant)} ${TIME_FORMATTER.format(instant)}`;
+}
+
+/**
  * Renders an absence for the list, in business local time.
  *
  * Formatted on the **server**. Doing it in a Client Component invites a

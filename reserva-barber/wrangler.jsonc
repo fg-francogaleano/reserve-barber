@@ -11,7 +11,13 @@
   "observability": {
     "enabled": true
   }
-  // Secrets (DATABASE_URL) are NOT defined here:
+  // Secrets (DATABASE_URL, PAYMENT_CREDENTIALS_KEY) are NOT defined here:
   // - local preview reads .dev.vars (git-ignored)
-  // - production uses `wrangler secret put DATABASE_URL`
+  // - production uses `wrangler secret put <NAME>`
+  //
+  // Upload values as EXACT BYTES — pipe from a file or node's stdout, never a
+  // shell echo. A BOM or trailing newline is invisible and corrupts the value:
+  // for DATABASE_URL that showed up in S0 as an unrelated connection error, and
+  // for PAYMENT_CREDENTIALS_KEY it shows up as stored Mercado Pago credentials
+  // that cannot be decrypted.
 }

@@ -408,8 +408,8 @@ The owner's shared payment configuration, applied across all locations: Mercado 
 **Fields:**
 - `id`: Unique identifier (PK, cuid)
 - `ownerId`: Foreign key → Owner (required, unique — one config per owner)
-- `mpAccessToken`: Mercado Pago Access Token (encrypted at rest, optional until configured)
-- `mpPublicKey`: Mercado Pago Public Key (optional until configured)
+- `mpAccessToken`: Mercado Pago Access Token (**stored as an encryption envelope, never plaintext**, optional until configured)
+- `mpPublicKey`: Mercado Pago Public Key (stored as plaintext, optional until configured)
 - `transferCbuCvu`: Bank transfer CBU/CVU (max 30, optional)
 - `transferAlias`: Bank transfer alias (max 60, optional)
 - `transferHolderName`: Account holder name shown to clients (max 120, optional)
@@ -419,8 +419,19 @@ The owner's shared payment configuration, applied across all locations: Mercado 
 
 > **Why `depositValue` is nullable.** The row is created by whichever payment story the owner completes first — saving a transfer destination creates it before any deposit policy has been chosen. A required column would force that first write to invent a percentage the owner never selected, and "not configured" would become indistinguishable from "configured to that value". A null means exactly what it says. The consequence is that the guarantee "this business can accept bookings" is no longer expressible as a column constraint; it is the application gate stated below.
 
+> **How `mpAccessToken` is stored.** The column holds a versioned, self-describing envelope, not the token:
+>
+> ```
+> v1.<base64url initialization vector>.<base64url ciphertext‖authentication tag>
+> ```
+>
+> AES-256-GCM, a fresh random 96-bit initialization vector per write, and the `ownerId` plus a purpose identifier bound as additional authenticated data — so a ciphertext lifted from one row or one context cannot be decrypted in another. The column type is unchanged (`String?`); the envelope is text and needs no migration. The `v1` marker is present from the first stored value so a later key or algorithm change can identify what it is reading instead of inferring it. A value that does not parse as a recognized envelope is rejected as unreadable and is **never** interpreted as plaintext.
+>
+> **`mpPublicKey` is deliberately not encrypted.** It is disclosed to every client who reaches the payment step — encrypting it would add a decryption step to a public read path in exchange for nothing. `mpAccessToken` authorizes charges and is the opposite case.
+
 **Validation Rules:**
 - `mpAccessToken` must never be exposed to the client/browser; only `mpPublicKey` is safe to send to the frontend
+- `mpAccessToken` and `mpPublicKey` are **both present or both absent**. This is enforced in the application layer, not by a column constraint, because each is nullable for the case where Mercado Pago is not configured at all. A public key alone cannot authorize a charge and an access token alone cannot initialize the client-side checkout, so half a pair is a payment method that fails at the moment a client tries to use it
 - Reads serving the public booking flow must use a projection that selects only the transfer fields. `mpAccessToken` lives in this row, and a projection that does not carry it cannot leak it
 - **Bookability gate (application rule, not a column constraint):** before the public booking flow may accept a booking, the owner must have *both* at least one fully configured payment method (MP credentials present, and/or transfer destination present) *and* a non-null `depositValue`. Enforced at the entry to the booking flow; no database constraint can express it, because each half is written by a different story
 - `depositValue`: when present, if `PERCENT` it must be between 1 and 100; if `FIXED` it must be > 0. It is absent only while the deposit policy is unconfigured
@@ -605,5 +616,5 @@ erDiagram
   Prisma's default for `DateTime` is a zone-**less** `TIMESTAMP`, which is harmless for `createdAt` and wrong for anything compared against a human's clock. `Booking.startTime` must therefore declare `@db.Timestamptz` explicitly when it is created; inheriting the default by omission is the failure mode this convention exists to prevent.
 - **Business timezone**: `America/Argentina/Buenos_Aires`, a constant rather than a column — every branch is in Argentina. Conversion between local time and instants lives in exactly one domain module. The deployment runtime is UTC, so `getDay()`, `getHours()`, `getDate()` and `toISOString().slice(0, 10)` are **forbidden in scheduling code**: they return the UTC answer, which is wrong for the last three hours of every local day, and they return a plausible number rather than raising. Timezone data support on the runtime is proven by an executable check, because a runtime lacking it falls back to UTC silently.
 - **Money**: All amounts use `Decimal` (Prisma `@db.Decimal`) to avoid floating-point rounding errors; currency is ARS.
-- **Secrets**: `PaymentConfig.mpAccessToken` is encrypted at rest and never sent to the browser; only `mpPublicKey` is exposed to the frontend.
+- **Secrets**: `PaymentConfig.mpAccessToken` is encrypted at rest and never sent to the browser; only `mpPublicKey` is exposed to the frontend. The encryption key is the deployment secret **`PAYMENT_CREDENTIALS_KEY`** (32 bytes, base64-encoded), held as a Wrangler secret in production and in `.dev.vars` locally. It is validated at the composition root of the feature that uses it rather than at global startup, so a deploy missing it breaks that one feature instead of the whole dashboard. **Losing or rotating this key without re-encrypting makes every stored credential permanently unreadable**; the only recovery is the owner entering their credentials again, which is why an undecryptable value is surfaced as its own state in the dashboard rather than reported as an absent credential.
 - **Concurrency**: The Booking no-overlap invariant is enforced inside a database transaction (see `backend-standards.md`), never by application-level read-then-write alone.

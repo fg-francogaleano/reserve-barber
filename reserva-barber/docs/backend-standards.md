@@ -468,6 +468,29 @@ const required = ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', '
 required.forEach((v) => { if (!process.env[v]) throw new Error(`Missing required env var: ${v}`); });
 ```
 
+### Encrypting a stored secret
+> Established by PC2, the first value this application encrypts itself. Follow it for any future one.
+
+- **AES-256-GCM via Web Crypto** (`crypto.subtle`), not `node:crypto`. Web Crypto is the first-class
+  API on `workerd`; the modules that protect secrets should not depend on a compatibility shim.
+- **A versioned, self-describing envelope** — `v1.<base64url iv>.<base64url ciphertext‖tag>` — from
+  the first stored value, so a later key or algorithm change can identify what it is reading. A value
+  that does not parse is **rejected**; never fall back to treating it as plaintext.
+- **A fresh random 96-bit IV per encryption.** Never derived, never counter-based. Reuse under AES-GCM
+  breaks confidentiality *and* authenticity, and it is invisible in every test except one that asserts
+  two encryptions of the same plaintext differ. Write that test.
+- **Bind the owner id and a purpose string as additional authenticated data**, so a ciphertext lifted
+  from another row or another context fails to authenticate instead of decrypting into the wrong place.
+- **Encrypt and decrypt at the persistence boundary**, alongside the other conversions there. Layers
+  above exchange plaintext and stay unaware encryption exists — a layer that handles envelopes is a
+  layer that can log one or forget to decrypt one.
+- **Distinguish a missing key from an unreadable value.** A configuration fault and a data fault lead
+  to different advice for the user; collapsing them tells an owner to re-enter credentials that are fine.
+- **Validate the key at the composition root of the feature that uses it**, never in `validateEnv()`.
+  A missing secret must break one page, not the whole dashboard.
+- **Surface an undecryptable value as its own state** in the UI, distinct from "not configured".
+  Otherwise the failure is discovered by a user action far from its cause.
+
 ### AuthN / AuthZ
 - The dashboard is protected: only the authenticated **Owner** may access admin Route Handlers/actions. Enforce auth in middleware and re-check in each server action (never trust the client).
 - Public booking endpoints are unauthenticated but rate-limited and strictly validated. Client cancellation is authorized by the unguessable `cancellationToken`, not by session.

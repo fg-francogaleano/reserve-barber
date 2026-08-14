@@ -1,4 +1,8 @@
-import type { PaymentConfig, TransferDetails } from '@/server/domain/models/PaymentConfig';
+import type {
+  PaymentConfig,
+  TransferDetails,
+  MercadoPagoCredentials,
+} from '@/server/domain/models/PaymentConfig';
 
 /**
  * Repository contract for the owner's payment configuration.
@@ -38,4 +42,44 @@ export interface IPaymentConfigRepository {
    * committed-but-timed-out save a no-op rather than a duplicate row.
    */
   upsertTransferDetails(ownerId: string, details: TransferDetails): Promise<void>;
+
+  /**
+   * Writes the Mercado Pago credential pair, creating the row if it does not
+   * exist (PC2).
+   *
+   * Implementations MUST name only `mpAccessToken` and `mpPublicKey` in both
+   * branches, for the same reason `upsertTransferDetails` names only its three
+   * — this is PC1's design D5, now binding on a second write.
+   *
+   * Takes **plaintext**. Encryption happens at the persistence boundary
+   * (design D2), alongside the Decimal-to-string conversion already there, so
+   * no layer above this one ever holds an envelope it could log, serialize, or
+   * forget to decrypt.
+   */
+  upsertMercadoPagoCredentials(
+    ownerId: string,
+    credentials: MercadoPagoCredentials
+  ): Promise<void>;
+
+  /**
+   * The public key alone, for the surface that renders the client-side
+   * checkout (B5).
+   *
+   * Separate from every other read, and never widened. The public key is safe
+   * in the browser; the access token shares its row and is not. A projection
+   * that does not select the token cannot leak it.
+   */
+  findMercadoPagoPublicKeyForPublic(ownerId: string): Promise<string | null>;
+
+  /**
+   * The decrypted access token, for server-side use only (B5). Its result must
+   * never be passed to a component, serialized into a response, or logged.
+   *
+   * Returns `null` when no credential is stored, and **throws**
+   * `CredentialDecryptionError` when one is stored but cannot be read. A caller
+   * that cannot tell those apart reports an owner's configured credentials as
+   * missing, or as usable when they are not — both wrong, and both surfacing
+   * far from their cause.
+   */
+  findMercadoPagoAccessToken(ownerId: string): Promise<string | null>;
 }
