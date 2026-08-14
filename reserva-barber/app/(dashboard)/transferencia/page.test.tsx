@@ -31,6 +31,7 @@ function config(overrides: Partial<PaymentConfig> = {}): PaymentConfig {
     transfer: { cbuCvu: CBU, alias: 'mi.barberia', holderName: 'Barberia Franco' },
     depositType: 'PERCENT',
     depositValue: null,
+    updatedAt: new Date('2026-08-13T12:00:00Z'),
     ...overrides,
   };
 }

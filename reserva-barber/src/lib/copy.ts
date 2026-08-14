@@ -356,6 +356,97 @@ export const COPY = {
     infrastructureError:
       'No pudimos guardar los cambios. Recargá la página para ver qué quedó guardado.',
   },
+  mercadoPago: {
+    nav: 'Mercado Pago',
+    heading: 'Mercado Pago',
+    intro:
+      'Con estas credenciales tus clientes pagan la seña online y la reserva se confirma sola.',
+    currentHeading: 'Estado',
+    formHeading: 'Credenciales',
+
+    // The four states of the page (design D12).
+    emptyState:
+      'Todavía no cargaste tus credenciales de Mercado Pago. Hasta que lo hagas, tus clientes no van a poder pagar online.',
+    configured: 'Credenciales cargadas.',
+    unreadableHeading: 'No podemos leer tus credenciales',
+    unreadable:
+      'Tus credenciales están guardadas pero no las podemos descifrar, así que no sirven para cobrar. Volvé a pegarlas para dejarlas andando.',
+
+    // Only ever shown when the credential says `TEST-` outright. There is no
+    // "Producción" label on purpose: nothing available to this app can prove a
+    // credential is live, and the word reads as confirmation.
+    environmentLabel: 'Entorno',
+    environmentTest: 'Prueba',
+    accountLabel: 'Cuenta de Mercado Pago',
+    lastFourLabel: 'Access Token (últimos 4)',
+    publicKeyLabel: 'Public Key',
+    changedAtLabel: 'Última modificación',
+    none: '—',
+
+    accessTokenLabel: 'Access Token',
+    accessTokenHelp:
+      'Se guarda cifrado y nunca se muestra. Dejalo vacío si no querés cambiarlo.',
+    publicKeyHelp: 'Es el dato que ve el navegador de tu cliente. No es secreto.',
+    submit: 'Guardar',
+    submitting: 'Guardando…',
+    // A verification may take seconds; the same label as a sub-second write
+    // makes a working save look hung, which is what produces the second click.
+    verifying: 'Verificando con Mercado Pago…',
+    // A removal contacts nobody. Reusing the label above would have the button
+    // claim it is talking to Mercado Pago while it is not — small, but it is
+    // the same habit that produced two withdrawn decisions in this story.
+    removing: 'Borrando…',
+    saved: 'Credenciales guardadas.',
+    savedUnverified:
+      'Guardamos tus credenciales, pero no pudimos verificarlas con Mercado Pago en este momento. Si los pagos fallan, revisalas.',
+
+    // One message per distinct mistake. Collapsing any two describes the wrong
+    // problem to the owner.
+    tokenInvalid:
+      'Ese Access Token no tiene el formato que usa Mercado Pago. Copialo de nuevo desde "Tus integraciones".',
+    publicKeyInvalid:
+      'Esa Public Key no tiene el formato que usa Mercado Pago. Copiala de nuevo desde "Tus integraciones".',
+    looksSwapped:
+      'Parece que pegaste los datos al revés: lo que está en Access Token es una Public Key y viceversa. Cambialos de lugar.',
+    environmentMismatch:
+      'Una de las credenciales es de prueba y la otra no. Las dos tienen que ser del mismo par.',
+    incompletePair:
+      'Cargá el Access Token y la Public Key juntos. Con uno solo, el pago no funciona.',
+    tokenRequiredForKeyChange:
+      'Para cambiar la Public Key también tenés que pegar el Access Token: Mercado Pago los entrega en pareja y por separado no funcionan.',
+    rejected:
+      'Mercado Pago rechazó esas credenciales. No guardamos nada, así que las anteriores siguen funcionando. Fijate que estén completas y vigentes.',
+    infrastructureError:
+      'No pudimos guardar los cambios. Recargá la página y mirá "Última modificación" para ver qué quedó guardado.',
+    // The token field empties on every rejection by design; without this the
+    // owner reads it as the form losing their work.
+    tokenClearedNotice:
+      'Por seguridad no guardamos el Access Token en el formulario. Si tenés que corregir algo, pegalo de nuevo.',
+
+    testCredentialsBanner:
+      'Estás usando credenciales de prueba: los pagos no son reales y no vas a cobrar nada. Cambialas por las de producción antes de compartir tu enlace.',
+    noMethodWarning:
+      'No te queda ningún medio de pago configurado, así que no vas a poder recibir reservas. Cargá tus datos de transferencia o volvé a cargar Mercado Pago.',
+
+    // The confirmation (designs D6 and D6a).
+    confirmHeading: 'Confirmá la cuenta de Mercado Pago',
+    // A removal involves no account, so it does not borrow the heading above.
+    confirmRemoveHeading: 'Confirmá que querés borrar',
+    confirmIntro:
+      'Revisá que sea tu cuenta. A partir de ahora, las señas de tus clientes se cobran acá.',
+    confirmRemoveIntro:
+      'Vas a borrar tus credenciales de Mercado Pago. Tus clientes no van a poder pagar online.',
+    confirmUnverified:
+      'No pudimos verificar estas credenciales con Mercado Pago en este momento.',
+    confirmNewLabel: 'Credenciales nuevas',
+    confirmStoredLabel: 'Credenciales actuales',
+    confirmSubmit: 'Sí, es mi cuenta',
+    confirmRemoveSubmit: 'Sí, borrar',
+    confirmCancel: 'Volver a editar',
+
+    remove: 'Borrar credenciales',
+    removed: 'Credenciales borradas.',
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

@@ -25,6 +25,7 @@ function storedConfig(overrides: Partial<PaymentConfig> = {}): PaymentConfig {
     transfer: DETAILS,
     depositType: 'PERCENT',
     depositValue: null,
+    updatedAt: new Date('2026-08-13T12:00:00Z'),
     ...overrides,
   };
 }
@@ -38,6 +39,9 @@ function makeRepository(): IPaymentConfigRepository {
     findByOwner: vi.fn().mockResolvedValue(null),
     findTransferDetailsForPublic: vi.fn().mockResolvedValue(null),
     upsertTransferDetails: vi.fn().mockResolvedValue(undefined),
+    upsertMercadoPagoCredentials: vi.fn().mockResolvedValue(undefined),
+    findMercadoPagoPublicKeyForPublic: vi.fn().mockResolvedValue(null),
+    findMercadoPagoAccessToken: vi.fn().mockResolvedValue(null),
   };
 }
 
