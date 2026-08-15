@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { normalizeName } from '@/server/domain/models/normalizeName';
+import { parseAmount, MAX_PRICE } from '@/server/domain/models/money';
 import {
   SLOT_GRANULARITY_MINUTES,
   MIN_DURATION_MINUTES,
@@ -30,32 +31,12 @@ export const SERVICE_NAME_MAX_LENGTH = 120;
 export const SERVICE_DESCRIPTION_MAX_LENGTH = 500;
 
 /**
- * The application ceiling, deliberately **tighter** than the `Decimal(12, 2)`
- * column. Validation being stricter than the column is what makes a PostgreSQL
- * numeric overflow — which is not a typed Prisma error and would surface as a
- * generic infrastructure failure — unreachable by construction (design D4).
+ * Re-exported so existing importers keep their import site. The ceiling itself
+ * is declared once, in the shared money module, alongside the parser that
+ * enforces it.
  */
-export const MAX_PRICE = 9_999_999.99;
+export { MAX_PRICE };
 
-/**
- * Derived from `MAX_PRICE`, never hardcoded alongside it — two constants that
- * can disagree about the same limit are a defect waiting for someone to change
- * one of them.
- *
- * This is a **pre-filter**, not the rule: it exists so an absurdly long input is
- * rejected without ever being converted to a float. The numeric comparison below
- * remains the authority, and stays reachable the moment `MAX_PRICE` is not a
- * digit-boundary value (lowering it to 5,000,000 would let `9999999` through
- * this check and only that one would catch it).
- */
-const MAX_PRICE_INTEGER_DIGITS = String(Math.floor(MAX_PRICE)).length;
-
-/** `4.500`, `4,500`, `1.234.567`, `4.500,50` — a separator used for grouping. */
-const THOUSANDS_GROUPED = /^\d{1,3}([.,]\d{3})+([.,]\d{1,2})?$/;
-/** Three or more digits after the separator: precision we refuse to round away. */
-const EXCESS_DECIMALS = /^\d+[.,]\d{3,}$/;
-/** The only shape we accept once the separator has been canonicalized to a dot. */
-const CANONICAL_PRICE = /^\d+(\.\d{1,2})?$/;
 const DIGITS_ONLY = /^\d+$/;
 
 function asString(value: unknown): string {
@@ -96,35 +77,13 @@ const descriptionField = z
  * Parses a submitted price into a canonical two-decimal string, or returns the
  * reason it cannot.
  *
- * Canonicalization is **string-based**, never via `Number`: converting to a
- * float and back would reintroduce exactly the representation error the money
- * convention exists to avoid.
+ * Delegates to the shared money module. Every code `parseAmount` returns is
+ * also a `ServiceFieldError`, so the mapping is an identity — kept explicit in
+ * the signature rather than cast, so that adding a money code the catalogue has
+ * no message for becomes a type error instead of an untranslated string.
  */
 export function parsePrice(raw: string): { ok: true; value: string } | { ok: false; code: ServiceFieldError } {
-  const trimmed = raw.trim();
-
-  if (trimmed.length === 0) return { ok: false, code: 'required' };
-
-  // Checked before the decimal-count rule: "4.500" matches both, and telling an
-  // owner who wrote a thousands separator that they used "too many decimals"
-  // explains the wrong thing.
-  if (THOUSANDS_GROUPED.test(trimmed)) return { ok: false, code: 'thousands_separator' };
-  if (EXCESS_DECIMALS.test(trimmed)) return { ok: false, code: 'too_many_decimals' };
-
-  const canonicalSeparator = trimmed.replace(',', '.');
-  if (!CANONICAL_PRICE.test(canonicalSeparator)) return { ok: false, code: 'invalid_format' };
-
-  const [integerPart = '', fractionPart = ''] = canonicalSeparator.split('.');
-  const integerDigits = integerPart.replace(/^0+(?=\d)/, '');
-
-  // Length-checked before any numeric comparison so an absurdly long input is
-  // never converted to a float at all.
-  if (integerDigits.length > MAX_PRICE_INTEGER_DIGITS) return { ok: false, code: 'too_large' };
-
-  const value = `${integerDigits}.${(fractionPart + '00').slice(0, 2)}`;
-  if (Number(value) > MAX_PRICE) return { ok: false, code: 'too_large' };
-
-  return { ok: true, value };
+  return parseAmount(raw);
 }
 
 const priceField = z
