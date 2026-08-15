@@ -447,6 +447,91 @@ export const COPY = {
     remove: 'Borrar credenciales',
     removed: 'Credenciales borradas.',
   },
+  deposit: {
+    nav: 'Seña',
+    heading: 'Seña',
+    intro:
+      'La seña es lo que tu cliente paga para confirmar el turno. Podés cobrar un monto fijo o un porcentaje del precio del servicio.',
+    formHeading: 'Cómo se calcula',
+    currentHeading: 'Seña configurada',
+    emptyState:
+      'Todavía no configuraste la seña. Sin seña no podés recibir reservas, porque es lo que confirma cada turno.',
+
+    typeLegend: 'Tipo de seña',
+    typePercent: 'Porcentaje del precio',
+    typeFixed: 'Monto fijo',
+    percentLabel: 'Porcentaje',
+    percentHelp: 'Un número entero del 1 al 100.',
+    fixedLabel: 'Monto en pesos',
+    fixedHelp: 'Escribilo sin puntos de miles. Por ejemplo: 2000 o 2000,50.',
+    submit: 'Guardar',
+    submitting: 'Guardando…',
+    saved: 'Seña guardada.',
+
+    // 100% is a legitimate model and is also what a slipped keystroke produces,
+    // so it is named rather than accepted in silence.
+    fullPrepaymentNotice:
+      'Con 100%, tus clientes pagan el servicio completo por adelantado, no una seña.',
+
+    // Each rejection names its own mistake. An owner who wrote 12,5 is told
+    // percentages are whole numbers, not that their input tiene formato inválido.
+    typeRequired: 'Elegí si la seña es un porcentaje o un monto fijo.',
+    typeInvalid: 'Ese tipo de seña no existe. Elegí porcentaje o monto fijo.',
+    valueRequired: 'Cargá el valor de la seña.',
+    percentNotWhole: 'El porcentaje tiene que ser un número entero, sin decimales.',
+    percentOutOfRange: 'El porcentaje tiene que estar entre 1 y 100.',
+    percentInvalidFormat: 'El porcentaje solo puede tener números.',
+    fixedOutOfRange: 'El monto de la seña tiene que ser mayor a cero.',
+    fixedTooLarge: 'Ese monto es demasiado alto.',
+    fixedInvalidFormat: 'El monto solo puede tener números y como mucho dos decimales.',
+    fixedThousandsSeparator:
+      'Escribí el monto sin puntos de miles. Por ejemplo, 8000,50 en lugar de 8.000,50.',
+    fixedTooManyDecimals: 'El monto puede tener como mucho dos decimales.',
+
+    // The confirmation step (design D6). A value off by a factor of ten passes
+    // every format check and is obvious next to a real price.
+    confirmHeading: 'Confirmá la nueva seña',
+    confirmIntro:
+      'Así queda la seña de cada uno de tus servicios. Revisá que sean los montos que querés cobrar.',
+    confirmStoredLabel: 'Seña actual',
+    confirmNewLabel: 'Seña nueva',
+    confirmServiceColumn: 'Servicio',
+    confirmPriceColumn: 'Precio',
+    confirmDepositColumn: 'Seña',
+    confirmNoServices:
+      'Todavía no tenés servicios cargados, así que no podemos mostrarte cómo queda. Vas a poder revisarlo cuando cargues el primero.',
+    confirmNone: '—',
+    confirmSubmit: 'Sí, guardar',
+    confirmCancel: 'Volver a editar',
+
+    confirmRemoveHeading: 'Confirmá que querés quitar la seña',
+    confirmRemoveIntro:
+      'Si quitás la seña, no vas a poder recibir reservas hasta que configures una nueva.',
+    confirmRemoveSubmit: 'Sí, quitar',
+    remove: 'Quitar seña',
+    removed: 'Seña quitada.',
+
+    // Reported, never blocking. The cap in the calculation is what actually
+    // protects the client; this exists so the owner learns about the mismatch
+    // when they can still act on it.
+    exceedsPricesWarning:
+      'La seña es más alta que el precio de estos servicios, así que en ellos tu cliente va a pagar el precio completo:',
+    belowMinimumWarning:
+      'En estos servicios la seña queda por debajo del mínimo que se puede cobrar, así que se va a cobrar el mínimo:',
+
+    readinessHeading: 'Estado de tu negocio',
+    readinessReady: 'Ya podés recibir reservas.',
+    readinessNotReady: 'Todavía no podés recibir reservas.',
+    readinessMissingPaymentMethod: 'Falta configurar un medio de pago: Mercado Pago o transferencia.',
+    readinessMissingDeposit: 'Falta configurar la seña.',
+    readinessHasPaymentMethod: 'Medio de pago configurado.',
+    readinessHasDeposit: 'Seña configurada.',
+
+    noMethodWarning:
+      'No tenés ningún medio de pago configurado, así que todavía no vas a poder recibir reservas. Cargá Mercado Pago o tus datos de transferencia.',
+    infrastructureError:
+      'No pudimos guardar los cambios. Recargá la página para ver qué quedó guardado.',
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

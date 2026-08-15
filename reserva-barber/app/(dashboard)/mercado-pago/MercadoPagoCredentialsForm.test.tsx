@@ -155,8 +155,8 @@ describe('MercadoPagoCredentialsForm - the confirmation step', () => {
       expect(screen.getByText(COPY.mercadoPago.confirmHeading)).toBeInTheDocument();
     });
     expect(container.querySelector('input[name="intent"]')).toBeNull();
-    expect(container.querySelector('button[name="intent"][value="confirm"]')).not.toBeNull();
-    expect(container.querySelector('button[name="intent"][value="edit"]')).not.toBeNull();
+    expect(container.querySelector('button[name="intent"][value="mp-confirm"]')).not.toBeNull();
+    expect(container.querySelector('button[name="intent"][value="mp-edit"]')).not.toBeNull();
   });
 
   it('should_offer_a_removal_confirmation_distinct_from_a_replacement', async () => {
@@ -168,7 +168,7 @@ describe('MercadoPagoCredentialsForm - the confirmation step', () => {
     await waitFor(() => {
       expect(screen.getByText(COPY.mercadoPago.confirmRemoveIntro)).toBeInTheDocument();
     });
-    expect(container.querySelector('button[value="confirm-remove"]')).not.toBeNull();
+    expect(container.querySelector('button[value="mp-confirm-remove"]')).not.toBeNull();
   });
 });
 
@@ -274,7 +274,7 @@ describe('MercadoPagoCredentialsForm - the removal control', () => {
     // Keeps the no-JavaScript path working, which T37 exists to verify.
     const { container } = renderForm({}, true);
 
-    const remove = container.querySelector('button[name="intent"][value="remove"]');
+    const remove = container.querySelector('button[name="intent"][value="mp-remove"]');
     expect(remove).not.toBeNull();
     expect(remove).toHaveAttribute('type', 'submit');
   });

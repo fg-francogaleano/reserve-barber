@@ -18,6 +18,19 @@ import {
 
 const TRANSFER_PATH = '/transferencia';
 
+/**
+ * Confirmation answers, namespaced per form (T41).
+ *
+ * `FormData.get` returns the **first** value for a repeated name. These lived
+ * as bare `confirm`/`edit` while this was the only confirming form in the
+ * dashboard; the deposit policy editor made it the second, and an unprefixed
+ * answer could then be consumed by the wrong action. Both forms decide where a
+ * client's money goes, so the collision was closed before it was reachable
+ * rather than after.
+ */
+const CONFIRM_INTENT = 'transfer-confirm';
+const EDIT_INTENT = 'transfer-edit';
+
 function read(formData: FormData, field: string): string {
   const value = formData.get(field);
   return typeof value === 'string' ? value : '';
@@ -56,7 +69,7 @@ export async function saveTransferDetailsAction(
   // Going back to the editor writes nothing and validates nothing: the owner is
   // returning to fix a value, and reporting errors about it now would be noise
   // on top of a decision they already made.
-  if (intent === 'edit') {
+  if (intent === EDIT_INTENT) {
     return failure({}, values);
   }
 
@@ -70,7 +83,7 @@ export async function saveTransferDetailsAction(
     return toFormState(parsed.fieldErrors, values);
   }
 
-  const confirmed = intent === 'confirm';
+  const confirmed = intent === CONFIRM_INTENT;
 
   let result;
   try {

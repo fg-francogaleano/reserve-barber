@@ -638,6 +638,63 @@ Accepted because: the dashboard routes are not publicly linked; Cloudflare Worke
 
 - **Trigger:** any observed spike in unauthenticated action POSTs, or the arrival of the public booking flow (B4–B6) where the action endpoints become implicitly discoverable.
 
+### T46 — The deposit effect preview will list services nobody can book
+**Status:** accepted — **dormant until M6** · **Effort:** ~30 min · **Added:** PC3 (2026-08-15)
+
+`PrismaServiceRepository.findAllByOwner` selects every service of the owner with no `isActive`
+predicate, and PC3's effect preview and both save-time warnings are built from it.
+
+**Harmless today**, and that is the whole problem with it: `isActive` defaults to true and nothing in
+the product sets it to false, so every row is active and the preview is correct. **M6** is the story
+that introduces deactivation, and the moment it ships this surface starts showing the owner what
+their seña charges for services that cannot be booked at all — and naming deactivated services in
+the "la seña es más alta que el precio de estos servicios" warning, which would be advice about
+nothing.
+
+**The fix is not simply adding the filter to `findAllByOwner`.** It has three consumers and they do
+not want the same rows:
+
+- `ServiceCatalogService.list` — the services page, which under M6 **must** show inactive rows; that
+  page is where deactivation is managed.
+- `BarberServiceAssignmentService` (two call sites) — an existing assignment to a deactivated service
+  still has to render, or it would silently vanish from the barber's list.
+- `PaymentConfigService.previewPolicy` — the only one that wants active rows only.
+
+So the change belongs at PC3's call site, or in a second explicitly-named repository method, decided
+when M6 settles what deactivation means for a service that is already assigned. Filtering inside
+`findAllByOwner` would fix this surface by breaking the other two.
+
+Recorded here because M6 has no reason to open the deposit editor, and a defect created by one story
+and surfacing in another is exactly what gets lost.
+
+- **Trigger:** **M6.** Anyone implementing service deactivation must check all three consumers above,
+  starting with `PaymentConfigService.previewPolicy`.
+
+### T45 — `MIN_DEPOSIT_AMOUNT` is a placeholder, not a measured limit
+**Status:** accepted · **Effort:** ~30 min (one lookup, one constant) · **Added:** PC3 (2026-08-15)
+
+`src/server/domain/models/depositPolicy.ts` floors every computed deposit at `MIN_DEPOSIT_AMOUNT`,
+currently **`'1.00'` ARS**. The floor has to exist: a percentage policy applied to a cheap service
+computes amounts like $0,50, and a charge below a gateway's minimum cannot be created — the failure
+would land inside a client's checkout rather than at configuration time.
+
+**What that number is, PC3 did not verify.** No Mercado Pago documentation was consulted for the
+real minimum chargeable amount in ARS; `1.00` was chosen as a value that is obviously above zero and
+obviously below any plausible deposit. It is marked provisional in the code, in `data-model.md` §14,
+and here — three places, because an unverified number that looks settled is exactly how the next
+story treats a guess as established.
+
+Both directions are wrong in their own way. Set **above** the real minimum, it silently raises small
+deposits the gateway would have accepted. Set **below**, it fails to protect, and B5 meets the
+rejection it was supposed to prevent.
+
+The blast radius is small today: it only binds on services cheap enough for a percentage to compute
+under a peso, and the owner is warned by name at configuration time when that happens.
+
+- **Trigger:** **B5**, which is the first story to call Mercado Pago with a real charge and therefore
+  the first in a position to know. Confirm the minimum, update the constant, and drop the
+  "provisional" wording from all three places in the same change.
+
 ### T6 — Platform decision: Cloudflare vs Vercel
 **Status:** **decided — stay on Cloudflare**, revisit on trigger
 
@@ -748,9 +805,26 @@ thing a "you are safe to launch" claim depends on. Consider it evidence to confi
 mechanism to adopt untested: the pattern to check is whether test accounts reliably carry a
 recognisable marker, against more than one account.
 
-- **Trigger:** PC3, which builds the payment-readiness view and is the first story that knows whether
-  the business is ready to take real money — that view is where "are these credentials live?" belongs,
-  and it can ask the owner once, in context, instead of on a settings form. Start from the lead above.
+- ~~**Trigger:** PC3, which builds the payment-readiness view…~~ — **fired. The view was built; the
+  detection was not.**
+
+**PC3 update (2026-08-15).** The readiness view now exists, on `/sena`: it states whether the
+business can take bookings, and names which half is missing — a payment method, a deposit policy, or
+both. It reads `hasMercadoPagoCredentials`, the presence flag the repository derives without
+decrypting, so it never touches `PAYMENT_CREDENTIALS_KEY`.
+
+**Test-credential detection was deliberately left out**, and the reason is the readiness panel
+itself. That panel is precisely what an owner consults before publishing their booking link, so a
+false "ya podés recibir reservas" resting on an undocumented `/users/me` field observed against
+**one** account would be worse than the panel saying nothing about environment at all — it would
+convert a silent gap into an explicit reassurance.
+
+The `TEST_USER_` nickname lead still stands and is still the best one available. What it needs
+before anything is built on it: confirmation that the marker appears reliably, against more than one
+test account, and a decision about what the panel says when the marker is merely absent.
+
+- **Trigger:** unchanged in substance — the first story or session that can check the nickname marker
+  against several real test accounts. The place it belongs is now built and waiting for it.
 
 ### T38 — No key-rotation or re-encryption tooling
 **Status:** accepted · **Effort:** ~3 h · **Added:** PC2 (2026-08-13)
@@ -802,7 +876,7 @@ charges are created on another.
   any Mercado Pago API change that exposes the public key's owner.
 
 ### T41 — `intent` values are not namespaced per form
-**Status:** accepted · **Effort:** ~30 min · **Added:** PC2 (2026-08-13)
+**Status:** ~~accepted~~ · **Effort:** ~30 min · **Added:** PC2 (2026-08-13)
 
 Both PC1's and PC2's editors carry the owner's confirmation answer on the pressed button as `intent`,
 with values like `confirm` and `edit`. They live on separate pages today, so nothing collides.
@@ -811,8 +885,23 @@ PC3 adds the deposit policy to this settings area. If two forms ever share one p
 returns the **first** value for a name — the same hazard the button-not-hidden-field rule exists for,
 one level up — and one form's confirmation could be consumed by the other's action.
 
-- **Trigger:** PC3, or any change that puts two confirming forms on one page. The fix is prefixing
-  the values (`mp-confirm`, `deposit-confirm`) before the second form lands, not after.
+- ~~**Trigger:** PC3, or any change that puts two confirming forms on one page. The fix is prefixing
+  the values (`mp-confirm`, `deposit-confirm`) before the second form lands, not after.~~ — **fired.**
+
+**CLOSED by PC3 (2026-08-15), before the collision was reachable.**
+
+The eight `intent` values a form can now submit are namespaced: `transfer-confirm`, `transfer-edit`,
+`mp-confirm`, `mp-edit`, `mp-remove`, `mp-confirm-remove`, `deposit-confirm`, `deposit-edit`. Each
+action recognizes only its own prefix and treats every other value as unconfirmed, which is asserted
+by test — including that a `mp-confirm` submitted to the transfer action does **not** confirm.
+
+Done as the entry prescribed: **before** the third form landed, not after. The three editors that
+share this settings area all decide where a client's money goes, and a confirmation consumed by the
+wrong action is a guard that asks and then ignores the answer.
+
+Two `intent` reads deliberately left alone, because neither is a submitted confirmation:
+`MercadoPagoCredentialsForm`'s `state.pendingIntent` is internal form state (`'save' | 'remove'`),
+and `/perfil`'s image-removal intent belongs to P1's own form on its own page.
 
 ### T35 — No audit trail for changes to the transfer destination
 **Status:** accepted · **Effort:** ~3 h · **Added:** PC1 (2026-08-13) · **Re-scoped:** PC2 (2026-08-13)
@@ -842,11 +931,22 @@ recoverable from the token itself, so a switch between Mercado Pago accounts is 
 at the moment they make it (design D6a), not merely reconstructable afterwards. The transfer
 destination has no equivalent — no checksum can tell whose account a valid alias is.
 
-The retention gap is unchanged and now covers both.
+**PC3 extended it to the third column pair, and this one needs no redaction.** Each successful
+deposit-policy write and removal logs `previousType`/`previousValue` alongside `newType`/`newValue`
+**in full**. The deposit policy is not a secret — it is disclosed to every client who books — so
+unlike the transfer destination and the credential, there is nothing to withhold. Copying the
+redaction pattern here would have carried the mechanism without its reason and thrown away the only
+audit trail this story produces for free.
 
-- **Trigger:** the first report of a deposit that did not arrive, or of payments arriving in an
-  unexpected Mercado Pago account. At that point the log stream is what gets read, and if it has
-  already rolled over, the audit table becomes work rather than debt.
+That makes the deposit policy the best-covered of the three: "what was the seña before this, and
+when did it change" is answerable exactly from the log stream, not merely narrowed to four digits.
+
+The retention gap is unchanged and now covers all three.
+
+- **Trigger:** the first report of a deposit that did not arrive, of payments arriving in an
+  unexpected Mercado Pago account, or of a client charged an amount the owner does not recognize. At
+  that point the log stream is what gets read, and if it has already rolled over, the audit table
+  becomes work rather than debt.
 
 ### T36 — Two tabs editing the transfer destination is last-write-wins
 **Status:** accepted · **Effort:** ~1 h · **Added:** PC1 (2026-08-13)
@@ -897,9 +997,30 @@ Options, none taken:
   `loading.tsx`. Restores the promise; costs the skeletons and needs a per-form URL.
 - **Server-render the error state from the URL** instead of from action state. Largest change.
 
-- **Trigger:** PC3 and the booking flow both add forms and would inherit the same behaviour — and B4
-  onward, the forms are used by *clients*, not by the single owner, so the population that might have
-  JavaScript disabled stops being one person. Decide before the public flow ships.
+- ~~**Trigger:** PC3 and the booking flow both add forms…~~ — **fired at PC3. Decided, not yet
+  implemented.**
+
+**PC3 decision (2026-08-15): option 2, implemented in B4, not here.**
+
+PC3 added a fourth form and inherited the behaviour exactly as predicted. It was **not** fixed in
+this story, and that is a choice rather than an omission:
+
+- Fixing it means supplying a `permalink` per form **and** dropping the group-level `loading.tsx`
+  across ten routes. That is a decision about the whole dashboard's loading architecture, and riding
+  it along inside a settings editor would bury it where nobody would find the reasoning.
+- The population affected today is still **one person** — the owner, on their own machine. PC3 does
+  not widen it.
+- **B4 is where it stops being cosmetic.** From B4 onward the forms are used by guest clients, and a
+  form that silently accepts a submission and reports nothing would take a booking without telling
+  the client whether it worked. That is the story that must not inherit this.
+
+Option 1 (amend `frontend-standards.md` to stop claiming something untrue) is **not** taken, because
+the claim is the thing that keeps every form in this project built correctly — native `<form>`,
+uncontrolled inputs, confirmations as server-returned state, cancel controls as submit buttons. Every
+one of those choices is right on its own merits and would decay if the standard dropped the promise.
+The standard is aspirational today and should stay so until B4 makes it true.
+
+- **Trigger:** **B4.** Not "decide by then" any more — the decision above is made; B4 implements it.
 
 ### T37 — The transfer editor's no-JavaScript path is reasoned, not verified
 **Status:** accepted · **Effort:** ~20 min · **Added:** PC1 (2026-08-13)

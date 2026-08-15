@@ -3,9 +3,12 @@ import type {
   PaymentConfig,
   TransferDetails,
   MercadoPagoCredentials,
+  DepositPolicySettings,
+  DepositPolicyInput,
 } from '@/server/domain/models/PaymentConfig';
 import type { ICredentialCipher } from '@/server/domain/repositories/ICredentialCipher';
 import type { PrismaClient } from '@/generated/prisma/client';
+import { toCanonicalDecimal } from './canonicalDecimal';
 
 /**
  * What the dashboard needs. Never `SELECT *`, and note what is absent:
@@ -56,6 +59,17 @@ const MP_TOKEN_FIELDS = {
   mpAccessToken: true,
 } as const;
 
+/**
+ * The deposit policy alone, for the surfaces that compute what a client owes
+ * (PC3, consumed by B4/B5/B6). Named separately for the same reason the other
+ * three exist: the narrowness is the control, and a projection that does not
+ * select `mpAccessToken` cannot leak it.
+ */
+const PUBLIC_DEPOSIT_FIELDS = {
+  depositType: true,
+  depositValue: true,
+} as const;
+
 export class PrismaPaymentConfigRepository implements IPaymentConfigRepository {
   /**
    * The cipher is optional so PC1's transfer paths and their tests construct
@@ -91,7 +105,12 @@ export class PrismaPaymentConfigRepository implements IPaymentConfigRepository {
       depositType: row.depositType,
       // Decimal to string at the boundary: the domain never handles the driver's
       // Decimal type, and a float conversion would lose money.
-      depositValue: row.depositValue === null ? null : row.depositValue.toString(),
+      //
+      // `toCanonicalDecimal`, never `toString()`: the driver drops a trailing
+      // zero, so a stored 2000.50 reads back as "2000.5" and integer-cent
+      // arithmetic then reads the lone 5 as five centavos. Measured against the
+      // live database during PC3's verification.
+      depositValue: row.depositValue === null ? null : toCanonicalDecimal(row.depositValue),
       updatedAt: row.updatedAt,
     };
   }
@@ -186,6 +205,58 @@ export class PrismaPaymentConfigRepository implements IPaymentConfigRepository {
       return null;
     }
     return this.requireCipher().decrypt(row.mpAccessToken, ownerId, 'mp-access-token');
+  }
+
+  /**
+   * **Both branches name only the two deposit columns** — PC1's design D5, now
+   * binding on the third and last write that shares this row.
+   *
+   * Clearing (`policy === null`) nulls `depositValue` and leaves `depositType`
+   * as stored: the column is not nullable, and the owner's last choice is a
+   * better starting point for their next save than resetting it to the schema
+   * default. The create branch has no stored type to keep, so it lets the
+   * default apply rather than naming a type nobody chose.
+   *
+   * The value is passed as its canonical **string**. Prisma accepts a string
+   * for a `Decimal` column, and routing it through `Number` would reintroduce
+   * exactly the representation error the money convention exists to avoid.
+   */
+  async upsertDepositPolicy(ownerId: string, policy: DepositPolicyInput | null): Promise<void> {
+    const columns =
+      policy === null
+        ? { depositValue: null }
+        : { depositType: policy.type, depositValue: policy.value };
+
+    await this.db.paymentConfig.upsert({
+      where: { ownerId },
+      create: { ownerId, ...columns },
+      update: columns,
+    });
+  }
+
+  /**
+   * The deposit policy alone (design D7's projection rule, third application).
+   *
+   * A null `depositValue` is returned as a null value, never as a missing row
+   * and never filled in with a default: "the owner has a configuration but no
+   * deposit policy" is a real state, and inventing a policy for it is how a
+   * client gets charged an amount nobody chose.
+   */
+  async findDepositPolicyForPublic(ownerId: string): Promise<DepositPolicySettings | null> {
+    const row = await this.db.paymentConfig.findUnique({
+      where: { ownerId },
+      select: PUBLIC_DEPOSIT_FIELDS,
+    });
+    if (!row) {
+      return null;
+    }
+    return {
+      type: row.depositType,
+      // Decimal to string at the boundary, as the dashboard read does. This is
+      // the value B4 turns into a client's deposit, so the trailing zero the
+      // driver drops is the difference between 2000.50 and 2000.05.
+      value: row.depositValue === null ? null : toCanonicalDecimal(row.depositValue),
+    };
   }
 
   private requireCipher(): ICredentialCipher {

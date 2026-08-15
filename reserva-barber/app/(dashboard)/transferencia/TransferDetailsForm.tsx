@@ -124,7 +124,7 @@ export function TransferDetailsForm({ action, defaults }: TransferDetailsFormPro
               label={COPY.transfer.confirmSubmit}
               pendingLabel={COPY.transfer.submitting}
               name="intent"
-              value="confirm"
+              value="transfer-confirm"
             />
             {/*
               A submit carrying `intent=edit` returns the owner to the editor
@@ -135,7 +135,7 @@ export function TransferDetailsForm({ action, defaults }: TransferDetailsFormPro
             <button
               type="submit"
               name="intent"
-              value="edit"
+              value="transfer-edit"
               formNoValidate
               className="text-muted-foreground text-sm underline-offset-4 hover:underline"
             >

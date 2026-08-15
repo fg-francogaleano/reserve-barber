@@ -169,7 +169,7 @@ describe('saveTransferDetailsAction - confirmation', () => {
   it('should_forward_the_confirmation_when_the_confirm_button_was_pressed', async () => {
     await saveTransferDetailsAction(
       INITIAL_TRANSFER_FORM_STATE,
-      form({ cbuCvu: OTHER_CBU, intent: 'confirm' })
+      form({ cbuCvu: OTHER_CBU, intent: 'transfer-confirm' })
     );
 
     expect(saveTransferDetails).toHaveBeenCalledWith('owner-root', expect.anything(), {
@@ -198,11 +198,44 @@ describe('saveTransferDetailsAction - confirmation', () => {
     });
   });
 
+  /**
+   * T41. `FormData.get` returns the first value for a repeated name, so once a
+   * second confirming form exists, an unprefixed answer could be consumed by
+   * the wrong action. Each action now reads only its own namespace.
+   */
+  it.each(['confirm', 'mp-confirm', 'deposit-confirm'])(
+    'should_not_accept_%s_as_this_forms_confirmation',
+    async (intent) => {
+      await saveTransferDetailsAction(
+        INITIAL_TRANSFER_FORM_STATE,
+        form({ cbuCvu: OTHER_CBU, intent })
+      );
+
+      expect(saveTransferDetails).toHaveBeenCalledWith('owner-root', expect.anything(), {
+        confirmed: false,
+      });
+    }
+  );
+
+  it.each(['edit', 'mp-edit', 'deposit-edit'])(
+    'should_not_accept_%s_as_this_forms_cancellation',
+    async (intent) => {
+      // A foreign cancel must not silently skip the write path; it falls
+      // through to an ordinary unconfirmed save instead.
+      await saveTransferDetailsAction(
+        INITIAL_TRANSFER_FORM_STATE,
+        form({ cbuCvu: OTHER_CBU, intent })
+      );
+
+      expect(saveTransferDetails).toHaveBeenCalled();
+    }
+  );
+
   it('should_write_nothing_when_the_owner_goes_back_to_edit', async () => {
     // The guard is worse than absent if declining commits the change anyway.
     const state = await saveTransferDetailsAction(
       INITIAL_TRANSFER_FORM_STATE,
-      form({ cbuCvu: OTHER_CBU, intent: 'edit' })
+      form({ cbuCvu: OTHER_CBU, intent: 'transfer-edit' })
     );
 
     expect(saveTransferDetails).not.toHaveBeenCalled();
@@ -214,7 +247,7 @@ describe('saveTransferDetailsAction - confirmation', () => {
   it('should_return_the_owner_to_the_editor_with_their_values_intact', async () => {
     const state = await saveTransferDetailsAction(
       INITIAL_TRANSFER_FORM_STATE,
-      form({ cbuCvu: OTHER_CBU, intent: 'edit' })
+      form({ cbuCvu: OTHER_CBU, intent: 'transfer-edit' })
     );
 
     expect(state.values.cbuCvu).toBe(OTHER_CBU);
@@ -226,7 +259,7 @@ describe('saveTransferDetailsAction - confirmation', () => {
     // top of a decision they already made.
     const state = await saveTransferDetailsAction(
       INITIAL_TRANSFER_FORM_STATE,
-      form({ cbuCvu: '123', intent: 'edit' })
+      form({ cbuCvu: '123', intent: 'transfer-edit' })
     );
 
     expect(state.fieldErrors).toEqual({});

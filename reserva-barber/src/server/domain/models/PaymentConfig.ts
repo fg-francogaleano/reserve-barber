@@ -28,12 +28,45 @@ export type TransferDetails = {
 export type TransferDetailsInput = TransferDetails;
 
 /**
+ * The deposit policy as written and as read (PC3).
+ *
+ * `value` is null exactly while the policy is unconfigured. `type` is never
+ * null — the column carries a default so that a write belonging to another
+ * story can create the row without choosing a policy — which is why the
+ * configured/unconfigured question is asked of `value` alone.
+ */
+export type DepositPolicySettings = {
+  type: DepositType;
+  value: string | null;
+};
+
+/** The two deposit columns as written. Never widened to the whole entity. */
+export type DepositPolicyInput = {
+  type: DepositType;
+  value: string;
+};
+
+/**
+ * Whether the business can accept bookings, and what is missing when it cannot.
+ *
+ * Reported by the deposit editor (PC3) and enforced at the entry to the booking
+ * flow (B4). The two are deliberately different surfaces: a dashboard that
+ * refuses to save is not the same control as a booking flow that refuses to
+ * book, and only the second one protects a client.
+ */
+export type PaymentReadiness = {
+  ready: boolean;
+  hasPaymentMethod: boolean;
+  hasDepositPolicy: boolean;
+};
+
+/**
  * The full configuration, for the dashboard only.
  *
  * `depositValue` is nullable because the row is created by whichever payment
  * story the owner completes first, and no deposit policy exists until PC3. The
  * guarantee that a business can accept bookings is therefore an application
- * gate, not a column constraint — see `isBookable` below.
+ * gate, not a column constraint — `isBookable` at the foot of this file.
  */
 export type PaymentConfig = {
   id: string;
@@ -118,17 +151,44 @@ export function hasTransferConfigured(transfer: TransferDetails): boolean {
   return transfer.cbuCvu !== null || transfer.alias !== null;
 }
 
-/*
- * The bookability gate — "at least one payment method configured AND a non-null
- * depositValue" — is deliberately NOT implemented here.
+/**
+ * True when a deposit policy has been chosen.
  *
- * It is stated as a rule in docs/data-model.md §14 and belongs at the entry to
- * the public booking flow, which does not exist yet. Writing it now would add a
- * code path with no caller and imply this story enforces something it does not:
- * PC1 explicitly permits clearing the transfer destination even when that
- * leaves the business unbookable, because blocking it would trap an owner
- * migrating between payment methods. The same reasoning M4 applied when it
- * declined to pre-write an upsert with no caller.
- *
- * PC3 and B4 are the stories that implement it.
+ * Asked of the value, never of the type: the type always holds something,
+ * because the column defaults so PC1's and PC2's writes can create the row
+ * without inventing a policy. A row can therefore exist, and read `PERCENT`,
+ * while no policy has ever been configured.
  */
+export function hasDepositConfigured(policy: DepositPolicySettings): boolean {
+  return policy.value !== null;
+}
+
+/**
+ * The bookability gate of `docs/data-model.md` §14: at least one payment method
+ * configured **and** a deposit policy chosen.
+ *
+ * This was deliberately left unwritten until PC3. PC1 declined it because a
+ * rule with no caller implies an enforcement that does not exist — and PC1
+ * explicitly permits clearing the transfer destination even when that leaves
+ * the business unbookable, so it enforced nothing of the kind.
+ *
+ * It is still not an enforcement. PC3 **reports** it on the deposit editor; B4
+ * **enforces** it at the entry to the booking flow. Both read this one
+ * function, so the two surfaces cannot drift into different definitions of
+ * ready — which is the whole reason it is here rather than inline on a page.
+ */
+export function isBookable(config: {
+  hasMercadoPagoCredentials: boolean;
+  transfer: TransferDetails;
+  depositValue: string | null;
+}): PaymentReadiness {
+  const hasPaymentMethod =
+    config.hasMercadoPagoCredentials || hasTransferConfigured(config.transfer);
+  const hasDepositPolicy = config.depositValue !== null;
+
+  return {
+    ready: hasPaymentMethod && hasDepositPolicy,
+    hasPaymentMethod,
+    hasDepositPolicy,
+  };
+}

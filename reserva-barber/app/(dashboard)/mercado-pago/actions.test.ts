@@ -67,7 +67,7 @@ function formData(fields: Record<string, string>): FormData {
  * the token out of the DOM — so any test that adds one is testing a form that
  * does not exist.
  */
-const CONFIRMATION_FORM_DATA = (): FormData => formData({ intent: 'confirm' });
+const CONFIRMATION_FORM_DATA = (): FormData => formData({ intent: 'mp-confirm' });
 
 const VIEW_CONFIGURED = {
   configured: true,
@@ -213,7 +213,7 @@ describe('saveMercadoPagoCredentialsAction - the pending cookie (design D7)', ()
 
     const state = await saveMercadoPagoCredentialsAction(
       INITIAL_MERCADO_PAGO_STATE,
-      formData({ intent: 'edit' })
+      formData({ intent: 'mp-edit' })
     );
 
     expect(cookieJar.has('mp_pending')).toBe(false);
@@ -309,7 +309,7 @@ describe('saveMercadoPagoCredentialsAction - outcomes', () => {
 
     const state = await saveMercadoPagoCredentialsAction(
       INITIAL_MERCADO_PAGO_STATE,
-      formData({ intent: 'remove' })
+      formData({ intent: 'mp-remove' })
     );
 
     expect(state.pendingIntent).toBe('remove');
@@ -324,7 +324,7 @@ describe('saveMercadoPagoCredentialsAction - outcomes', () => {
 
     const state = await saveMercadoPagoCredentialsAction(
       INITIAL_MERCADO_PAGO_STATE,
-      formData({ intent: 'confirm-remove' })
+      formData({ intent: 'mp-confirm-remove' })
     );
 
     expect(state).toMatchObject({ removed: true, noPaymentMethod: true });
