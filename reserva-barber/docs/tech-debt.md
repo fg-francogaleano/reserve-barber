@@ -638,6 +638,38 @@ Accepted because: the dashboard routes are not publicly linked; Cloudflare Worke
 
 - **Trigger:** any observed spike in unauthenticated action POSTs, or the arrival of the public booking flow (B4–B6) where the action endpoints become implicitly discoverable.
 
+### T46 — The deposit effect preview will list services nobody can book
+**Status:** accepted — **dormant until M6** · **Effort:** ~30 min · **Added:** PC3 (2026-08-15)
+
+`PrismaServiceRepository.findAllByOwner` selects every service of the owner with no `isActive`
+predicate, and PC3's effect preview and both save-time warnings are built from it.
+
+**Harmless today**, and that is the whole problem with it: `isActive` defaults to true and nothing in
+the product sets it to false, so every row is active and the preview is correct. **M6** is the story
+that introduces deactivation, and the moment it ships this surface starts showing the owner what
+their seña charges for services that cannot be booked at all — and naming deactivated services in
+the "la seña es más alta que el precio de estos servicios" warning, which would be advice about
+nothing.
+
+**The fix is not simply adding the filter to `findAllByOwner`.** It has three consumers and they do
+not want the same rows:
+
+- `ServiceCatalogService.list` — the services page, which under M6 **must** show inactive rows; that
+  page is where deactivation is managed.
+- `BarberServiceAssignmentService` (two call sites) — an existing assignment to a deactivated service
+  still has to render, or it would silently vanish from the barber's list.
+- `PaymentConfigService.previewPolicy` — the only one that wants active rows only.
+
+So the change belongs at PC3's call site, or in a second explicitly-named repository method, decided
+when M6 settles what deactivation means for a service that is already assigned. Filtering inside
+`findAllByOwner` would fix this surface by breaking the other two.
+
+Recorded here because M6 has no reason to open the deposit editor, and a defect created by one story
+and surfacing in another is exactly what gets lost.
+
+- **Trigger:** **M6.** Anyone implementing service deactivation must check all three consumers above,
+  starting with `PaymentConfigService.previewPolicy`.
+
 ### T45 — `MIN_DEPOSIT_AMOUNT` is a placeholder, not a measured limit
 **Status:** accepted · **Effort:** ~30 min (one lookup, one constant) · **Added:** PC3 (2026-08-15)
 
