@@ -166,18 +166,24 @@ Because the intent is raised by the client only once the chosen file has been re
 - **WHEN** a save fails after the owner selected a new image
 - **THEN** the selection is still pending on the retry, rather than silently reverting to the stored image
 
-### Requirement: The shareable link is displayed and disclosed as not yet published
+### Requirement: The shareable link is displayed as live
 After a slug is saved the editor SHALL display the full public link, `{origin}/b/{slug}`, with a control that copies it. The origin SHALL be resolved server-side; it SHALL NOT be read from `window.location` in a component that also renders on the server.
 
-The editor SHALL state that the link does not resolve yet. `/b/**` is denied to anonymous visitors until B1 opens it, so an owner who shares the link today sends clients to a login page.
+The link now resolves. Copy stating or implying that it does not yet work SHALL NOT remain anywhere in the editor.
+
+The editor SHALL continue to warn, at the moment the slug is changed away from its stored value, that links already shared will stop working. That warning is now the mitigation for a live failure rather than a theoretical one: until B1 no shared link could resolve, so none could usefully have been shared, and `docs/tech-debt.md` T33 recorded the cost as zero. It stopped being zero when the public page shipped.
 
 #### Scenario: The link is rendered from a server-resolved origin
 - **WHEN** the editor renders the shareable link
 - **THEN** the origin comes from server-side configuration or request headers, and no hydration mismatch occurs on first paint
 
-#### Scenario: The unpublished state is disclosed
+#### Scenario: No unpublished disclosure remains
 - **WHEN** the shareable link is displayed
-- **THEN** copy states that it becomes reachable once the public page ships
+- **THEN** no copy states or implies that the link is not yet reachable
+
+#### Scenario: The link the owner copies resolves
+- **WHEN** the owner copies the displayed link and opens it without a session
+- **THEN** the public profile for that slug renders
 
 #### Scenario: Copying without clipboard access
 - **WHEN** the clipboard API is unavailable or refuses permission
