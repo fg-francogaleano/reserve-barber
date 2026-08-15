@@ -332,6 +332,99 @@ describe('PaymentConfigService - removeDepositPolicy', () => {
 
     expect(result.status).toBe('removed');
   });
+
+  /**
+   * Removing nothing must not write. The upsert would otherwise create a
+   * configuration row holding no configuration, for an owner who has never
+   * saved anything — a row whose only content is the absence of content.
+   */
+  it('should_write_nothing_when_there_is_no_policy_to_remove', async () => {
+    const repo = makeRepository();
+    vi.mocked(repo.findByOwner).mockResolvedValue(config());
+
+    await new PaymentConfigService(repo, undefined, makeServices()).removeDepositPolicy(OWNER, {
+      confirmed: true,
+    });
+
+    expect(repo.upsertDepositPolicy).not.toHaveBeenCalled();
+  });
+
+  it('should_write_nothing_when_no_row_exists_at_all', async () => {
+    const repo = makeRepository();
+
+    const result = await new PaymentConfigService(repo, undefined, makeServices()).removeDepositPolicy(
+      OWNER,
+      { confirmed: true }
+    );
+
+    expect(result.status).toBe('removed');
+    expect(repo.upsertDepositPolicy).not.toHaveBeenCalled();
+  });
+});
+
+describe('PaymentConfigService - a failed preview never masks a successful write', () => {
+  /**
+   * The warnings are computed after the write, and they are cosmetic. If that
+   * read fails, the policy is already stored — reporting the whole save as an
+   * infrastructure failure would tell the owner their money rule did not save
+   * when it did.
+   */
+  it('should_report_the_save_when_the_effect_read_fails_afterwards', async () => {
+    const repo = makeRepository();
+    const services = makeServices();
+    vi.mocked(services.findAllByOwner)
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('connection lost'));
+
+    const result = await new PaymentConfigService(repo, undefined, services).saveDepositPolicy(
+      OWNER,
+      { type: 'PERCENT', value: '30' },
+      { confirmed: false }
+    );
+
+    expect(result.status).toBe('saved');
+    expect(repo.upsertDepositPolicy).toHaveBeenCalled();
+  });
+
+  it('should_report_no_warnings_rather_than_stale_ones_when_the_effect_read_fails', async () => {
+    const repo = makeRepository();
+    const services = makeServices();
+    vi.mocked(services.findAllByOwner).mockRejectedValue(new Error('connection lost'));
+
+    const result = await new PaymentConfigService(repo, undefined, services).saveDepositPolicy(
+      OWNER,
+      { type: 'FIXED', value: '5000.00' },
+      { confirmed: false }
+    );
+
+    if (result.status !== 'saved') throw new Error('expected a save');
+    expect(result.servicesBelowDeposit).toEqual([]);
+    expect(result.servicesBelowMinimum).toEqual([]);
+  });
+
+  /**
+   * The confirmation preview is a different matter: it runs BEFORE any write,
+   * and a confirmation screen with no effects is the thing it exists to show.
+   * That failure must still surface.
+   */
+  it('should_still_surface_a_failure_while_building_the_confirmation', async () => {
+    const repo = makeRepository();
+    vi.mocked(repo.findByOwner).mockResolvedValue(
+      config({ depositType: 'PERCENT', depositValue: '3.00' })
+    );
+    const services = makeServices();
+    vi.mocked(services.findAllByOwner).mockRejectedValue(new Error('connection lost'));
+
+    await expect(
+      new PaymentConfigService(repo, undefined, services).saveDepositPolicy(
+        OWNER,
+        { type: 'PERCENT', value: '30' },
+        { confirmed: false }
+      )
+    ).rejects.toThrow('connection lost');
+
+    expect(repo.upsertDepositPolicy).not.toHaveBeenCalled();
+  });
 });
 
 describe('PaymentConfigService - a lost race on the singleton row', () => {

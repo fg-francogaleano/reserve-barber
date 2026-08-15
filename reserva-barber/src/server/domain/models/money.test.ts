@@ -122,6 +122,33 @@ describe('money - cents conversion', () => {
   });
 
   /**
+   * The invariant "already canonical" is enforced here rather than documented.
+   *
+   * This exact shape shipped a money defect in PC3: the driver returns
+   * `2000.5` for a stored `2000.50`, and reading the lone `5` as five centavos
+   * turned $2000,50 into $2000,05. That was fixed at the repository boundary,
+   * which left the trap loaded for the next caller — B4 computing a deposit,
+   * B5 charging it, D5 counting it. A one-digit fraction is tenths, not
+   * hundredths, and this function now says so.
+   */
+  it.each([
+    ['2000.5', 200050],
+    ['2000.50', 200050],
+    ['0.5', 50],
+    ['0.05', 5],
+    ['2000', 200000],
+    ['2000.', 200000],
+  ])('should_read_%s_as_%i_cents', (raw, cents) => {
+    expect(toCents(raw)).toBe(cents);
+  });
+
+  it('should_not_let_a_one_digit_fraction_become_centavos', () => {
+    // The defect, stated as its own case: these two are the same amount.
+    expect(toCents('2000.5')).toBe(toCents('2000.50'));
+    expect(fromCents(toCents('2000.5'))).toBe('2000.50');
+  });
+
+  /**
    * The reason this module exists. `2501.67 * 0.3` is 750.5009999999999 in
    * IEEE-754; integer cents make the same operation exact.
    */

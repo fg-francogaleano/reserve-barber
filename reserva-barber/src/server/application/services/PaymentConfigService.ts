@@ -434,7 +434,17 @@ export class PaymentConfigService {
 
     await this.writeWithSingleRetry(() => this.configs.upsertDepositPolicy(ownerId, policy));
 
-    const effects = await this.previewPolicy(ownerId, policy);
+    // The policy is stored. Everything below is advisory, so a failure here
+    // must not turn a successful write into a reported failure — the owner
+    // would be told their money rule did not save when it did. Warnings are
+    // dropped rather than allowed to swallow the outcome.
+    let effects: DepositEffect[] = [];
+    try {
+      effects = await this.previewPolicy(ownerId, policy);
+    } catch {
+      effects = [];
+    }
+
     return {
       status: 'saved',
       leavesNoPaymentMethod: !hasAnyPaymentMethod(existing),
@@ -458,7 +468,16 @@ export class PaymentConfigService {
         ? UNCONFIGURED_POLICY
         : { type: existing.depositType, value: existing.depositValue };
 
-    if (!options.confirmed && stored.value !== null) {
+    if (stored.value === null) {
+      // Nothing to remove, so nothing is written. The upsert would otherwise
+      // create a configuration row holding no configuration — a row whose only
+      // content is the absence of content — for an owner who never saved
+      // anything. Reported as `removed` because the requested end state is the
+      // state already in place.
+      return { status: 'removed', leavesNoPaymentMethod: !hasAnyPaymentMethod(existing) };
+    }
+
+    if (!options.confirmed) {
       return { status: 'needs_confirmation', stored };
     }
 

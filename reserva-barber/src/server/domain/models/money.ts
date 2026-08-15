@@ -86,19 +86,29 @@ export function parseAmount(raw: string): ParseAmountResult {
 }
 
 /**
- * A canonical amount as integer cents.
+ * An amount as integer cents.
  *
  * Every arithmetic operation on money in this codebase goes through here.
  * `2501.67 * 0.3` is `750.5009999999999` in IEEE-754; the same operation over
  * integer cents is exact, and the deposit calculation depends on that being
  * true for values a client is charged.
  *
- * Takes a value already canonicalized by `parseAmount` — exactly two decimal
- * places, no separator ambiguity left to resolve.
+ * **The fraction is padded, not assumed.** An earlier version took "already
+ * canonicalized by `parseAmount`" on trust, and that trust shipped a defect:
+ * the database driver returns `2000.5` for a stored `2000.50`, and reading the
+ * lone `5` as five centavos turned $2000,50 into $2000,05. Fixing it at the
+ * repository boundary left the trap loaded for the next caller.
+ *
+ * A one-digit fraction is **tenths** — `.5` is fifty centavos, not five. That
+ * is arithmetic, not a convention this module is free to assume away.
  */
-export function toCents(canonical: string): number {
-  const [integerPart = '0', fractionPart = '00'] = canonical.split('.');
-  return Number(integerPart) * 100 + Number(fractionPart);
+export function toCents(amount: string): number {
+  const [integerPart = '0', fractionPart = ''] = amount.split('.');
+  // Right-padded to hundredths, then truncated: the same normalization
+  // `parseAmount` and `toCanonicalDecimal` apply, so all three agree on what
+  // a fraction means.
+  const centavos = (fractionPart + '00').slice(0, 2);
+  return Number(integerPart) * 100 + Number(centavos);
 }
 
 /** Integer cents back to the canonical two-decimal string. */
