@@ -310,7 +310,18 @@ export function DepositPolicyForm({
           <SubmitButton label={COPY.deposit.submit} pendingLabel={COPY.deposit.submitting} />
         </div>
 
-        {state.saved ? (
+        {/*
+          Both notices are gated on `configured`, which the SERVER re-renders
+          after either action revalidates the page.
+
+          Saving and removing are two separate action states, and neither
+          resets the other: after a removal the save's "guardada" would still
+          be mounted, leaving the page saying both "todavía no configuraste la
+          seña" and "seña guardada" at once. Tying each notice to what is
+          actually stored is right in either order, and on this screen a
+          contradiction is worse than a missing confirmation.
+        */}
+        {state.saved && configured ? (
           <div className="flex flex-col gap-2" role="status">
             <p className="text-sm font-medium">{COPY.deposit.saved}</p>
             {state.values.type === 'PERCENT' && state.values.value === '100' ? (
@@ -319,7 +330,7 @@ export function DepositPolicyForm({
           </div>
         ) : null}
 
-        {removeState.removed ? (
+        {removeState.removed && !configured ? (
           <p className="text-sm font-medium" role="status">
             {COPY.deposit.removed}
           </p>
@@ -335,7 +346,7 @@ export function DepositPolicyForm({
           </p>
         ) : null}
 
-        {state.servicesBelowDeposit.length > 0 ? (
+        {state.servicesBelowDeposit.length > 0 && configured ? (
           <div className="rounded-lg border p-3 text-sm">
             <p>{COPY.deposit.exceedsPricesWarning}</p>
             <ul className="mt-1 list-inside list-disc">
@@ -348,7 +359,7 @@ export function DepositPolicyForm({
           </div>
         ) : null}
 
-        {state.servicesBelowMinimum.length > 0 ? (
+        {state.servicesBelowMinimum.length > 0 && configured ? (
           <div className="rounded-lg border p-3 text-sm">
             <p>{COPY.deposit.belowMinimumWarning}</p>
             <ul className="mt-1 list-inside list-disc">

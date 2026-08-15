@@ -404,6 +404,73 @@ describe('DepositPolicyForm - success and warnings', () => {
     expect(screen.getByText(/Flequillo/)).toBeInTheDocument();
   });
 
+  /**
+   * Saving and removing are separate action states and neither resets the
+   * other, so a stale "guardada" would otherwise survive a removal and leave
+   * the page asserting both that no policy is configured and that one was just
+   * saved. Caught by driving the real page, not by this suite's first version.
+   */
+  it('should_not_report_a_save_once_the_policy_has_been_removed', async () => {
+    const user = userEvent.setup();
+    render(
+      <DepositPolicyForm
+        action={actionReturning({ saved: true, values: PERCENT_DEFAULTS })}
+        removeAction={actionReturning({})}
+        defaults={PERCENT_DEFAULTS}
+        configured={false}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: COPY.deposit.submit }));
+
+    expect(screen.queryByText(COPY.deposit.saved)).not.toBeInTheDocument();
+  });
+
+  it('should_not_keep_a_warning_about_a_policy_that_no_longer_exists', async () => {
+    const user = userEvent.setup();
+    render(
+      <DepositPolicyForm
+        action={actionReturning({
+          saved: true,
+          values: { type: 'FIXED', value: '5000.00' },
+          servicesBelowDeposit: [
+            {
+              serviceId: 'svc-1',
+              serviceName: 'Corte',
+              price: '3000.00',
+              deposit: '3000.00',
+              cappedByPrice: true,
+              raisedToMinimum: false,
+            },
+          ],
+        })}
+        removeAction={actionReturning({})}
+        defaults={{ type: 'FIXED', value: '5000.00' }}
+        configured={false}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: COPY.deposit.submit }));
+
+    expect(screen.queryByText(COPY.deposit.exceedsPricesWarning)).not.toBeInTheDocument();
+  });
+
+  it('should_not_report_a_removal_while_a_policy_is_stored', async () => {
+    const user = userEvent.setup();
+    render(
+      <DepositPolicyForm
+        action={actionReturning({})}
+        removeAction={actionReturning({ removed: true })}
+        defaults={PERCENT_DEFAULTS}
+        configured
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: COPY.deposit.remove }));
+
+    expect(screen.queryByText(COPY.deposit.removed)).not.toBeInTheDocument();
+  });
+
   it('should_name_full_prepayment_after_saving_one_hundred_percent', async () => {
     const user = userEvent.setup();
     render(

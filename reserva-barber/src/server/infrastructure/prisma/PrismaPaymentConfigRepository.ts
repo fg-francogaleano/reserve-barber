@@ -8,6 +8,7 @@ import type {
 } from '@/server/domain/models/PaymentConfig';
 import type { ICredentialCipher } from '@/server/domain/repositories/ICredentialCipher';
 import type { PrismaClient } from '@/generated/prisma/client';
+import { toCanonicalDecimal } from './canonicalDecimal';
 
 /**
  * What the dashboard needs. Never `SELECT *`, and note what is absent:
@@ -104,7 +105,12 @@ export class PrismaPaymentConfigRepository implements IPaymentConfigRepository {
       depositType: row.depositType,
       // Decimal to string at the boundary: the domain never handles the driver's
       // Decimal type, and a float conversion would lose money.
-      depositValue: row.depositValue === null ? null : row.depositValue.toString(),
+      //
+      // `toCanonicalDecimal`, never `toString()`: the driver drops a trailing
+      // zero, so a stored 2000.50 reads back as "2000.5" and integer-cent
+      // arithmetic then reads the lone 5 as five centavos. Measured against the
+      // live database during PC3's verification.
+      depositValue: row.depositValue === null ? null : toCanonicalDecimal(row.depositValue),
       updatedAt: row.updatedAt,
     };
   }
@@ -246,8 +252,10 @@ export class PrismaPaymentConfigRepository implements IPaymentConfigRepository {
     }
     return {
       type: row.depositType,
-      // Decimal to string at the boundary, as the dashboard read does.
-      value: row.depositValue === null ? null : row.depositValue.toString(),
+      // Decimal to string at the boundary, as the dashboard read does. This is
+      // the value B4 turns into a client's deposit, so the trailing zero the
+      // driver drops is the difference between 2000.50 and 2000.05.
+      value: row.depositValue === null ? null : toCanonicalDecimal(row.depositValue),
     };
   }
 

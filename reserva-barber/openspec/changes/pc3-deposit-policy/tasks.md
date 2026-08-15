@@ -62,17 +62,19 @@
 ## 9. Verification
 
 - [x] 9.1 `npm run lint`, `npm run typecheck` and the full test suite pass
-- [ ] 9.2 Drive the running app through all ten states, including the replacement confirmation with its effect list and the empty-catalogue case
-- [ ] 9.3 Verify `/sena` renders with `PAYMENT_CREDENTIALS_KEY` unset while Mercado Pago credentials are stored, and that readiness still counts Mercado Pago as configured
-- [ ] 9.4 Verify a deposit save against a row holding a transfer destination and Mercado Pago credentials leaves both untouched, read back from the database
-- [ ] 9.5 Verify the transfer and Mercado Pago confirmation flows still work after the intent rename
+- [x] 9.2 Drive the running app through all ten states, including the replacement confirmation with its effect list and the empty-catalogue case
+  - Found and fixed: after a removal the page showed a stale "Seña guardada." and a warning about the policy just deleted, because saving and removing are separate action states and neither resets the other. Both notices now follow the server-fresh `configured` flag.
+- [x] 9.3 Verify `/sena` renders with `PAYMENT_CREDENTIALS_KEY` unset while Mercado Pago credentials are stored, and that readiness still counts Mercado Pago as configured
+- [x] 9.4 Verify a deposit save against a row holding a transfer destination and Mercado Pago credentials leaves both untouched, read back from the database
+  - Found and fixed: `findDepositPolicyForPublic` and `findByOwner` used `.toString()`, so a stored `2000.50` read back as `2000.5` and integer-cent arithmetic took the lone `5` as five centavos. M3 had already documented this failure for `Service.price`; its `toCanonicalPrice` is now extracted to `canonicalDecimal.ts` and used by both repositories.
+- [x] 9.5 Verify the transfer and Mercado Pago confirmation flows still work after the intent rename
 
 ## 10. Documentation closeout
 
-- [ ] 10.1 `docs/tech-debt.md`: close **T41** with what was renamed
-- [ ] 10.2 `docs/tech-debt.md`: update **T35** noting the unredacted deposit log line and what it now answers for this field
-- [ ] 10.3 `docs/tech-debt.md`: update **T42** with the readiness view PC3 built, and why test-credential detection was left out (design D14)
-- [ ] 10.4 `docs/tech-debt.md`: record **T44** as decided for B4, with the reasoning from design D17
-- [ ] 10.5 `docs/tech-debt.md`: add an entry for the provisional `MIN_DEPOSIT_AMOUNT`, triggered by B5
-- [ ] 10.6 Tick **PC3** in `docs/roadmap.md` with carried-decision notes in the style of the PC1 and PC2 entries
-- [ ] 10.7 Run `openspec validate pc3-deposit-policy --strict`
+- [x] 10.1 `docs/tech-debt.md`: close **T41** with what was renamed
+- [x] 10.2 `docs/tech-debt.md`: update **T35** noting the unredacted deposit log line and what it now answers for this field
+- [x] 10.3 `docs/tech-debt.md`: update **T42** with the readiness view PC3 built, and why test-credential detection was left out (design D14)
+- [x] 10.4 `docs/tech-debt.md`: record **T44** as decided for B4, with the reasoning from design D17
+- [x] 10.5 `docs/tech-debt.md`: add **T45** for the provisional `MIN_DEPOSIT_AMOUNT`, triggered by B5
+- [x] 10.6 Tick **PC3** in `docs/roadmap.md` with carried-decision notes in the style of the PC1 and PC2 entries
+- [x] 10.7 Run `openspec validate pc3-deposit-policy --strict`

@@ -14,9 +14,20 @@ function createDb(overrides: Record<string, ReturnType<typeof vi.fn>> = {}) {
   return { db: { paymentConfig } as unknown as PrismaClient, paymentConfig };
 }
 
-/** A `Decimal`-shaped value: the driver returns an object, never a string. */
+/**
+ * A `Decimal`-shaped value, mimicking the driver **faithfully**.
+ *
+ * The driver's `toString()` drops a trailing zero — a stored `2000.50` reads
+ * back as `2000.5` — which is exactly what the first version of this mock got
+ * wrong, encoding an assumption instead of the behaviour. `toFixed(2)` is what
+ * the conversion must actually use.
+ */
 function decimal(value: string) {
-  return { toString: () => value };
+  const numeric = Number(value);
+  return {
+    toString: () => String(numeric),
+    toFixed: (digits: number) => numeric.toFixed(digits),
+  };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -156,6 +167,26 @@ describe('PrismaPaymentConfigRepository - the public deposit projection', () => 
 });
 
 describe('PrismaPaymentConfigRepository - the deposit value crosses as a string', () => {
+  /**
+   * Caught against the live database, not by this suite's first version: the
+   * driver reads `2000.50` back as `2000.5`, and `toCents` would then read the
+   * lone `5` as five centavos — a 45-peso deposit charged as 5 centavos short
+   * of 2000. M3 documented this exact failure for `Service.price`; the fix is
+   * its `toCanonicalPrice`, not a second conversion.
+   */
+  it('should_pad_a_trailing_zero_the_driver_drops', async () => {
+    const { db } = createDb({
+      findUnique: vi.fn().mockResolvedValue({
+        depositType: 'FIXED',
+        depositValue: decimal('2000.50'),
+      }),
+    });
+
+    const policy = await new PrismaPaymentConfigRepository(db).findDepositPolicyForPublic(OWNER);
+
+    expect(policy?.value).toBe('2000.50');
+  });
+
   it('should_convert_the_driver_decimal_to_a_canonical_string_on_read', async () => {
     const { db } = createDb({
       findUnique: vi.fn().mockResolvedValue({
@@ -168,6 +199,19 @@ describe('PrismaPaymentConfigRepository - the deposit value crosses as a string'
 
     expect(policy?.value).toBe('8000.50');
     expect(typeof policy?.value).toBe('string');
+  });
+
+  it('should_pad_a_whole_amount_to_two_decimals', async () => {
+    const { db } = createDb({
+      findUnique: vi.fn().mockResolvedValue({
+        depositType: 'FIXED',
+        depositValue: decimal('2000'),
+      }),
+    });
+
+    const policy = await new PrismaPaymentConfigRepository(db).findDepositPolicyForPublic(OWNER);
+
+    expect(policy?.value).toBe('2000.00');
   });
 
   it('should_pass_the_value_to_the_driver_without_a_float_conversion', async () => {
