@@ -64,9 +64,25 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(new URL(action.to, request.url), 307);
   }
 
+  if (action.type === 'reject') {
+    // Answered here rather than by the router: the path cannot be decoded, and
+    // letting it reach Next produces a 500 rather than a 404 (see
+    // `isDecodable`). No body — there is no page to render for a path that
+    // cannot be parsed.
+    return new NextResponse(null, { status: 404 });
+  }
+
   return response;
 }
 
+// Verified to reach `/b`, `/b/{slug}` and `/b/{slug}/reservar`, so the public
+// namespace opened in `decideGuardAction` is actually evaluated here.
+//
+// The image-extension exclusion does skip a path like `/b/foto.webp`, and that
+// is harmless twice over: a valid slug can never contain a dot (it matches
+// `^[a-z0-9]+(-[a-z0-9]+)*$`), so such a path is never a profile; and since
+// `/b/**` is public, a request that bypasses this middleware reaches the route
+// tree and gets the same 404 it would have got anyway.
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };

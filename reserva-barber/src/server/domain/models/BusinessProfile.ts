@@ -67,6 +67,32 @@ export class BusinessProfile {
 }
 
 /**
+ * What an anonymous visitor is allowed to see (B1 design D6).
+ *
+ * A **projection**, not the entity: it carries no `id`, no `ownerId` and no
+ * timestamps, and it is an interface rather than a class because it has no
+ * identity — it is the shape of one page's content.
+ *
+ * That `BusinessProfile` happens not to carry `ownerId` today is luck, not
+ * design. It does carry `id`, and the next field added to it would reach every
+ * anonymous visitor with nothing in the type system to object. Declaring what
+ * may be published, instead of subtracting what may not, makes that structural:
+ * a field added to the entity is not published until someone adds it here too.
+ *
+ * TypeScript's structural typing runs the safe way round — a `BusinessProfile`
+ * satisfies this, while this can never stand in for a `BusinessProfile`,
+ * because `id` is missing.
+ */
+export interface PublicBusinessProfile {
+  readonly businessName: string;
+  readonly bio: string | null;
+  readonly photoUrl: string | null;
+  readonly coverUrl: string | null;
+  readonly publicSlug: string;
+  readonly socialLinks: readonly SocialLink[];
+}
+
+/**
  * Builds the link the owner shares.
  *
  * The origin is a parameter, never read from `window`: this is called during

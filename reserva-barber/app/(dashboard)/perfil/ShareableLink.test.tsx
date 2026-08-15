@@ -42,10 +42,13 @@ describe('ShareableLink - the link itself', () => {
     expect(text.className).toContain('select-all');
   });
 
-  it('discloses that the link does not resolve yet', () => {
+  it('no longer discloses the link as unpublished', () => {
+    // The disclosure was correct until B1 opened `/b/**`. Keeping it would tell
+    // the owner their working link does not work.
     render(<ShareableLink url={LINK} />);
 
-    expect(screen.getByText(COPY.businessProfile.linkNotPublishedYet)).toBeInTheDocument();
+    expect(screen.queryByText(/no lo compartas/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/todavía no está publicado/i)).not.toBeInTheDocument();
   });
 });
 

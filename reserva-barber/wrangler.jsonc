@@ -10,6 +10,24 @@
   },
   "observability": {
     "enabled": true
+  },
+  // APP_ORIGIN is this deployment's own public URL, and it lives HERE rather
+  // than in `wrangler secret put` on purpose: it is not a secret — it is the
+  // address printed on the link the owner hands to clients — and a value kept
+  // only in the Cloudflare dashboard is a value the next deploy from a fresh
+  // clone silently lacks.
+  //
+  // It was optional until B1. `/perfil` falls back to the request's Host header;
+  // the public profile page deliberately does NOT (design D3 — a forged Host
+  // would otherwise rewrite a shop's OpenGraph tags to point somewhere else).
+  // So when this is missing the page still renders, but emits **no canonical URL
+  // and no OpenGraph tags at all**, and every link shared to WhatsApp or
+  // Instagram arrives as bare text instead of a card. There is no error and no
+  // log — the only symptom is a preview nobody sees.
+  //
+  // Change this in one place when a custom domain replaces the workers.dev one.
+  "vars": {
+    "APP_ORIGIN": "https://reserva-barber.franco-galeano.workers.dev"
   }
   // Secrets (DATABASE_URL, PAYMENT_CREDENTIALS_KEY) are NOT defined here:
   // - local preview reads .dev.vars (git-ignored)

@@ -281,11 +281,10 @@ export const COPY = {
     linkCopy: 'Copiar',
     linkCopied: '¡Copiado!',
     linkCopyFailed: 'No pudimos copiarlo. Seleccionalo y copialo a mano.',
-    // The link is real and correct, and it does not resolve yet: the public page
-    // ships with B1. Saying so is cheaper than an owner sharing it and sending
-    // their clients to a login screen.
-    linkNotPublishedYet:
-      'Todavía no está publicado: la página que ven tus clientes se habilita en el próximo paso. Guardá el link, pero no lo compartas aún.',
+    // `linkNotPublishedYet` lived here until B1. It said the link was not
+    // reachable yet, which was true while `/b/**` redirected to `/login` — and
+    // became false the moment the public page shipped. Removed rather than
+    // reworded: there is nothing left to disclose.
     linkBeforeSave: 'Guardá el perfil para obtener tu link.',
 
     nameRequired: 'Ingresá el nombre de tu barbería.',
@@ -302,6 +301,43 @@ export const COPY = {
     alreadyExists: 'Tu perfil ya estaba guardado. Recargá la página y volvé a intentar.',
     infrastructureError:
       'No pudimos guardar los cambios. Revisá el perfil antes de reintentar, por las dudas de que se haya guardado.',
+  },
+  // The client's side of the product, deliberately sharing not one string with
+  // `businessProfile` above (B1 design D18). Two audiences, two tones: the owner
+  // is administering a business, the client arrived from a WhatsApp message.
+  // Sharing strings means editing a message for one and silently changing what
+  // the other reads.
+  publicProfile: {
+    // Used as the image alternative text, so it names the shop rather than
+    // describing the file.
+    coverAlt: (businessName: string) => `Portada de ${businessName}`,
+    photoAlt: (businessName: string) => `Foto de ${businessName}`,
+    socialHeading: 'Seguinos',
+    // Six of these are brand names and are the same in every language; `WEBSITE`
+    // is not — "Sitio web" is translatable copy, and it living in the component
+    // was the one user-facing string outside this file.
+    platforms: {
+      INSTAGRAM: 'Instagram',
+      FACEBOOK: 'Facebook',
+      TIKTOK: 'TikTok',
+      WHATSAPP: 'WhatsApp',
+      X: 'X',
+      YOUTUBE: 'YouTube',
+      WEBSITE: 'Sitio web',
+    },
+    // The whole reason the page exists — and it does not work yet. Saying so
+    // plainly beats a control that navigates nowhere.
+    book: 'Reservar',
+    bookUnavailable: 'Las reservas online se habilitan muy pronto.',
+    loading: 'Cargando…',
+    notFoundHeading: 'No encontramos esta barbería',
+    // Says nothing about which of the two happened, because the system cannot
+    // tell either: the slug may never have existed, or the owner may have
+    // changed it and stranded this link (T33).
+    notFoundBody: 'El link puede estar mal escrito o haber cambiado. Pedile el link actualizado a la barbería.',
+    errorHeading: 'No pudimos cargar la página',
+    errorBody: 'Puede ser un problema momentáneo. Probá de nuevo en un rato.',
+    retry: 'Reintentar',
   },
   transfer: {
     nav: 'Transferencia',

@@ -595,15 +595,22 @@ Accepted because the accumulation is bounded and small: one owner, a client-side
 - **Trigger:** B6 shipping (fix both buckets together), any measured storage growth that is not explained by real profile edits, or multi-owner tenancy.
 
 ### T33 — Changing the public slug breaks every link already shared
-**Status:** accepted — owner's explicit decision · **Effort:** ~3–4 h (slug history table, lookup fallback, redirect) · **Added:** P1 (2026-08-11)
+**Status:** accepted — owner's explicit decision, **re-affirmed and now live** · **Effort:** ~3–4 h (slug history table, lookup fallback, redirect) · **Added:** P1 (2026-08-11) · **Last evaluated:** B1 (2026-08-15)
 
 `BusinessProfile.publicSlug` is editable. Changing it changes the public URL, and every link already handed out — WhatsApp messages, an Instagram bio, printed cards — stops resolving. There is no alias table and no redirect from a previous slug.
 
 The owner chose this knowingly over the two alternatives: freezing the slug after the first save (unrecoverable from a typo without a database edit) and keeping old slugs alive (a second table, and a story of its own). The mitigation shipped instead is a warning at the moment the slug is altered away from its stored value, which is the only moment it can be acted on — there is no way to learn afterwards who holds the old link.
 
-The cost is currently zero: B1 has not shipped, so no link resolves yet and none can have been usefully shared. The exposure begins the day the public page goes live.
+**B1 (2026-08-15) turned this from theory into exposure.** The entry previously read "the cost is currently zero: B1 has not shipped, so no link resolves yet and none can have been usefully shared." That is no longer true — `/b/{slug}` resolves, the editor no longer warns the owner against sharing the link, and every link handed out from today is a link a slug change can strand.
 
-- **Trigger:** the first slug change made after B1 is live, or any owner report of a shared link that stopped working.
+B1 re-affirmed the decision rather than reopening it: nothing changed except the date on which it starts costing something, and building the alias table would have been a story of its own smuggled into another (B1 design D14).
+
+Two things B1 did add:
+
+- **A search-result tail.** The public page is indexable (B1 design D13), so a slug change now also leaves indexed results pointing at a 404 for however long it takes a crawler to revisit. That is a longer tail than the shared-link problem and it is the price of being findable, which is what the product is for.
+- **The only signal that will exist when this happens.** `PublicProfileService` logs an unresolved slug at `info` with the requested value (design D15). Without the value there is no way to tell a client holding a stranded link from someone enumerating slugs, and those call for opposite responses. That log is the inventory; nothing else records it.
+
+- **Trigger:** the first slug change made now that B1 is live, any owner report of a shared link that stopped working, or a rise in the unresolved-slug log that correlates with a slug edit rather than with enumeration.
 
 ### T34 — A controlled `<select>` needs a manual write-back after React's post-action form reset
 **Status:** accepted — measured workaround, isolated to one component · **Effort:** ~1 h to revisit when React or the form shape changes · **Added:** P1 (2026-08-12)
@@ -630,13 +637,59 @@ Accepted because: the session lifetime is long relative to the time to type 500 
 - **Trigger:** a confirmed user complaint about lost bio text, or the arrival of a rich-text or multi-step form where the loss is more expensive.
 
 ### T17 — Unauthenticated Server Action POSTs are not rate-limited or metered
-**Status:** accepted · **Effort:** ~2–4 h (Cloudflare rate-limiting rule or middleware throttle)
+**Status:** accepted · **Effort:** ~2–4 h (Cloudflare rate-limiting rule or middleware throttle) · **Last evaluated:** B1 (2026-08-15)
 
 `requireOwner()` short-circuits at `!user` and returns an error state without making any database call. This means the create and edit Server Action routes accept unlimited unauthenticated POSTs at zero database cost, but they still consume CPU and egress on the Worker. An attacker who discovers the action endpoint can submit it in a tight loop.
 
-Accepted because: the dashboard routes are not publicly linked; Cloudflare Workers enforces a 10 ms CPU-time soft limit per request; the free tier's 100k daily requests provides implicit throttling; and the payoff of a dedicated rate-limiting rule is low before the app has real traffic.
+**The original justification has partly expired, and B1 is why.** This entry used to be accepted because, among other reasons, "the dashboard routes are not publicly linked". That was true while every route in the application required a session. B1 opened `/b/**` to anonymous visitors, so the application now has a publicly addressable surface, and the trigger this entry carried — "the arrival of the public booking flow (B4–B6)" — named the wrong story. The moment of change is B1, not B4.
 
-- **Trigger:** any observed spike in unauthenticated action POSTs, or the arrival of the public booking flow (B4–B6) where the action endpoints become implicitly discoverable.
+What still holds: Cloudflare Workers enforces a 10 ms CPU-time soft limit per request; the free tier's 100k daily requests provides implicit throttling; and no link has been shared yet, so the realistic traffic is zero. The mitigation was therefore **not** built at B1 — but the reasoning was corrected, because an accepted debt whose written justification is false is worse than one with no justification at all: the next reader treats it as still-evaluated (B1 design D12).
+
+Note the scope difference B1 introduces. This entry is about *Server Action POSTs*, which remain undiscoverable. The new public **read** surface is a different shape and is tracked separately in T47.
+
+- **Trigger:** any observed spike in unauthenticated action POSTs, or B4 — the first story to put a Server Action-adjacent write behind a publicly linked flow.
+
+### T48 — The public profile has no loading state, because a skeleton costs its HTTP statuses
+**Status:** accepted — measured trade-off, statuses chosen over the skeleton · **Effort:** unknown; needs a way to stream a shell without committing the status early · **Added:** B1 (2026-08-15)
+
+`/b/[slug]` ships **no** `loading.tsx`. A client on a slow connection sees nothing until the server responds, rather than a skeleton.
+
+This is not an omission, and the alternative was built and measured before it was rejected. A `loading.tsx` opens a Suspense boundary; Next.js streams the shell and commits `200 OK` before the page has resolved anything, so `notFound()` and `permanentRedirect()` arrive too late to set a status:
+
+| Request | With `loading.tsx` | Without |
+| --- | --- | --- |
+| unknown slug | `200` (soft 404) | `404` |
+| non-canonical spelling | `200` + `<meta http-equiv="refresh">` | `308` |
+
+Raising the outcome inside `generateMetadata` was also built and measured — **it does not work on this runtime**, the statuses stayed at `200`. Do not re-attempt it without new information.
+
+The statuses were chosen because they are this page's contract with machines: WhatsApp and Instagram follow HTTP redirects when building a link preview and do not execute a meta refresh, so a link shared in a non-canonical spelling would lose its preview on the product's main distribution channel. Soft 404s are also what search engines penalize, which matters because the page is indexable (B1 design D13).
+
+The cost is bounded today: one query, no images blocking first paint. It grows the moment this route does more work — which is precisely what B2 and B3 will do to it.
+
+- **Trigger:** **B2 or B3**, whichever first makes this route wait on more than one query — at which point the missing loading state stops being a few milliseconds. Also: any Next.js or OpenNext release that lets a route stream a shell while deferring its status commit, and any measured complaint about the page appearing blank on a slow connection.
+
+### T47 — The public profile page has neither a cache nor a rate limit
+**Status:** accepted — deliberate bet on low traffic · **Effort:** ~2–4 h (a Cloudflare rate-limiting rule, or ISR backed by R2/KV, or a slug-keyed cache invalidated from the profile save) · **Added:** B1 (2026-08-15)
+
+`/b/[slug]` is `force-dynamic`, like every other page in this project. Unlike the others it is reachable **without a session**, so every request from anyone issues a database query through Supavisor. There is no cache in front of it and no rate limit on it.
+
+Two consequences, and they are different problems:
+
+- **Cost amplification.** A slug-enumeration loop, or simply an Instagram story that lands, produces a traffic shape this project has never seen. The pool is shared with the dashboard, so saturation would take down the owner's admin surface alongside the public page.
+- **Repeated work per request.** `generateMetadata` and the page component both resolve the slug. They are deduplicated with React's `cache()` within a render pass, so this is one query per request today — but that deduplication is a line of code, not a structural guarantee, and a future component reading the profile again would silently add a third query.
+
+**Accepted deliberately**, and the alternatives were weighed rather than skipped (B1 design D7, D12):
+
+- `revalidate` would need an incremental cache backed by R2 or KV — this stack's **first** ISR configuration, adopted on `workerd`, for traffic that does not exist yet. `docs/s0-versions-decision.md` is a list of things this runtime does differently than expected; adding one more unproven mechanism to serve zero users is the wrong trade.
+- A slug-keyed cache invalidated from the profile save couples the dashboard editor to the public route's cache.
+- A Cloudflare rate-limiting rule is cheap (~15 min, no code) but lives outside the repository, where nobody will remember it exists.
+
+Dynamic rendering also buys something real: the owner saves their profile, reloads, and sees the change with no staleness window.
+
+**The honest summary is that this is a bet on having no traffic, written down so it is a bet and not an oversight.**
+
+- **Trigger:** the first time the owner shares the link somewhere with reach (an Instagram bio, a story, printed cards), any measured growth in requests to `/b/**`, any Supavisor pool saturation, or B4 — at which point the public surface starts creating rows and the calculation changes entirely.
 
 ### T46 — The deposit effect preview will list services nobody can book
 **Status:** accepted — **dormant until M6** · **Effort:** ~30 min · **Added:** PC3 (2026-08-15)
