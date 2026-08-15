@@ -21,16 +21,16 @@
 
 ## 4. Application — validation
 
-- [ ] 4.1 Write failing tests for `src/server/application/paymentConfig/depositPolicySchema.ts`: missing type rejected; unrecognized type rejected; `PERCENT` fractional, 0 and 101 rejected; `PERCENT` 100 accepted; `FIXED` 0 and above `MAX_PRICE` rejected; empty value rejected as required; a distinct code per mistake
-- [ ] 4.2 Implement `depositPolicySchema.ts` returning error codes, never Spanish strings, reusing `money.ts` for the value and never falling back to the column default for the type (design D5)
+- [x] 4.1 Write failing tests for `src/server/application/paymentConfig/depositPolicySchema.ts`: missing type rejected; unrecognized type rejected; `PERCENT` fractional, 0 and 101 rejected; `PERCENT` 100 accepted; `FIXED` 0 and above `MAX_PRICE` rejected; empty value rejected as required; a distinct code per mistake
+- [x] 4.2 Implement `depositPolicySchema.ts` returning error codes, never Spanish strings, reusing `money.ts` for the value and never falling back to the column default for the type (design D5)
 
 ## 5. Persistence
 
-- [ ] 5.1 Add `upsertDepositPolicy(ownerId, policy)` and `findDepositPolicyForPublic(ownerId)` to `src/server/domain/repositories/IPaymentConfigRepository.ts`, documenting the column-scoping obligation on the write and the narrowness of the projection
-- [ ] 5.2 Write failing tests in `PrismaPaymentConfigRepository.deposit.test.ts`: the update names only `depositType` and `depositValue`; the create branch leaves the transfer and Mercado Pago columns null; a row holding both other configurations is unchanged by a deposit write; removal nulls only `depositValue`
-- [ ] 5.3 Write a failing test that `findDepositPolicyForPublic` selects neither credential column and reports an unconfigured policy rather than substituting a default
-- [ ] 5.4 Write a failing test that a value written as `8000.50` is read back as the string `8000.50` with no floating-point conversion on either leg
-- [ ] 5.5 Implement both methods in `PrismaPaymentConfigRepository.ts` with `PUBLIC_DEPOSIT_FIELDS`, and `Decimal` conversion confined to the mapper in both directions
+- [x] 5.1 Add `upsertDepositPolicy(ownerId, policy)` and `findDepositPolicyForPublic(ownerId)` to `src/server/domain/repositories/IPaymentConfigRepository.ts`, documenting the column-scoping obligation on the write and the narrowness of the projection
+- [x] 5.2 Write failing tests in `PrismaPaymentConfigRepository.deposit.test.ts`: the update names only `depositType` and `depositValue`; the create branch leaves the transfer and Mercado Pago columns null; a row holding both other configurations is unchanged by a deposit write; removal nulls only `depositValue`
+- [x] 5.3 Write a failing test that `findDepositPolicyForPublic` selects neither credential column and reports an unconfigured policy rather than substituting a default
+- [x] 5.4 Write a failing test that a value written as `8000.50` is read back as the string `8000.50` with no floating-point conversion on either leg
+- [x] 5.5 Implement both methods in `PrismaPaymentConfigRepository.ts` with `PUBLIC_DEPOSIT_FIELDS`, and `Decimal` conversion confined to the mapper in both directions
 
 ## 6. Application — service layer
 

@@ -2,6 +2,8 @@ import type {
   PaymentConfig,
   TransferDetails,
   MercadoPagoCredentials,
+  DepositPolicySettings,
+  DepositPolicyInput,
 } from '@/server/domain/models/PaymentConfig';
 
 /**
@@ -82,4 +84,34 @@ export interface IPaymentConfigRepository {
    * far from their cause.
    */
   findMercadoPagoAccessToken(ownerId: string): Promise<string | null>;
+
+  /**
+   * Writes the deposit policy, creating the row if it does not exist (PC3).
+   *
+   * Implementations MUST name only `depositType` and `depositValue` in both
+   * branches — PC1's design D5, now binding on the third and last write that
+   * shares this row.
+   *
+   * Takes `null` to clear the policy, which sets `depositValue` back to null
+   * and leaves `depositType` as stored. Clearing is permitted even when it
+   * leaves the business unable to accept bookings: an owner migrating between
+   * models must not be trapped, exactly as PC1 settled for the transfer
+   * destination.
+   */
+  upsertDepositPolicy(ownerId: string, policy: DepositPolicyInput | null): Promise<void>;
+
+  /**
+   * The deposit policy alone, for the surface that computes what a client owes
+   * (B4/B5/B6).
+   *
+   * Separate from every other read, and never widened, for the reason the
+   * transfer and public-key projections exist: `mpAccessToken` shares this row,
+   * and a projection that does not select it cannot leak it.
+   *
+   * Returns `null` when no row exists. A row whose `value` is null is a real
+   * answer — the owner has a configuration but no deposit policy — and callers
+   * must not substitute a default for it, because inventing a policy is how a
+   * client gets charged an amount the owner never chose.
+   */
+  findDepositPolicyForPublic(ownerId: string): Promise<DepositPolicySettings | null>;
 }
