@@ -136,6 +136,18 @@ Renaming two working files is outside PC3's nominal scope and is done anyway, be
 
 Form state is lost without JavaScript because `useActionState` is not given a `permalink`. PC3 adds a form and inherits the behaviour without worsening it. The debt is recorded as **decided for B4**: from B4 onward the forms are used by clients rather than by a single owner, so the population that might have JavaScript disabled stops being one person. Fixing it here would mean per-form permalinks and losing the group-level `loading.tsx` skeletons — a UI architecture decision that deserves its own change rather than riding along with a settings editor.
 
+### D18 — The driver-decimal conversion is extracted too, for the same reason as D11 — added during implementation
+
+**This decision was not made at design time.** It was forced by verification: driving the real database showed that a deposit stored as `2000.50` reads back as `2000.5`, because the driver's `toString()` drops a trailing zero. Integer-cent arithmetic then takes the lone `5` as five centavos, and a $2.000,50 deposit computes as $2.000,05.
+
+M3 had already measured and documented this exact failure for `Service.price` and answered it with `toCanonicalPrice`, living inside `PrismaServiceRepository`. PC3 reintroduced the bug by writing `.toString()` in a second repository — which is the failure mode D11 predicts, arriving from a direction D11 did not cover: **the conversion out of the driver is as much a shared money rule as the parsing into it.**
+
+So it moves to `src/server/infrastructure/prisma/canonicalDecimal.ts`, used by both repositories, with `PrismaServiceRepository` re-exporting the old name so M3's tests keep their import site. Same judgment as D11, same trigger — the second call site — applied one layer down.
+
+The unit tests did not catch it, and that is the part worth recording: the repository test mocked the driver as `{ toString: () => '8000.50' }`, encoding **what I assumed the driver did** rather than what it does. A mock is only evidence about production to the extent it was measured against production. The mock now returns what the driver returns.
+
+*Alternatives considered.* Leaving `toCanonicalPrice` where it was and importing it from `PrismaPaymentConfigRepository`: one repository reaching into another for a helper, which reads as a dependency between aggregates that does not exist. Writing a second conversion local to the payment repository: precisely the duplication that produced the bug.
+
 ## Risks / Trade-offs
 
 **A policy that is simply wrong, entered confidently and confirmed** → Nothing in the system can know the owner meant 3% and not 30%. The effect preview is the mitigation and it is a good one — the number is shown against a real price before it is stored — but it is a human check, not a validation. Accepted knowingly: the alternative is a product that refuses values the owner is entitled to choose.
