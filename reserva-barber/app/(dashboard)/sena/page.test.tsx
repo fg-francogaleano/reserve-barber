@@ -188,7 +188,18 @@ describe('DepositPage - the form defaults', () => {
     render(await DepositPage());
 
     expect(screen.getByRole('radio', { name: COPY.deposit.typeFixed })).toBeChecked();
+    // Canonical, not es-AR: the field must be re-submittable unchanged, and
+    // "2.000,00" would be rejected as a thousands separator on the next save.
     expect(screen.getByLabelText(COPY.deposit.fixedLabel)).toHaveValue('2000.00');
+  });
+
+  it('should_load_a_stored_percentage_into_the_field_without_the_column_decimals', async () => {
+    getDepositPolicy.mockResolvedValue({ type: 'PERCENT', value: '30.00' });
+
+    render(await DepositPage());
+
+    // The whole-number rule would reject "30.00" on the next save.
+    expect(screen.getByLabelText(COPY.deposit.percentLabel)).toHaveValue('30');
   });
 
   it('should_offer_removal_only_when_a_policy_is_stored', async () => {

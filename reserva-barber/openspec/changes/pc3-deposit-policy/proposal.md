@@ -27,7 +27,7 @@ PC1 and PC2 stored values the owner **transcribes** from somewhere else — a CB
 ## Capabilities
 
 ### New Capabilities
-- `payment-deposit-policy`: the owner configures, replaces and removes the deposit policy — the two policy types and their validation ranges, the explicit-type rule, the authoritative computation with its rounding, price cap and minimum floor, the snapshot guarantee that protects bookings already in flight, the effect preview and its confirmation gate, the payment readiness view, the states of the page, and the Spanish (es-AR) copy for each of them.
+- `payment-deposit-policy`: the owner configures, replaces and removes the deposit policy — the two policy types and their validation ranges, the explicit-type rule, the authoritative computation with its rounding, price cap and minimum floor, the effect preview and its confirmation gate, the payment readiness view, the states of the page, and the Spanish (es-AR) copy for each of them. The **snapshot guarantee** for bookings already in flight is stated in `docs/data-model.md` §11 and enforced by B4, not by this capability: PC3 has no booking to protect, and a requirement here would claim an enforcement that does not exist.
 
 ### Modified Capabilities
 - `data-persistence`: the two deposit columns join the column-scoped partial write already specified for PC1 and PC2 — the third story to write this shared row; a new narrow projection serves the public booking flow without carrying the access token; `Decimal` is converted at the repository boundary in both directions.

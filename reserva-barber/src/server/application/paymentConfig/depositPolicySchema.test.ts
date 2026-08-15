@@ -142,6 +142,29 @@ describe('depositPolicySchema - the empty value is required, never a removal', (
   });
 });
 
+describe('depositPolicySchema - the echoed value round-trips', () => {
+  /**
+   * The form echoes the canonical value back into the input, so the owner can
+   * press save again without editing. If canonical output were not accepted as
+   * input, a save would succeed and the identical second save would fail —
+   * which is exactly what an es-AR rendering in the field would cause.
+   */
+  it.each(['2000', '2000,50', '8000.5', '0,99'])(
+    'should_accept_its_own_output_for_%s',
+    (raw) => {
+      const first = expectOk(parseDepositPolicy({ type: 'FIXED', value: raw }));
+      const second = expectOk(parseDepositPolicy({ type: 'FIXED', value: first.value }));
+      expect(second.value).toBe(first.value);
+    }
+  );
+
+  it.each(['30', '1', '100', '030'])('should_accept_its_own_output_for_percent_%s', (raw) => {
+    const first = expectOk(parseDepositPolicy({ type: 'PERCENT', value: raw }));
+    const second = expectOk(parseDepositPolicy({ type: 'PERCENT', value: first.value }));
+    expect(second.value).toBe(first.value);
+  });
+});
+
 describe('depositPolicySchema - each mistake has its own code', () => {
   it('should_distinguish_out_of_range_from_fractional', () => {
     const outOfRange = expectErrors(parseDepositPolicy({ type: 'PERCENT', value: '101' })).value;

@@ -121,18 +121,14 @@ An unverified floor is a guess about what a payment gateway will accept. Stating
 - **WHEN** the constant is inspected
 - **THEN** it carries a note that the value is provisional and names B5 as the point of confirmation
 
-### Requirement: A booking's deposit is a snapshot and is never recomputed
-The deposit recorded on a booking SHALL be computed once, at booking creation, from the policy in force at that moment. A later change to the policy SHALL NOT alter any existing booking in any status, and any validation of a payment SHALL compare against the recorded amount, never against the live policy.
+### Requirement: Changing the policy writes nothing beyond the policy itself
+A save or removal SHALL write only the deposit policy. It SHALL NOT read, recompute or modify any deposit already recorded elsewhere, and SHALL NOT require any other stored value to be revisited.
 
-A client sitting in a checkout created for one amount must not have their payment rejected because the owner changed the policy while they were paying.
+This is the half of the snapshot rule that PC3 can actually hold. The other half — that a booking's `depositAmount` is computed once at creation and never recomputed — is a **Booking** guarantee stated in `docs/data-model.md` §11, and belongs to the story that creates bookings (B4). It is deliberately not restated here as a requirement of this capability, because no code in this change can satisfy or violate it, and a spec that claims it would describe an enforcement that does not exist.
 
-#### Scenario: The policy changes while a booking awaits payment
-- **WHEN** a booking recorded a deposit of 2400.00 and the policy is then changed
-- **THEN** that booking still requires 2400.00
-
-#### Scenario: The policy changes between bookings
-- **WHEN** the policy changes and a new booking is created afterwards
-- **THEN** only the new booking uses the new policy
+#### Scenario: A policy change is self-contained
+- **WHEN** the deposit policy is saved or removed
+- **THEN** the write touches the policy columns alone and no other stored amount is read or rewritten
 
 ### Requirement: Replacing a stored policy requires a confirmation that shows its effect
 When a save would replace a stored policy with a different one, the write SHALL NOT proceed on the first submission. The owner SHALL be shown a confirmation listing their existing services with the deposit the submitted policy would charge for each, and the write SHALL proceed only on an explicit confirmation.
@@ -244,14 +240,27 @@ A page about deposit amounts must not fail because of a secret belonging to a di
 - **WHEN** `PAYMENT_CREDENTIALS_KEY` is not configured and Mercado Pago credentials are stored
 - **THEN** `/sena` renders, the readiness panel counts Mercado Pago as configured, and no decryption is attempted
 
-### Requirement: The stored policy is echoed back normalized
-After a successful save the form SHALL display the stored value normalized and formatted for es-AR — a fixed amount as an amount, a percentage as a percentage — rather than the characters the owner typed.
+### Requirement: The stored policy is echoed back normalized, in the form each surface needs
+After a successful save the owner SHALL be shown what was stored rather than the characters they typed. Two surfaces show it differently, and the difference is required:
+
+- The **input field** SHALL carry the canonical value (`8000.50`, `30`). It must be re-submittable unchanged: an es-AR rendering here would put a thousands separator in the field, and pressing save again without touching anything would be rejected — a save that succeeds and then fails on the identical value.
+- The **stored-policy panel and the effect preview** SHALL render es-AR (`$8.000,50`, `30%`), because they are read, not re-submitted.
+
+A percentage SHALL drop the decimals the `Decimal(12, 2)` column adds: a stored `30.00` is shown as `30`, which is what the owner wrote and the only value the whole-number rule accepts back.
 
 Reading back what was actually stored is the owner's only check that the value they intended is the value the system holds.
 
-#### Scenario: A grouped amount is saved
-- **WHEN** the owner saves `8.000,50` as a fixed deposit
-- **THEN** the form displays the stored amount formatted for es-AR
+#### Scenario: A fixed amount is saved
+- **WHEN** the owner saves `8000,50` as a fixed deposit
+- **THEN** the input field holds `8000.50` and the stored-policy panel shows `$8.000,50`
+
+#### Scenario: The echoed value is submitted again unchanged
+- **WHEN** the owner saves, and then submits the echoed value again without editing it
+- **THEN** the second submission is accepted and stores the same amount
+
+#### Scenario: A stored percentage is shown without the column's decimals
+- **WHEN** a policy stored as `30.00` is loaded into the editor
+- **THEN** the input field holds `30` and the stored-policy panel shows `30%`
 
 ### Requirement: The editor is owner-authenticated at the action boundary
 Every server action in this feature SHALL resolve the authenticated owner as its first statement, before reading any submitted field.
