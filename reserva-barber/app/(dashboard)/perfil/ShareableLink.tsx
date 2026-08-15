@@ -72,7 +72,6 @@ export function ShareableLink({ url }: { url: string }) {
         {outcome === 'failed' ? COPY.businessProfile.linkCopyFailed : null}
       </p>
 
-      <p className="text-muted-foreground text-xs">{COPY.businessProfile.linkNotPublishedYet}</p>
     </div>
   );
 }

@@ -1,4 +1,9 @@
-import { BusinessProfile, SocialLink, type SocialPlatform } from '@/server/domain/models/BusinessProfile';
+import {
+  BusinessProfile,
+  SocialLink,
+  type PublicBusinessProfile,
+  type SocialPlatform,
+} from '@/server/domain/models/BusinessProfile';
 import type {
   IBusinessProfileRepository,
   BusinessProfileData,
@@ -13,6 +18,26 @@ import type { PrismaClient } from '@/generated/prisma/client';
 /** Only the fields the domain entity carries — never `SELECT *`. */
 const PROFILE_FIELDS = {
   id: true,
+  businessName: true,
+  bio: true,
+  photoUrl: true,
+  coverUrl: true,
+  publicSlug: true,
+  socialLinks: {
+    select: { platform: true, url: true, orderIndex: true },
+    orderBy: { orderIndex: 'asc' },
+  },
+} as const;
+
+/**
+ * What an anonymous visitor may see (B1 design D6).
+ *
+ * Deliberately NOT `PROFILE_FIELDS` minus a field or two. This list is written
+ * from the other direction — it names what may be published, so a column added
+ * to the model reaches nobody until someone adds it here on purpose. Note the
+ * absent `id`: the entity's identifier has no business on a public page.
+ */
+const PUBLIC_PROFILE_FIELDS = {
   businessName: true,
   bio: true,
   photoUrl: true,
@@ -75,6 +100,26 @@ export class PrismaBusinessProfileRepository implements IBusinessProfileReposito
     });
 
     return row === null ? null : toDomain(row);
+  }
+
+  /**
+   * The one read here with no owner predicate (design D5).
+   *
+   * `findUnique` rather than `findFirst`: `publicSlug` is unique, and saying so
+   * means the query planner uses the index and a second matching row is
+   * impossible by construction rather than by luck of ordering.
+   *
+   * The result is mapped to a plain projection rather than through `toDomain` —
+   * building a `BusinessProfile` here would mean inventing an `id` this query
+   * deliberately did not read.
+   */
+  async findByPublicSlug(publicSlug: string): Promise<PublicBusinessProfile | null> {
+    const row = await this.db.businessProfile.findUnique({
+      where: { publicSlug },
+      select: PUBLIC_PROFILE_FIELDS,
+    });
+
+    return row === null ? null : toPublicProjection(row);
   }
 
   /**
@@ -166,6 +211,21 @@ interface ProfileRow {
   coverUrl: string | null;
   publicSlug: string;
   socialLinks: { platform: string; url: string; orderIndex: number }[];
+}
+
+type PublicProfileRow = Omit<ProfileRow, 'id'>;
+
+function toPublicProjection(row: PublicProfileRow): PublicBusinessProfile {
+  return {
+    businessName: row.businessName,
+    bio: row.bio,
+    photoUrl: row.photoUrl,
+    coverUrl: row.coverUrl,
+    publicSlug: row.publicSlug,
+    socialLinks: row.socialLinks.map(
+      (link) => new SocialLink(link.platform as SocialPlatform, link.url, link.orderIndex)
+    ),
+  };
 }
 
 function toDomain(row: ProfileRow): BusinessProfile {

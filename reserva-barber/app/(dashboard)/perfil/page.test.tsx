@@ -93,14 +93,15 @@ describe('ProfilePage - the shareable link', () => {
     expect(screen.getByText('http://localhost:3000/b/barberia-don-juan')).toBeInTheDocument();
   });
 
-  it('should_disclose_that_the_link_does_not_resolve_yet', async () => {
+  it('should_not_claim_the_link_is_unpublished_now_that_it_resolves', async () => {
+    // B1 shipped the public page. Copy telling the owner not to share their
+    // link would now be advice against using the feature.
     findProfile.mockResolvedValueOnce(profile());
 
     render(await ProfilePage());
 
-    // The owner's first instinct is to share it. Without this they send their
-    // clients to a login screen.
-    expect(screen.getByText(COPY.businessProfile.linkNotPublishedYet)).toBeInTheDocument();
+    expect(screen.queryByText(/no lo compartas/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/todavía no está publicado/i)).not.toBeInTheDocument();
   });
 
   it('should_render_the_link_as_selectable_text_not_only_behind_a_button', async () => {

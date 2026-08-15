@@ -262,3 +262,124 @@ describe('PrismaBusinessProfileRepository - unique violations become domain erro
     );
   });
 });
+
+describe('PrismaBusinessProfileRepository - the public read carries no owner', () => {
+  const PUBLIC_ROW = {
+    businessName: 'Barbería Don Juan',
+    bio: 'Cortes clásicos desde 1998.',
+    photoUrl: 'https://storage.example/photo.webp',
+    coverUrl: 'https://storage.example/cover.webp',
+    publicSlug: 'barberia-don-juan',
+    socialLinks: [
+      { platform: 'INSTAGRAM', url: 'https://instagram.com/a', orderIndex: 0 },
+      { platform: 'WHATSAPP', url: 'https://wa.me/5491100000000', orderIndex: 1 },
+    ],
+  };
+
+  function createPublicDb(findUnique: ReturnType<typeof vi.fn>) {
+    const businessProfile = { findUnique };
+    return { db: { businessProfile } as unknown as PrismaClient, businessProfile };
+  }
+
+  it('should_find_a_profile_by_slug_in_one_query_with_no_owner_predicate', async () => {
+    const findUnique = vi.fn().mockResolvedValue(PUBLIC_ROW);
+    const { db } = createPublicDb(findUnique);
+
+    await new PrismaBusinessProfileRepository(db).findByPublicSlug('barberia-don-juan');
+
+    expect(findUnique).toHaveBeenCalledTimes(1);
+    const [args] = findUnique.mock.calls[0]!;
+    expect(args.where).toEqual({ publicSlug: 'barberia-don-juan' });
+    expect(JSON.stringify(args.where)).not.toContain('ownerId');
+  });
+
+  it('should_select_only_the_publishable_columns', async () => {
+    // The guarantee this test exists for: a field added to the entity does not
+    // reach an anonymous visitor until someone adds it here too.
+    const findUnique = vi.fn().mockResolvedValue(PUBLIC_ROW);
+    const { db } = createPublicDb(findUnique);
+
+    await new PrismaBusinessProfileRepository(db).findByPublicSlug('barberia-don-juan');
+
+    const [args] = findUnique.mock.calls[0]!;
+    expect(Object.keys(args.select).sort()).toEqual([
+      'bio',
+      'businessName',
+      'coverUrl',
+      'photoUrl',
+      'publicSlug',
+      'socialLinks',
+    ]);
+    expect(args.select.id).toBeUndefined();
+    expect(args.select.ownerId).toBeUndefined();
+    expect(args.select.createdAt).toBeUndefined();
+    expect(args.select.updatedAt).toBeUndefined();
+  });
+
+  it('should_not_expose_any_internal_identifier_on_the_returned_projection', async () => {
+    const { db } = createPublicDb(vi.fn().mockResolvedValue(PUBLIC_ROW));
+
+    const profile = await new PrismaBusinessProfileRepository(db).findByPublicSlug(
+      'barberia-don-juan'
+    );
+
+    expect(profile).not.toBeNull();
+    expect(Object.keys(profile!).sort()).toEqual([
+      'bio',
+      'businessName',
+      'coverUrl',
+      'photoUrl',
+      'publicSlug',
+      'socialLinks',
+    ]);
+  });
+
+  it('should_return_the_links_ordered_by_orderIndex', async () => {
+    const findUnique = vi.fn().mockResolvedValue(PUBLIC_ROW);
+    const { db } = createPublicDb(findUnique);
+
+    const profile = await new PrismaBusinessProfileRepository(db).findByPublicSlug(
+      'barberia-don-juan'
+    );
+
+    const [args] = findUnique.mock.calls[0]!;
+    expect(args.select.socialLinks.orderBy).toEqual({ orderIndex: 'asc' });
+    expect(profile!.socialLinks.map((link) => link.platform)).toEqual(['INSTAGRAM', 'WHATSAPP']);
+  });
+
+  it('should_return_null_when_no_profile_holds_that_slug', async () => {
+    // An ordinary outcome, not an error: this is what a client following a link
+    // from before a slug change reaches (T33).
+    const { db } = createPublicDb(vi.fn().mockResolvedValue(null));
+
+    await expect(
+      new PrismaBusinessProfileRepository(db).findByPublicSlug('ya-no-existe')
+    ).resolves.toBeNull();
+  });
+
+  it('should_carry_a_profile_that_has_nothing_but_a_name_and_a_slug', async () => {
+    const { db } = createPublicDb(
+      vi.fn().mockResolvedValue({
+        businessName: 'Barbería Don Juan',
+        bio: null,
+        photoUrl: null,
+        coverUrl: null,
+        publicSlug: 'barberia-don-juan',
+        socialLinks: [],
+      })
+    );
+
+    const profile = await new PrismaBusinessProfileRepository(db).findByPublicSlug(
+      'barberia-don-juan'
+    );
+
+    expect(profile).toEqual({
+      businessName: 'Barbería Don Juan',
+      bio: null,
+      photoUrl: null,
+      coverUrl: null,
+      publicSlug: 'barberia-don-juan',
+      socialLinks: [],
+    });
+  });
+});
