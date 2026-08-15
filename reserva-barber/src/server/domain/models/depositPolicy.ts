@@ -53,6 +53,26 @@ export const MIN_DEPOSIT_AMOUNT = '1.00';
  * policy is a whole number 1–100, already validated.
  */
 export function computeDepositAmount(policy: DepositPolicy, priceAtBooking: string): string {
+  return describeDeposit(policy, priceAtBooking).amount;
+}
+
+/**
+ * The deposit **and which clamps fired getting there**.
+ *
+ * The deposit editor needs to tell an owner that a fixed amount exceeds a
+ * service's price, or that a percentage computes below the minimum. Deriving
+ * that by recomputing steps 1 and 2 outside this module would be a second
+ * implementation of the calculation — so the calculation reports it instead.
+ */
+export interface DepositBreakdown {
+  amount: string;
+  /** The policy asked for more than the service costs, and was capped down. */
+  cappedByPrice: boolean;
+  /** The policy asked for less than the minimum, and was raised up to it. */
+  raisedToMinimum: boolean;
+}
+
+export function describeDeposit(policy: DepositPolicy, priceAtBooking: string): DepositBreakdown {
   const priceCents = toCents(priceAtBooking);
 
   // Step 1 and 2. For PERCENT the multiplication happens in cents and the
@@ -70,5 +90,12 @@ export function computeDepositAmount(policy: DepositPolicy, priceAtBooking: stri
   const floorCents = toCents(MIN_DEPOSIT_AMOUNT);
   const finalCents = priceCents < floorCents ? priceCents : Math.max(cappedCents, floorCents);
 
-  return fromCents(finalCents);
+  return {
+    amount: fromCents(finalCents),
+    cappedByPrice: rawCents > priceCents,
+    // A service priced under the floor meets both rules at once; it is
+    // reported as the cap it really is, because raising a deposit above the
+    // price is precisely what step 4's guard refuses to do.
+    raisedToMinimum: rawCents < floorCents && priceCents >= floorCents,
+  };
 }

@@ -34,10 +34,10 @@
 
 ## 6. Application — service layer
 
-- [ ] 6.1 Write failing tests in `PaymentConfigService.deposit.test.ts`: first save writes without confirmation; an unchanged re-save writes without confirmation; a differing policy returns `needs_confirmation` and writes nothing; removal of a stored policy requires confirmation; a `P2002` on a first save is retried once and reported as success
-- [ ] 6.2 Write failing tests for the effect preview: services and their computed deposits; services below a fixed deposit named; services whose computed deposit falls under the floor named; an owner with no services yields an empty list, not an error
-- [ ] 6.3 Write failing tests for `getPaymentReadiness`: ready with transfer + policy; not ready with a payment method and no policy; not ready with a policy and no payment method; and that the path performs no decryption
-- [ ] 6.4 Implement `getDepositPolicy`, `saveDepositPolicy`, `removeDepositPolicy` and `getPaymentReadiness` on `PaymentConfigService`, reusing `writeWithSingleRetry` unchanged and computing `leavesNoPaymentMethod` on the server
+- [x] 6.1 Write failing tests in `PaymentConfigService.deposit.test.ts`: first save writes without confirmation; an unchanged re-save writes without confirmation; a differing policy returns `needs_confirmation` and writes nothing; removal of a stored policy requires confirmation; a `P2002` on a first save is retried once and reported as success
+- [x] 6.2 Write failing tests for the effect preview: services and their computed deposits; services below a fixed deposit named; services whose computed deposit falls under the floor named; an owner with no services yields an empty list, not an error
+- [x] 6.3 Write failing tests for `getPaymentReadiness`: ready with transfer + policy; not ready with a payment method and no policy; not ready with a policy and no payment method; and that the path performs no decryption
+- [x] 6.4 Implement `getDepositPolicy`, `saveDepositPolicy`, `removeDepositPolicy` and `getPaymentReadiness` on `PaymentConfigService`, reusing `writeWithSingleRetry` unchanged and computing `leavesNoPaymentMethod` on the server
 
 ## 7. Presentation — `/sena`
 

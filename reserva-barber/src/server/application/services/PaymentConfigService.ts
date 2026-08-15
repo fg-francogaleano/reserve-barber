@@ -1,12 +1,17 @@
 import type { IPaymentConfigRepository } from '@/server/domain/repositories/IPaymentConfigRepository';
 import type { IMercadoPagoCredentialVerifier } from '@/server/domain/repositories/IMercadoPagoCredentialVerifier';
+import type { IServiceRepository } from '@/server/domain/repositories/IServiceRepository';
 import type {
   PaymentConfig,
   TransferDetails,
   MercadoPagoCredentials,
   MercadoPagoView,
+  DepositPolicySettings,
+  DepositPolicyInput,
+  PaymentReadiness,
 } from '@/server/domain/models/PaymentConfig';
-import { hasTransferConfigured } from '@/server/domain/models/PaymentConfig';
+import { hasTransferConfigured, isBookable } from '@/server/domain/models/PaymentConfig';
+import { describeDeposit } from '@/server/domain/models/depositPolicy';
 import {
   credentialEnvironment,
   credentialLastFour,
@@ -118,6 +123,83 @@ export interface SaveMercadoPagoOptions {
   confirmed: boolean;
 }
 
+/**
+ * What one policy would charge for one existing service.
+ *
+ * Carries the price alongside the deposit because the pair is the point: a
+ * percentage that is off by a factor of ten is invisible on its own and obvious
+ * next to the price it applies to.
+ */
+export interface DepositEffect {
+  serviceId: string;
+  serviceName: string;
+  price: string;
+  deposit: string;
+  /** The fixed deposit exceeds this price and was capped down to it. */
+  cappedByPrice: boolean;
+  /** The computed deposit fell under the minimum and was raised to it. */
+  raisedToMinimum: boolean;
+}
+
+/**
+ * Everything the confirmation screen shows about a pending policy change.
+ *
+ * The effects are computed on the server, through the same `DepositPolicy`
+ * rule the booking flow uses. A client-side preview would be a second
+ * implementation of a money calculation (design D6).
+ */
+export interface PendingDepositPolicy {
+  policy: DepositPolicyInput;
+  stored: DepositPolicySettings;
+  effects: DepositEffect[];
+}
+
+export type SaveDepositResult =
+  /** A stored policy would be replaced and the owner has not confirmed. */
+  | { status: 'needs_confirmation'; pending: PendingDepositPolicy }
+  | {
+      status: 'saved';
+      leavesNoPaymentMethod: boolean;
+      /** Services priced below a fixed deposit — reported, never blocking. */
+      servicesBelowDeposit: DepositEffect[];
+      /** Services whose computed deposit had to be raised to the minimum. */
+      servicesBelowMinimum: DepositEffect[];
+    };
+
+export type RemoveDepositResult =
+  | { status: 'needs_confirmation'; stored: DepositPolicySettings }
+  | { status: 'removed'; leavesNoPaymentMethod: boolean };
+
+export interface SaveDepositOptions {
+  /** Set by the owner's explicit confirmation of a replacement. */
+  confirmed: boolean;
+}
+
+const UNCONFIGURED_POLICY: DepositPolicySettings = { type: 'PERCENT', value: null };
+
+const NO_TRANSFER: TransferDetails = { cbuCvu: null, alias: null, holderName: null };
+
+/**
+ * Whether a save would replace a policy the owner already has.
+ *
+ * False when nothing is stored: going from no policy to a policy has no
+ * previous value to be confused with, which is the risk the confirmation step
+ * exists for. The values are compared numerically because `30` and `30.00` are
+ * the same policy — the parser produces the first and the database returns the
+ * second, and a string comparison would ask the owner to confirm a change that
+ * is not one.
+ */
+function policyChanged(stored: DepositPolicySettings, next: DepositPolicyInput): boolean {
+  if (stored.value === null) return false;
+  return stored.type !== next.type || Number(stored.value) !== Number(next.value);
+}
+
+/** True when clients have at least one way to pay. */
+function hasAnyPaymentMethod(config: PaymentConfig | null): boolean {
+  if (config === null) return false;
+  return config.hasMercadoPagoCredentials || hasTransferConfigured(config.transfer);
+}
+
 export class PaymentConfigService {
   constructor(
     private readonly configs: IPaymentConfigRepository,
@@ -126,7 +208,13 @@ export class PaymentConfigService {
      * service exactly as before. A Mercado Pago write without a verifier is a
      * programming error, not a runtime condition, and is reported as one.
      */
-    private readonly verifier?: IMercadoPagoCredentialVerifier
+    private readonly verifier?: IMercadoPagoCredentialVerifier,
+    /**
+     * Optional for the same reason, and needed only by the deposit policy
+     * paths, which preview a policy against the owner's real service prices.
+     * The read paths below work without it.
+     */
+    private readonly services?: IServiceRepository
   ) {}
 
   getConfig(ownerId: string): Promise<PaymentConfig | null> {
@@ -288,6 +376,128 @@ export class PaymentConfigService {
         existing?.transfer ?? { cbuCvu: null, alias: null, holderName: null }
       ),
     };
+  }
+
+  /**
+   * The stored deposit policy. An owner with no row at all reads as
+   * unconfigured rather than as an error — the row is created by the first
+   * save, never by a migration or a seed.
+   */
+  async getDepositPolicy(ownerId: string): Promise<DepositPolicySettings> {
+    const config = await this.configs.findByOwner(ownerId);
+    if (config === null) {
+      return UNCONFIGURED_POLICY;
+    }
+    return { type: config.depositType, value: config.depositValue };
+  }
+
+  /**
+   * Whether the business can take bookings (design D9).
+   *
+   * Reads only what `findByOwner` already returns, and **never** the access
+   * token: the presence flag is derived at the repository boundary without
+   * decrypting, so a missing `PAYMENT_CREDENTIALS_KEY` cannot break this
+   * (design D10).
+   */
+  async getPaymentReadiness(ownerId: string): Promise<PaymentReadiness> {
+    const config = await this.configs.findByOwner(ownerId);
+
+    return isBookable({
+      hasMercadoPagoCredentials: config?.hasMercadoPagoCredentials ?? false,
+      transfer: config?.transfer ?? NO_TRANSFER,
+      depositValue: config?.depositValue ?? null,
+    });
+  }
+
+  async saveDepositPolicy(
+    ownerId: string,
+    policy: DepositPolicyInput,
+    options: SaveDepositOptions
+  ): Promise<SaveDepositResult> {
+    const existing = await this.configs.findByOwner(ownerId);
+    const stored: DepositPolicySettings =
+      existing === null
+        ? UNCONFIGURED_POLICY
+        : { type: existing.depositType, value: existing.depositValue };
+
+    // Narrow on purpose: never on a first configuration, never on an unchanged
+    // re-save. The test is whether a policy is STORED, not whether a row
+    // exists — the row is created by whichever payment story came first, and
+    // going from nothing to something has no previous value to be confused
+    // with (design D7).
+    if (!options.confirmed && policyChanged(stored, policy)) {
+      return {
+        status: 'needs_confirmation',
+        pending: { policy, stored, effects: await this.previewPolicy(ownerId, policy) },
+      };
+    }
+
+    await this.writeWithSingleRetry(() => this.configs.upsertDepositPolicy(ownerId, policy));
+
+    const effects = await this.previewPolicy(ownerId, policy);
+    return {
+      status: 'saved',
+      leavesNoPaymentMethod: !hasAnyPaymentMethod(existing),
+      servicesBelowDeposit: effects.filter((effect) => effect.cappedByPrice),
+      servicesBelowMinimum: effects.filter((effect) => effect.raisedToMinimum),
+    };
+  }
+
+  /**
+   * Clearing is permitted even when it leaves the business unable to take
+   * bookings: an owner migrating between models must not be trapped. PC1
+   * settled this, and the gate belongs to the booking flow.
+   */
+  async removeDepositPolicy(
+    ownerId: string,
+    options: SaveDepositOptions
+  ): Promise<RemoveDepositResult> {
+    const existing = await this.configs.findByOwner(ownerId);
+    const stored: DepositPolicySettings =
+      existing === null
+        ? UNCONFIGURED_POLICY
+        : { type: existing.depositType, value: existing.depositValue };
+
+    if (!options.confirmed && stored.value !== null) {
+      return { status: 'needs_confirmation', stored };
+    }
+
+    await this.writeWithSingleRetry(() => this.configs.upsertDepositPolicy(ownerId, null));
+
+    return { status: 'removed', leavesNoPaymentMethod: !hasAnyPaymentMethod(existing) };
+  }
+
+  /**
+   * What one policy would charge across the owner's existing services.
+   *
+   * Computed through `computeDepositAmount` — the same function the booking
+   * flow calls — so the preview cannot promise an amount the booking would not
+   * charge. An owner with no services yields an empty list, which the page
+   * renders as an empty state rather than treating as an error.
+   */
+  private async previewPolicy(
+    ownerId: string,
+    policy: DepositPolicyInput
+  ): Promise<DepositEffect[]> {
+    if (this.services === undefined) {
+      throw new Error('saveDepositPolicy requires a service repository for the effect preview');
+    }
+
+    const services = await this.services.findAllByOwner(ownerId);
+
+    return services.map((service) => {
+      // The clamps are reported by the calculation itself, not re-derived here:
+      // deriving them would mean a second implementation of steps 1 and 2.
+      const breakdown = describeDeposit(policy, service.price);
+      return {
+        serviceId: service.id,
+        serviceName: service.name,
+        price: service.price,
+        deposit: breakdown.amount,
+        cappedByPrice: breakdown.cappedByPrice,
+        raisedToMinimum: breakdown.raisedToMinimum,
+      };
+    });
   }
 
   private async verify(
