@@ -48,6 +48,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           >
             {COPY.mercadoPago.nav}
           </Link>
+          <Link href="/sena" className="text-sm font-medium underline-offset-4 hover:underline">
+            {COPY.deposit.nav}
+          </Link>
         </nav>
         <span className="text-muted-foreground text-sm">{owner.email}</span>
         <form action={logoutAction}>

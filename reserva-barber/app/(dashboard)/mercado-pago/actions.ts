@@ -25,6 +25,21 @@ import {
 
 const MERCADO_PAGO_PATH = '/mercado-pago';
 
+/**
+ * Confirmation answers, namespaced per form (T41).
+ *
+ * `FormData.get` returns the **first** value for a repeated name. These lived
+ * as bare `confirm`/`edit`/`remove` while the transfer and Mercado Pago editors
+ * were on separate pages; the deposit policy editor made three confirming forms
+ * in one settings area, and an unprefixed answer could then be consumed by the
+ * wrong action. All three decide where a client's money goes, so the collision
+ * was closed before it was reachable rather than after.
+ */
+const CONFIRM_INTENT = 'mp-confirm';
+const EDIT_INTENT = 'mp-edit';
+const REMOVE_INTENT = 'mp-remove';
+const CONFIRM_REMOVE_INTENT = 'mp-confirm-remove';
+
 function read(formData: FormData, field: string): string {
   const value = formData.get(field);
   return typeof value === 'string' ? value : '';
@@ -68,18 +83,18 @@ export async function saveMercadoPagoCredentialsAction(
   // submission: the confirmation screen carries no credential fields at all, so
   // `values` is empty here, and echoing that back would blank a field the owner
   // never cleared.
-  if (intent === 'edit') {
+  if (intent === EDIT_INTENT) {
     clearPendingToken(cookieStore);
     const stored = await service.getMercadoPagoView(owner.id);
     return failure({}, { publicKey: stored.publicKey ?? '' });
   }
 
   try {
-    if (intent === 'remove' || intent === 'confirm-remove') {
+    if (intent === REMOVE_INTENT || intent === CONFIRM_REMOVE_INTENT) {
       // Read before the write, or there is nothing left to name in the log.
       const removedFrom = await service.getMercadoPagoView(owner.id);
       const result = await service.removeMercadoPagoCredentials(owner.id, {
-        confirmed: intent === 'confirm-remove',
+        confirmed: intent === CONFIRM_REMOVE_INTENT,
       });
 
       if (result.status === 'needs_confirmation') {
@@ -106,7 +121,7 @@ export async function saveMercadoPagoCredentialsAction(
       };
     }
 
-    const confirming = intent === 'confirm';
+    const confirming = intent === CONFIRM_INTENT;
 
     // On the confirming round trip BOTH credentials come from the encrypted
     // cookie, not from the form (design D7).

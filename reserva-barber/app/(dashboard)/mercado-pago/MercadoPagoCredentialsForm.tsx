@@ -39,7 +39,7 @@ type Props = {
  */
 function pendingLabel(data: FormData | null): string {
   const intent = data?.get('intent');
-  return intent === 'remove' || intent === 'confirm-remove'
+  return intent === 'mp-remove' || intent === 'mp-confirm-remove'
     ? COPY.mercadoPago.removing
     : COPY.mercadoPago.verifying;
 }
@@ -187,7 +187,7 @@ export function MercadoPagoCredentialsForm({ action, defaults, configured }: Pro
                 removing ? COPY.mercadoPago.confirmRemoveSubmit : COPY.mercadoPago.confirmSubmit
               }
               name="intent"
-              value={removing ? 'confirm-remove' : 'confirm'}
+              value={removing ? 'mp-confirm-remove' : 'mp-confirm'}
             />
             {/*
               A submit carrying `intent=edit` returns the owner to the editor and
@@ -196,7 +196,7 @@ export function MercadoPagoCredentialsForm({ action, defaults, configured }: Pro
             */}
             <SecondarySubmit
               label={COPY.mercadoPago.confirmCancel}
-              value="edit"
+              value="mp-edit"
               className="text-muted-foreground text-sm underline-offset-4 hover:underline"
             />
           </div>
@@ -350,7 +350,7 @@ export function MercadoPagoCredentialsForm({ action, defaults, configured }: Pro
         {configured ? (
           <SecondarySubmit
             label={COPY.mercadoPago.remove}
-            value="remove"
+            value="mp-remove"
             className="text-destructive text-sm underline-offset-4 hover:underline"
           />
         ) : null}

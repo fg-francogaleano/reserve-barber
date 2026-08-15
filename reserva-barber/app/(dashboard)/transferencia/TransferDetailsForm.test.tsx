@@ -337,7 +337,7 @@ describe('TransferDetailsForm - confirmation step', () => {
     await userEvent.click(screen.getByRole('button', { name: COPY.transfer.submit }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: COPY.transfer.confirmSubmit })).toHaveAttribute('value', 'confirm');
+      expect(screen.getByRole('button', { name: COPY.transfer.confirmSubmit })).toHaveAttribute('value', 'transfer-confirm');
     });
     expect(container.querySelector('input[name="cbuCvu"]')).toHaveValue(CBU);
   });

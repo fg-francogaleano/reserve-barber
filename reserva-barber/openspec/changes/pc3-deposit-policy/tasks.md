@@ -41,27 +41,27 @@
 
 ## 7. Presentation — `/sena`
 
-- [ ] 7.1 Add the `deposit` section to `src/lib/copy.ts` in Spanish (es-AR), covering every state, every validation code, the full-prepayment label for 100%, and the two warnings
-- [ ] 7.2 Create `app/(dashboard)/sena/paymentConfigService.ts` — composition root wiring the repository **without** a cipher, with a comment stating why (design D10)
-- [ ] 7.3 Create `app/(dashboard)/sena/formState.ts` with the form state shape, including pending confirmation, warnings and readiness
-- [ ] 7.4 Write failing tests for `app/(dashboard)/sena/actions.ts`, then implement `saveDepositPolicyAction` and `removeDepositPolicyAction` with `requireOwner()` as the first statement, `deposit-*` intents, `revalidatePath('/sena')` and no redirect
-- [ ] 7.5 Implement the infrastructure-failure path: log with `toErrorLogContext`, return the reload message rather than asserting the save failed
-- [ ] 7.6 Implement the structured success log line carrying operation, owner id, previous and new type and value, `leavesNoPaymentMethod` and the count of services below the deposit — unredacted (design D13)
-- [ ] 7.7 Write failing tests for `DepositPolicyForm.tsx`, then implement it: a labelled radio group for the type, the value field with its affix, errors wired through `aria-describedby`, and the normalized es-AR echo after a save
-- [ ] 7.8 Implement the confirmation step in the form — the effect list rendered from server-computed values, with an empty state for an owner with no services
-- [ ] 7.9 Write failing tests for `page.tsx`, then implement it with all ten states and the readiness panel, which must not convey state by colour alone
-- [ ] 7.10 Add `app/(dashboard)/sena/loading.tsx` matching the existing settings editors
-- [ ] 7.11 Add the "Seña" nav link to `app/(dashboard)/layout.tsx`
+- [x] 7.1 Add the `deposit` section to `src/lib/copy.ts` in Spanish (es-AR), covering every state, every validation code, the full-prepayment label for 100%, and the two warnings
+- [x] 7.2 Create `app/(dashboard)/sena/paymentConfigService.ts` — composition root wiring the repository **without** a cipher, with a comment stating why (design D10)
+- [x] 7.3 Create `app/(dashboard)/sena/formState.ts` with the form state shape, including pending confirmation, warnings and readiness
+- [x] 7.4 Write failing tests for `app/(dashboard)/sena/actions.ts`, then implement `saveDepositPolicyAction` and `removeDepositPolicyAction` with `requireOwner()` as the first statement, `deposit-*` intents, `revalidatePath('/sena')` and no redirect
+- [x] 7.5 Implement the infrastructure-failure path: log with `toErrorLogContext`, return the reload message rather than asserting the save failed
+- [x] 7.6 Implement the structured success log line carrying operation, owner id, previous and new type and value, `leavesNoPaymentMethod` and the count of services below the deposit — unredacted (design D13)
+- [x] 7.7 Write failing tests for `DepositPolicyForm.tsx`, then implement it: a labelled radio group for the type, the value field with its affix, errors wired through `aria-describedby`, and the normalized es-AR echo after a save
+- [x] 7.8 Implement the confirmation step in the form — the effect list rendered from server-computed values, with an empty state for an owner with no services
+- [x] 7.9 Write failing tests for `page.tsx`, then implement it with all ten states and the readiness panel, which must not convey state by colour alone
+- [x] 7.10 Add `app/(dashboard)/sena/loading.tsx` matching the existing settings editors
+- [x] 7.11 Add the "Seña" nav link to `app/(dashboard)/layout.tsx`
 
 ## 8. Technical debt closed in this change
 
-- [ ] 8.1 Rename the confirmation intents in `app/(dashboard)/transferencia/actions.ts` to `transfer-*` and update its tests and form (T41)
-- [ ] 8.2 Rename the confirmation intents in `app/(dashboard)/mercado-pago/actions.ts` to `mp-*` and update its tests and form (T41)
-- [ ] 8.3 Add a test asserting each action reads only its own prefixed intent
+- [x] 8.1 Rename the confirmation intents in `app/(dashboard)/transferencia/actions.ts` to `transfer-*` and update its tests and form (T41)
+- [x] 8.2 Rename the confirmation intents in `app/(dashboard)/mercado-pago/actions.ts` to `mp-*` and update its tests and form (T41)
+- [x] 8.3 Add a test asserting each action reads only its own prefixed intent
 
 ## 9. Verification
 
-- [ ] 9.1 `npm run lint`, `npm run typecheck` and the full test suite pass
+- [x] 9.1 `npm run lint`, `npm run typecheck` and the full test suite pass
 - [ ] 9.2 Drive the running app through all ten states, including the replacement confirmation with its effect list and the empty-catalogue case
 - [ ] 9.3 Verify `/sena` renders with `PAYMENT_CREDENTIALS_KEY` unset while Mercado Pago credentials are stored, and that readiness still counts Mercado Pago as configured
 - [ ] 9.4 Verify a deposit save against a row holding a transfer destination and Mercado Pago credentials leaves both untouched, read back from the database
