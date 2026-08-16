@@ -103,23 +103,58 @@ export class PrismaBusinessProfileRepository implements IBusinessProfileReposito
   }
 
   /**
-   * The one read here with no owner predicate (design D5).
+   * The public projection **and** the owner behind it, in one read (B1 design
+   * D5, widened by B2 design D10).
    *
    * `findUnique` rather than `findFirst`: `publicSlug` is unique, and saying so
    * means the query planner uses the index and a second matching row is
    * impossible by construction rather than by luck of ordering.
    *
+   * The profile page needs both — the projection to render, and the owner to ask
+   * whether anything is bookable. Reading them separately would be two round
+   * trips against the same row by the same key, on the busiest public page in
+   * the product, which has neither a cache nor a rate limit (T47).
+   *
+   * The two values leave here in **separate fields**, never merged: `ownerId` is
+   * destructured off before the projection is built, so `PublicBusinessProfile`
+   * is exactly what B1 defined. Widening the projection instead would undo that
+   * guarantee for every caller, including the one that only renders.
+   *
    * The result is mapped to a plain projection rather than through `toDomain` —
    * building a `BusinessProfile` here would mean inventing an `id` this query
    * deliberately did not read.
    */
-  async findByPublicSlug(publicSlug: string): Promise<PublicBusinessProfile | null> {
+  async findWithOwnerByPublicSlug(
+    publicSlug: string
+  ): Promise<{ profile: PublicBusinessProfile; ownerId: string } | null> {
     const row = await this.db.businessProfile.findUnique({
       where: { publicSlug },
-      select: PUBLIC_PROFILE_FIELDS,
+      select: { ...PUBLIC_PROFILE_FIELDS, ownerId: true },
     });
 
-    return row === null ? null : toPublicProjection(row);
+    if (row === null) return null;
+
+    const { ownerId, ...publishable } = row;
+    return { profile: toPublicProjection(publishable), ownerId };
+  }
+
+  /**
+   * The second read with no owner predicate — because it resolves one (B2
+   * design D3).
+   *
+   * One column, deliberately. Everything the booking flow reads after this is
+   * owner-scoped through the ordinary contracts, so this single value is what
+   * lets `/b/{slug}/reservar` keep the property every other repository in the
+   * project enforces. Returning anything more would make it a second public read
+   * of the aggregate under a name that does not say so.
+   */
+  async findOwnerIdByPublicSlug(publicSlug: string): Promise<string | null> {
+    const row = await this.db.businessProfile.findUnique({
+      where: { publicSlug },
+      select: { ownerId: true },
+    });
+
+    return row?.ownerId ?? null;
   }
 
   /**

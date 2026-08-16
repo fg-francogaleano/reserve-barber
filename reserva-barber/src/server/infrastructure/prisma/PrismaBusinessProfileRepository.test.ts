@@ -194,7 +194,10 @@ describe('PrismaBusinessProfileRepository - unique violations become domain erro
     const { db } = createDb({ upsert: vi.fn().mockRejectedValue(uniqueViolation(['publicSlug'])) });
 
     await expect(
-      new PrismaBusinessProfileRepository(db).save(OWNER, saveData({ publicSlug: 'barberia-don-juan' }))
+      new PrismaBusinessProfileRepository(db).save(
+        OWNER,
+        saveData({ publicSlug: 'barberia-don-juan' })
+      )
     ).rejects.toMatchObject({ slug: 'barberia-don-juan' });
   });
 
@@ -265,6 +268,7 @@ describe('PrismaBusinessProfileRepository - unique violations become domain erro
 
 describe('PrismaBusinessProfileRepository - the public read carries no owner', () => {
   const PUBLIC_ROW = {
+    ownerId: 'owner-1',
     businessName: 'Barbería Don Juan',
     bio: 'Cortes clásicos desde 1998.',
     photoUrl: 'https://storage.example/photo.webp',
@@ -285,7 +289,7 @@ describe('PrismaBusinessProfileRepository - the public read carries no owner', (
     const findUnique = vi.fn().mockResolvedValue(PUBLIC_ROW);
     const { db } = createPublicDb(findUnique);
 
-    await new PrismaBusinessProfileRepository(db).findByPublicSlug('barberia-don-juan');
+    await new PrismaBusinessProfileRepository(db).findWithOwnerByPublicSlug('barberia-don-juan');
 
     expect(findUnique).toHaveBeenCalledTimes(1);
     const [args] = findUnique.mock.calls[0]!;
@@ -293,25 +297,26 @@ describe('PrismaBusinessProfileRepository - the public read carries no owner', (
     expect(JSON.stringify(args.where)).not.toContain('ownerId');
   });
 
-  it('should_select_only_the_publishable_columns', async () => {
+  it('should_select_only_the_publishable_columns_plus_the_owner', async () => {
     // The guarantee this test exists for: a field added to the entity does not
-    // reach an anonymous visitor until someone adds it here too.
+    // reach an anonymous visitor until someone adds it here too.  is
+    // read deliberately and stripped before the projection is built.
     const findUnique = vi.fn().mockResolvedValue(PUBLIC_ROW);
     const { db } = createPublicDb(findUnique);
 
-    await new PrismaBusinessProfileRepository(db).findByPublicSlug('barberia-don-juan');
+    await new PrismaBusinessProfileRepository(db).findWithOwnerByPublicSlug('barberia-don-juan');
 
     const [args] = findUnique.mock.calls[0]!;
     expect(Object.keys(args.select).sort()).toEqual([
       'bio',
       'businessName',
       'coverUrl',
+      'ownerId',
       'photoUrl',
       'publicSlug',
       'socialLinks',
     ]);
     expect(args.select.id).toBeUndefined();
-    expect(args.select.ownerId).toBeUndefined();
     expect(args.select.createdAt).toBeUndefined();
     expect(args.select.updatedAt).toBeUndefined();
   });
@@ -319,12 +324,12 @@ describe('PrismaBusinessProfileRepository - the public read carries no owner', (
   it('should_not_expose_any_internal_identifier_on_the_returned_projection', async () => {
     const { db } = createPublicDb(vi.fn().mockResolvedValue(PUBLIC_ROW));
 
-    const profile = await new PrismaBusinessProfileRepository(db).findByPublicSlug(
+    const found = await new PrismaBusinessProfileRepository(db).findWithOwnerByPublicSlug(
       'barberia-don-juan'
     );
 
-    expect(profile).not.toBeNull();
-    expect(Object.keys(profile!).sort()).toEqual([
+    expect(found).not.toBeNull();
+    expect(Object.keys(found!.profile).sort()).toEqual([
       'bio',
       'businessName',
       'coverUrl',
@@ -334,17 +339,35 @@ describe('PrismaBusinessProfileRepository - the public read carries no owner', (
     ]);
   });
 
+  it('should_keep_the_owner_beside_the_projection_never_inside_it', async () => {
+    // B2 widened this read so the profile page can answer the bookability gate
+    // in one round trip. The projection B1 defined must be untouched by that.
+    const { db } = createPublicDb(vi.fn().mockResolvedValue(PUBLIC_ROW));
+
+    const found = await new PrismaBusinessProfileRepository(db).findWithOwnerByPublicSlug(
+      'barberia-don-juan'
+    );
+
+    expect(found!.ownerId).toBe('owner-1');
+    expect(found!.profile).not.toHaveProperty('ownerId');
+    expect(found!.profile).not.toHaveProperty('id');
+    expect(JSON.stringify(found!.profile)).not.toContain('owner-1');
+  });
+
   it('should_return_the_links_ordered_by_orderIndex', async () => {
     const findUnique = vi.fn().mockResolvedValue(PUBLIC_ROW);
     const { db } = createPublicDb(findUnique);
 
-    const profile = await new PrismaBusinessProfileRepository(db).findByPublicSlug(
+    const found = await new PrismaBusinessProfileRepository(db).findWithOwnerByPublicSlug(
       'barberia-don-juan'
     );
 
     const [args] = findUnique.mock.calls[0]!;
     expect(args.select.socialLinks.orderBy).toEqual({ orderIndex: 'asc' });
-    expect(profile!.socialLinks.map((link) => link.platform)).toEqual(['INSTAGRAM', 'WHATSAPP']);
+    expect(found!.profile.socialLinks.map((link) => link.platform)).toEqual([
+      'INSTAGRAM',
+      'WHATSAPP',
+    ]);
   });
 
   it('should_return_null_when_no_profile_holds_that_slug', async () => {
@@ -353,13 +376,14 @@ describe('PrismaBusinessProfileRepository - the public read carries no owner', (
     const { db } = createPublicDb(vi.fn().mockResolvedValue(null));
 
     await expect(
-      new PrismaBusinessProfileRepository(db).findByPublicSlug('ya-no-existe')
+      new PrismaBusinessProfileRepository(db).findWithOwnerByPublicSlug('ya-no-existe')
     ).resolves.toBeNull();
   });
 
   it('should_carry_a_profile_that_has_nothing_but_a_name_and_a_slug', async () => {
     const { db } = createPublicDb(
       vi.fn().mockResolvedValue({
+        ownerId: 'owner-1',
         businessName: 'Barbería Don Juan',
         bio: null,
         photoUrl: null,
@@ -369,11 +393,11 @@ describe('PrismaBusinessProfileRepository - the public read carries no owner', (
       })
     );
 
-    const profile = await new PrismaBusinessProfileRepository(db).findByPublicSlug(
+    const found = await new PrismaBusinessProfileRepository(db).findWithOwnerByPublicSlug(
       'barberia-don-juan'
     );
 
-    expect(profile).toEqual({
+    expect(found!.profile).toEqual({
       businessName: 'Barbería Don Juan',
       bio: null,
       photoUrl: null,

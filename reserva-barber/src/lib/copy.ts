@@ -325,10 +325,11 @@ export const COPY = {
       YOUTUBE: 'YouTube',
       WEBSITE: 'Sitio web',
     },
-    // The whole reason the page exists — and it does not work yet. Saying so
-    // plainly beats a control that navigates nowhere.
+    // The whole reason the page exists. Live as of B2 — but only when the shop
+    // actually has something bookable; `bookUnavailable` is what the control
+    // says otherwise, and it is no longer the ordinary case.
     book: 'Reservar',
-    bookUnavailable: 'Las reservas online se habilitan muy pronto.',
+    bookUnavailable: 'Esta barbería todavía no está tomando reservas online.',
     loading: 'Cargando…',
     notFoundHeading: 'No encontramos esta barbería',
     // Says nothing about which of the two happened, because the system cannot
@@ -338,6 +339,52 @@ export const COPY = {
     errorHeading: 'No pudimos cargar la página',
     errorBody: 'Puede ser un problema momentáneo. Probá de nuevo en un rato.',
     retry: 'Reintentar',
+  },
+  // The booking flow, a **sibling** of `publicProfile` rather than nested inside
+  // it (B2). Both address the same person, but at different moments: one is
+  // reading about a shop, the other is committing to an appointment. One key per
+  // public surface is B1's rule, and the reason holds here — editing a heading
+  // for the profile should not silently reword a step in a booking.
+  booking: {
+    heading: 'Reservar turno',
+    // Step labels, used by the indicator and as the heading of each step.
+    steps: {
+      location: 'Sucursal',
+      service: 'Servicio',
+      barber: 'Barbero',
+    },
+    stepPosition: (current: number, total: number) => `Paso ${current} de ${total}`,
+    locationHeading: '¿En qué sucursal?',
+    serviceHeading: '¿Qué te querés hacer?',
+    barberHeading: '¿Con quién?',
+    back: 'Volver',
+    change: 'Cambiar',
+    summaryHeading: 'Tu reserva',
+    // Duration is shown alongside the price so the client can judge the whole
+    // commitment, not just its cost.
+    duration: (minutes: number) => `${minutes} min`,
+    price: (amount: string) => `$${amount}`,
+    barberAvatarAlt: (displayName: string) => `Foto de ${displayName}`,
+    loading: 'Cargando…',
+    // Four empty states, deliberately distinct. None says *why* — deactivated,
+    // never created and merely unassigned are indistinguishable to the client,
+    // who cannot act on the difference, and the owner never agreed to publish it.
+    emptyShop: 'Esta barbería todavía no está tomando reservas online.',
+    emptyShopHelp: 'Escribile por sus redes para coordinar un turno.',
+    emptyServices: 'Esta sucursal no tiene servicios disponibles en este momento.',
+    emptyServicesHelp: 'Probá con otra sucursal.',
+    emptyBarbers: 'No hay barberos disponibles para este servicio en esta sucursal.',
+    emptyBarbersHelp: 'Probá con otro servicio.',
+    // Shown when a shared link outlived the catalogue it was built from. Says
+    // what happened and what still works, and nothing about the cause.
+    staleLocation: 'La sucursal que habías elegido ya no está disponible. Elegí otra.',
+    staleService: 'El servicio que habías elegido ya no está disponible en esta sucursal.',
+    staleBarber: 'El barbero que habías elegido ya no está disponible. Elegí otro.',
+    // B3 turns the completed selection into a date and a time. Until it ships,
+    // the flow says so rather than ending on a control that goes nowhere — the
+    // same disclosure P1 made for a link that did not resolve and B1 made for
+    // this very button.
+    continueUnavailable: 'La elección de día y horario se habilita muy pronto.',
   },
   transfer: {
     nav: 'Transferencia',

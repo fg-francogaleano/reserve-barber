@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import type { Metadata } from 'next';
+import { StepLink } from '@/components/booking/StepLink';
 import { notFound, permanentRedirect } from 'next/navigation';
 import { COPY } from '@/lib/copy';
 import { ProfileHeader } from '@/components/booking/ProfileHeader';
@@ -8,8 +9,8 @@ import { publicProfileUrl } from '@/server/domain/models/BusinessProfile';
 import { resolveOrigin } from '@/server/application/businessProfile/resolveOrigin';
 import { logger } from '@/server/infrastructure/logger';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
-import { publicProfileService } from './publicProfileService';
-import type { PublicProfileResolution } from '@/server/application/services/PublicProfileService';
+import { publicProfileService, bookingGate } from './publicProfileService';
+import type { PublicProfileWithOwner } from '@/server/application/services/PublicProfileService';
 
 /**
  * Rendered per request, like every other page in this project (design D7).
@@ -50,11 +51,30 @@ function configuredOrigin(): string | null {
  * `cache` deduplicates within a single render pass, which is exactly the scope
  * these two share.
  */
-const resolveSlug = cache(
-  (slug: string): Promise<PublicProfileResolution> => publicProfileService().resolveBySlug(slug)
+const resolveSlug = cache((slug: string): Promise<PublicProfileWithOwner> =>
+  publicProfileService().resolveWithOwner(slug)
 );
 
-async function resolveForPage(slug: string): Promise<PublicProfileResolution> {
+/**
+ * Whether this shop can be booked at all (B2 design D10).
+ *
+ * Reads the same catalogue `/b/{slug}/reservar` reads, so the button and the
+ * page it leads to cannot disagree about what "bookable" means. A failure here
+ * must not take down the profile: the shop's brand, bio and social links are
+ * what this page exists for, and they render whether or not the gate resolves.
+ * A gate that cannot be answered falls closed — the same disclosed, inert
+ * control B1 designed, which is a state this page already knows how to render.
+ */
+const resolveGate = cache(async (ownerId: string): Promise<boolean> => {
+  try {
+    return await bookingGate().isBookable(ownerId);
+  } catch (error) {
+    logger.error('Failed to resolve bookability gate', toErrorLogContext('isBookable', error));
+    return false;
+  }
+});
+
+async function resolveForPage(slug: string): Promise<PublicProfileWithOwner> {
   try {
     return await resolveSlug(slug);
   } catch (error) {
@@ -80,7 +100,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   // Must never throw: metadata generation runs before the page, and an
   // exception here turns a mistyped slug into a 500 instead of a 404.
-  let resolution: PublicProfileResolution;
+  let resolution: PublicProfileWithOwner;
   try {
     resolution = await resolveSlug(slug);
   } catch {
@@ -132,6 +152,9 @@ export default async function PublicProfilePage({ params }: PageProps) {
   }
 
   const { profile } = resolution;
+  // The owner id stops here. It is a query predicate for the gate and is never
+  // passed to a component, serialized, or put in a URL.
+  const isBookable = await resolveGate(resolution.ownerId);
 
   return (
     <main className="flex flex-1 flex-col pb-16">
@@ -150,21 +173,39 @@ export default async function PublicProfilePage({ params }: PageProps) {
         )}
 
         <div className="flex w-full flex-col items-center gap-2">
-          {/* Inert until B2 ships `/b/{slug}/reservar` (design D2). Rendered as
-              a disabled button rather than a link, so there is no target to
-              navigate to and no dead end to reach — the same disclosure P1 made
-              for a shareable link that did not resolve yet. */}
-          <button
-            type="button"
-            disabled
-            aria-describedby="booking-unavailable"
-            className="bg-primary text-primary-foreground w-full max-w-xs rounded-md px-6 py-3 text-base font-medium disabled:opacity-50"
-          >
-            {COPY.publicProfile.book}
-          </button>
-          <p id="booking-unavailable" className="text-muted-foreground text-sm">
-            {COPY.publicProfile.bookUnavailable}
-          </p>
+          {/* Live as of B2, and **gated on the catalogue** (B2 design D10).
+              Sending a client into a three-step flow that ends in an empty state
+              is a worse answer than saying so on the page they already opened.
+
+              When nothing is bookable this keeps B1's treatment verbatim — a
+              disabled control with a Spanish disclosure — so that state still
+              ships; it is simply no longer the ordinary case. */}
+          {isBookable ? (
+            // Prefetch off, like every step link (see `StepLink`): warming the
+            // booking route from here would add a third catalogue query to the
+            // busiest public page in the product, for a client who may never
+            // press the button.
+            <StepLink
+              href={`/b/${profile.publicSlug}/reservar`}
+              className="bg-primary text-primary-foreground focus-visible:ring-ring w-full max-w-xs rounded-md px-6 py-3 text-center text-base font-medium focus-visible:ring-2 focus-visible:outline-none"
+            >
+              {COPY.publicProfile.book}
+            </StepLink>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled
+                aria-describedby="booking-unavailable"
+                className="bg-primary text-primary-foreground w-full max-w-xs rounded-md px-6 py-3 text-base font-medium disabled:opacity-50"
+              >
+                {COPY.publicProfile.book}
+              </button>
+              <p id="booking-unavailable" className="text-muted-foreground text-sm">
+                {COPY.publicProfile.bookUnavailable}
+              </p>
+            </>
+          )}
         </div>
 
         <SocialLinkList links={profile.socialLinks} />

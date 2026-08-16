@@ -482,16 +482,18 @@ Unreachable today because service deactivation does not exist. The requirement "
 
 - **Trigger:** M6 (service deactivation), or any change that lets total services exceed the active cap.
 
-### T23 — Bookability is reported per service, not per (service, location)
-**Status:** deferred — **the decision half is closed, the modelling half is not** · **Effort:** ~2 h · **Added:** M4 (2026-08-10, adversarial review) · **Half-closed:** M4a (2026-08-11)
+### T23 — The dashboard reports bookability per service, not per (service, location)
+**Status:** deferred — **decision closed (M4a), shape closed (B2), dashboard presentation open** · **Effort:** ~1 h · **Added:** M4 (2026-08-10, adversarial review) · **Half-closed:** M4a (2026-08-11) · **Shape fixed:** B2 (2026-08-15)
 
 **Closed at M4a: a closed branch now suppresses bookability.** The original question — whether a barber at a deactivated location should count — is answered **no**. The booking flow selects a location first (B2), so a barber at a closed branch is unreachable by any booking, and a dashboard that called such a service bookable was asserting revenue that could not be earned. `countActiveBarbersByService` now requires `barber.location.isActive`, the `service-catalog` requirement is normative rather than provisional, and `scripts/m4a-gate.ts` proves the predicate discriminates against the real database.
 
-**Still open: the unit of bookability is wrong.** Because the client picks a branch before a service, the honest unit is the **(service, location) pair**, not the service. A service with active barbers at Centro and none at Norte is bookable at Centro and dead at Norte, and the dashboard reports a single "bookable" that hides the second half. The owner cannot see that a branch offers nothing.
+**Closed at B2: the unit is the (service, location) pair, and the public flow applies it.** The booking catalogue is keyed on the pair — a service with active barbers at Centro and none at Norte is offered at Centro and absent at Norte. No client is ever shown a service at a branch where nobody can perform it, which was the failure this entry was opened about.
 
-Not modelled now because B2 has not defined how it presents services per branch, and building a per-location dashboard against a spec that does not exist is designing for an imagined consumer. The aggregate already groups by `serviceId`; extending it to `(serviceId, locationId)` is mechanical once B2 fixes the shape.
+**Still open: the dashboard.** It reports a single "bookable" per service and therefore hides the second half — an owner whose Norte branch can deliver nothing sees no marker saying so. This is now a gap in the **owner's** view only; the client's is correct.
 
-- **Trigger:** B2 (public location → service → barber selection).
+The remaining work is presentation against an aggregate whose shape is settled: extend `countActiveBarbersByService` to group by `(serviceId, locationId)` and give the services list a per-branch breakdown. B2 deliberately stopped short of it — growing a public-flow change into a dashboard change, to close an owner-facing gap no client can reach, is the scope drift that makes a story unreviewable.
+
+- **Trigger:** the first owner with two locations whose catalogues differ, or **M6** (deactivation), which is when a branch can quietly start offering nothing.
 
 `countActiveBarbersByService` filters `barber.isActive` but not `barber.location.isActive`, so a service performed only by barbers at a **deactivated branch** is presented as bookable on the dashboard.
 
@@ -669,10 +671,33 @@ The cost is bounded today: one query, no images blocking first paint. It grows t
 
 - **Trigger:** **B2 or B3**, whichever first makes this route wait on more than one query — at which point the missing loading state stops being a few milliseconds. Also: any Next.js or OpenNext release that lets a route stream a shell while deferring its status commit, and any measured complaint about the page appearing blank on a slow connection.
 
-### T47 — The public profile page has neither a cache nor a rate limit
-**Status:** accepted — deliberate bet on low traffic · **Effort:** ~2–4 h (a Cloudflare rate-limiting rule, or ISR backed by R2/KV, or a slug-keyed cache invalidated from the profile save) · **Added:** B1 (2026-08-15)
+### T47 — The public surface has neither a cache nor a rate limit
+**Status:** accepted — deliberate bet on low traffic · **Effort:** ~2–4 h (a Cloudflare rate-limiting rule, or ISR backed by R2/KV, or a slug-keyed cache invalidated from the profile save) · **Added:** B1 (2026-08-15) · **Re-costed:** B2 (2026-08-15)
 
 `/b/[slug]` is `force-dynamic`, like every other page in this project. Unlike the others it is reachable **without a session**, so every request from anyone issues a database query through Supavisor. There is no cache in front of it and no rate limit on it.
+
+**B2 widened this, and the new numbers are worse than the entry originally described.** Two changes:
+
+- **The profile page went from one query to two.** The bookability gate reads the catalogue. The owner lookup was folded into the existing profile read rather than added beside it (B2 design D10), so the increase is one query and not two — but it is still double what B1 shipped.
+- **`/b/[slug]/reservar` is a second public route, with a heavier query and a parameter space.** The catalogue read joins locations, barbers and assignments. Worse, the route accepts `?local=&servicio=&barbero=`, so a crawler that follows every offered link generates on the order of `L × S` requests per shop instead of one. The parameterized URLs declare the bare path as canonical, which asks politely; it does not enforce anything.
+
+The pool is still shared with the dashboard, so the saturation consequence is unchanged and now easier to reach.
+
+**Measured on `workerd` against the live database** (B2 runtime verification), which turns the argument above into numbers:
+
+| Route | Queries | Response |
+| --- | --- | --- |
+| `/b/{unknown}/reservar` (short-circuits before the catalogue) | 1 | ~0.21 s |
+| `/b/{slug}/reservar` | 2 | ~0.97 s |
+| `/b/{slug}` | 2 | ~1.17 s |
+
+Roughly **0.35–0.40 s per Supavisor round trip** from this location. Two things follow. The profile page cost about 0.4 s when B2 added the bookability gate — a real regression on the busiest public page, accepted for the gate. And it confirms B2 design D10 was right to reject the three-query option, which would have landed near 1.5 s.
+
+**A third finding, since fixed: router prefetch was multiplying the reads.** Next prefetches the RSC payload of every `<Link>` that enters the viewport, and on this route that payload is a full catalogue query. Observed in the browser: rendering the branch step fired **two extra server requests**, one per branch, before the client touched anything — a page view costing `1 + L` queries, and `1 + 50` on a service step at the per-owner cap. The client picks exactly one option per step, so every other prefetch was work thrown away.
+
+Fixed by routing all public-flow navigation through `src/components/booking/StepLink.tsx`, which sets `prefetch={false}` in one place. Re-measured after the change: the branch step issues **one** request, and each step navigation issues exactly one more. The cost is that a tap now waits for the navigation (~1 s) instead of finding it warmed.
+
+**This does not close the entry.** The per-request cost is unchanged; what went away is a multiplier nobody had asked for.
 
 Two consequences, and they are different problems:
 
@@ -689,7 +714,39 @@ Dynamic rendering also buys something real: the owner saves their profile, reloa
 
 **The honest summary is that this is a bet on having no traffic, written down so it is a bet and not an oversight.**
 
-- **Trigger:** the first time the owner shares the link somewhere with reach (an Instagram bio, a story, printed cards), any measured growth in requests to `/b/**`, any Supavisor pool saturation, or B4 — at which point the public surface starts creating rows and the calculation changes entirely.
+- **Trigger:** the first time the owner shares the link somewhere with reach (an Instagram bio, a story, printed cards), any measured growth in requests to `/b/**`, any Supavisor pool saturation, **any crawler observed sweeping the `reservar` parameter space**, or B4 — at which point the public surface starts creating rows and the calculation changes entirely.
+
+### T49 — The public 404 page renders an empty body without JavaScript
+**Status:** accepted · **Effort:** unknown — see the cause · **Added:** B2 (2026-08-15, runtime verification) · **Origin:** B1
+
+**Measured on `workerd`, on the deployed build**, across all three public routes:
+
+| Request | Status | `robots` | Rendered body text |
+| --- | --- | --- | --- |
+| `/b` | 404 | noindex | *(empty)* |
+| `/b/{unknown}` | 404 | noindex | *(empty)* |
+| `/b/{unknown}/reservar` | 404 | noindex | *(empty)* |
+
+The Spanish copy — "No encontramos esta barbería" — is present **only inside the RSC flight payload**, so the visible page is assembled by client-side JavaScript. With scripts stripped, the `<body>` contains nothing but a suspense marker. The same extraction run against the success pages returns their full text, so this is the not-found path specifically, not a measurement artefact.
+
+**This is B1 behaviour, not B2's** — `/b` and `/b/{unknown}` are B1's routes and are unchanged by this story. It went unnoticed because B1's tests assert the *component* renders, which it does, under a test renderer that is not the streaming SSR path.
+
+**What is not affected:** the parts B1 argued for. The status is a real `404`, `noindex` is emitted, and no English framework page is served. Crawlers and link-preview bots read the status, so the requirement that made B1 remove its `loading.tsx` still holds.
+
+**What is affected:** a client with JavaScript disabled or still loading sees a blank page instead of "pedile el link actualizado a la barbería" — on the one screen whose entire job is telling someone their link is broken. Related to **T44**, which records the same class of failure for dashboard forms, though the mechanism differs: this is the not-found slot being streamed rather than `useActionState` losing its state.
+
+- **Trigger:** T33 becoming real (an owner changes their slug and strands live links), or any decision to make the public surface work without JavaScript.
+
+### T48 — The service step has no answer for a catalogue at its cap
+**Status:** accepted · **Effort:** ~2–4 h (grouping, or a filter, or search) · **Added:** B2 (2026-08-15)
+
+`MAX_SERVICES_PER_OWNER` is 50, and every one of them can legitimately be bookable at a branch. The service step renders them as a flat list of cards, which at a 360-pixel viewport is a long scroll with no way to jump, filter or group.
+
+The layout **holds** — that is required and tested. What it does not do is stay scannable, and this is the screen between a client deciding to book and actually booking.
+
+**Not solved now because no real catalogue is anywhere near the cap.** Inventing a grouping scheme requires knowing how owners actually organize services (by category? by duration? by price?), and every answer available today is a guess about a shop that does not exist yet. Categories are also not modelled — `Service` has no grouping column — so this would be a schema change made for an imagined user.
+
+- **Trigger:** the first owner whose catalogue passes roughly 15 services at one branch, or any request for categories.
 
 ### T46 — The deposit effect preview will list services nobody can book
 **Status:** accepted — **dormant until M6** · **Effort:** ~30 min · **Added:** PC3 (2026-08-15)
