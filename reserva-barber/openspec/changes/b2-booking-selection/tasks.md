@@ -68,7 +68,7 @@
 
 - [x] 9.1 Full keyboard traversal of every step with a visible focus indicator; selected state not conveyed by colour alone — every option is a native `<a>`, `aria-current="step"` confirmed in the live HTML, `focus-visible:ring-2` present on every control. **WCAG AA contrast was NOT measured** — no colour was introduced by this change, all tokens are inherited
 - [x] 9.2 Verify no horizontal overflow at 360 px with 120-character location, service and barber names, a 500-character barber bio and a 500-character service description (T18) — **measured on `workerd`** with the maxima written to the live database: `scrollWidth` 345–360 against a 360 px viewport at all four steps, with the 120/500-character content confirmed rendered at full length
-- [ ] 9.3 Verify the service step holds at the per-owner cap of fifty services — **not verified.** Would need 50 service rows in the live database; the width risk is covered by 9.2 and the scan-time problem is recorded as T48
+- [ ] 9.3 Verify the service step holds at the per-owner cap of fifty services — **not verified.** Would need 50 service rows in the live database; the width risk is covered by 9.2 and the scan-time problem is recorded as T50
 - [x] 9.4 Confirm at runtime that `app/b/[slug]/error.tsx` actually covers the nested segment — the assumption is expected to hold, and B1 got the equivalent one wrong for `not-found.tsx` (design, Open Questions) — **confirmed by forcing a real failure** (`DATABASE_URL` pointed at an unreachable host): `/b/{slug}/reservar` returned 500 and rendered the public boundary's copy, with no stack trace, connection string or driver text in the response
 
 ## 10. Documentation
@@ -91,4 +91,4 @@
   - Also confirmed: **`owner-root` appears zero times** in both responses (design D3/D10), a cross-owner-shaped id and an unknown id produce **byte-identical rendered `<main>`** (1763 bytes each), and a parameterized URL declares the bare path as canonical.
 - [x] 11.6 Disable router prefetch across the public flow via a single `StepLink` component, after the preview showed it issuing one extra catalogue query per rendered link; re-measured at one request per step (design D15)
 - [x] 11.4 Confirm the HTTP statuses on the deployed build — on `workerd`: unknown slug → **404**; `/b/BARBERIA-DON-JUAN-CENTRO/reservar?local=…&servicio=…` → **308** with `Location` carrying the query string unchanged; canonical → 200. Null-byte and malformed-percent slugs → 404 with no driver error
-- [ ] 11.5 Deploy and verify in production, following B1's precedent — **not done**, awaiting review of the diff
+- [x] 11.5 Deploy and verify in production, following B1's precedent — deployed at 2588.18 KiB gzip after the first attempt was rejected by the free plan's 3 MiB ceiling (T51). Verified live: 404, 308 with query string intact, two branches offered of four active, $10.000,00, barber filtered by service, stale-link fallback, live CTA, and zero occurrences of the owner id

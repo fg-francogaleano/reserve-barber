@@ -737,7 +737,37 @@ The Spanish copy — "No encontramos esta barbería" — is present **only insid
 
 - **Trigger:** T33 becoming real (an owner changes their slug and strands live links), or any decision to make the public surface work without JavaScript.
 
-### T48 — The service step has no answer for a catalogue at its cap
+### T51 — The Worker is one story away from the free plan's size ceiling, and the build reports a size Cloudflare does not agree with
+**Status:** accepted — bought headroom, did not remove the ceiling · **Effort:** ~5 min (paid plan) · **Added:** B2 (2026-08-15, deploy failure)
+
+**B2's first deploy was rejected**, and the cause was not the code:
+
+```
+Your Worker exceeded the size limit of 3 MiB.
+```
+
+Measured rather than guessed. Deploying `main` — identical to what was already live — was used as the control:
+
+| Build | reported gzip | outcome |
+| --- | --- | --- |
+| `main` (B1) | 3045.35 KiB | deployed |
+| B2, compiler `fast` | 3064.88 KiB | **rejected** |
+| B2, compiler `small` | 2588.18 KiB | deployed |
+
+**B1 had been sitting under ~20 KiB from the ceiling.** B2 adds ~19.5 KiB, so B2 is the proximate cause and not the real one — any story of any size would have tipped it, and B3 would not have fitted either.
+
+**Two facts worth keeping:**
+
+1. **What counts toward the limit is `worker.js` + the Prisma wasm, and nothing else.** `worker.js.map` is 2577 KiB gzip and is not counted; static assets upload separately. Raw `8902 + 3592 = 12494 KiB` matches wrangler's reported "Total Upload" exactly, which is how the composition was confirmed.
+2. **`wrangler deploy --dry-run` is not a reliable gate.** It reported 3064.88 KiB against a 3072 KiB ceiling — "fits by 7 KiB" — and the API rejected it anyway. Cloudflare's server-side measurement is stricter than the figure wrangler prints, so the dry-run can only ever say "definitely too big", never "this will fit".
+
+**What bought the headroom** is `compilerBuild = "small"` on the workerd generator (`prisma/schema.prisma`). Prisma ships two builds of the wasm query compiler — 3591 KiB and 1809 KiB — and defaults to the larger one for every runtime except `vercel-edge`. Verified at runtime against the live database, not just by size: the three-level nested catalogue join, `Decimal` prices, per-location filtering, and the 404/308 statuses all behave identically, and response times are unchanged because the ~0.35–0.40 s Supavisor round trip dominates query compilation.
+
+**The ceiling is still there.** Current headroom is ~484 KiB against 3072, and the remaining bundle has no obvious fat: no duplicated Next runtimes, no `@edge-runtime/primitives`, and the 4 MB capsize font-metrics JSON is not inlined. The next lever is Workers Paid (US$5/month, 10 MiB) — there is no second `compilerBuild` trick to find.
+
+- **Trigger:** the next deploy rejection, or any story that adds more than ~400 KiB gzip. Payments (B5), email (N1) and the cron trigger (B7) are all still to come and all add dependencies.
+
+### T50 — The service step has no answer for a catalogue at its cap
 **Status:** accepted · **Effort:** ~2–4 h (grouping, or a filter, or search) · **Added:** B2 (2026-08-15)
 
 `MAX_SERVICES_PER_OWNER` is 50, and every one of them can legitimately be bookable at a branch. The service step renders them as a flat list of cards, which at a 360-pixel viewport is a long scroll with no way to jump, filter or group.
