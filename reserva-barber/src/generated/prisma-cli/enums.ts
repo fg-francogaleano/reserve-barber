@@ -28,3 +28,22 @@ export const DepositType = {
 } as const
 
 export type DepositType = (typeof DepositType)[keyof typeof DepositType]
+
+
+export const BookingStatus = {
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
+  PENDING_APPROVAL: 'PENDING_APPROVAL',
+  CONFIRMED: 'CONFIRMED',
+  CANCELLED: 'CANCELLED',
+  EXPIRED: 'EXPIRED'
+} as const
+
+export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus]
+
+
+export const CancelledBy = {
+  OWNER: 'OWNER',
+  CLIENT: 'CLIENT'
+} as const
+
+export type CancelledBy = (typeof CancelledBy)[keyof typeof CancelledBy]

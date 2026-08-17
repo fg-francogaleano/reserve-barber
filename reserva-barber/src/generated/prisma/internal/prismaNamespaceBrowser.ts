@@ -60,7 +60,9 @@ export const ModelName = {
   BarberService: 'BarberService',
   WorkingHours: 'WorkingHours',
   TimeOff: 'TimeOff',
-  PaymentConfig: 'PaymentConfig'
+  PaymentConfig: 'PaymentConfig',
+  Client: 'Client',
+  Booking: 'Booking'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -208,6 +210,40 @@ export const PaymentConfigScalarFieldEnum = {
 } as const
 
 export type PaymentConfigScalarFieldEnum = (typeof PaymentConfigScalarFieldEnum)[keyof typeof PaymentConfigScalarFieldEnum]
+
+
+export const ClientScalarFieldEnum = {
+  id: 'id',
+  ownerId: 'ownerId',
+  name: 'name',
+  email: 'email',
+  phone: 'phone',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ClientScalarFieldEnum = (typeof ClientScalarFieldEnum)[keyof typeof ClientScalarFieldEnum]
+
+
+export const BookingScalarFieldEnum = {
+  id: 'id',
+  clientId: 'clientId',
+  barberId: 'barberId',
+  serviceId: 'serviceId',
+  startTime: 'startTime',
+  endTime: 'endTime',
+  status: 'status',
+  priceAtBooking: 'priceAtBooking',
+  depositAmount: 'depositAmount',
+  cancellationToken: 'cancellationToken',
+  holdExpiresAt: 'holdExpiresAt',
+  cancelledAt: 'cancelledAt',
+  cancelledBy: 'cancelledBy',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type BookingScalarFieldEnum = (typeof BookingScalarFieldEnum)[keyof typeof BookingScalarFieldEnum]
 
 
 export const SortOrder = {

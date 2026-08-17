@@ -2,12 +2,22 @@ import { StepLink } from './StepLink';
 import { COPY } from '@/lib/copy';
 import { bookingStepHref } from '@/server/application/booking/bookingSelectionParams';
 import type { BookingSelection } from '@/server/application/booking/bookingSelectionParams';
+import {
+  formatLocalDate,
+  formatSlotTime,
+  type LocalDate,
+} from '@/server/domain/models/bookingCalendar';
+import { formatBookingDateLong } from '@/lib/formatBookingDate';
 
 interface BookingSelectionSummaryProps {
   slug: string;
   selection: BookingSelection;
   /** A lone branch is still shown — it just is not offered as a choice. */
   hasBranchChoice: boolean;
+  /** The chosen day, once there is one. */
+  date?: LocalDate | undefined;
+  /** The chosen start, once there is one. */
+  slot?: Date | undefined;
 }
 
 /**
@@ -26,10 +36,16 @@ export function BookingSelectionSummary({
   slug,
   selection,
   hasBranchChoice,
+  date,
+  slot,
 }: BookingSelectionSummaryProps) {
-  const { location, service } = selection;
+  const { location, service, barber } = selection;
 
   if (location === undefined) return null;
+
+  const locationId = location.location.id;
+  const serviceId = service?.service.id;
+  const barberId = barber?.id;
 
   return (
     <section aria-label={COPY.booking.summaryHeading} className="bg-muted/50 w-full rounded-md p-3">
@@ -55,7 +71,7 @@ export function BookingSelectionSummary({
                   `bookingStepHref` omits the downstream key rather than
                   emitting one the resolver would discard a moment later. */}
               <StepLink
-                href={bookingStepHref(slug, { locationId: location.location.id })}
+                href={bookingStepHref(slug, { locationId })}
                 className="text-primary shrink-0 underline"
               >
                 {COPY.booking.change}
@@ -63,7 +79,68 @@ export function BookingSelectionSummary({
             </dd>
           </div>
         )}
+
+        {barber !== undefined && serviceId !== undefined && (
+          <SummaryRow
+            label={COPY.booking.steps.barber}
+            value={barber.displayName}
+            changeHref={bookingStepHref(slug, { locationId, serviceId })}
+          />
+        )}
+
+        {date !== undefined && serviceId !== undefined && barberId !== undefined && (
+          <SummaryRow
+            label={COPY.booking.steps.date}
+            value={formatBookingDateLong(date)}
+            changeHref={bookingStepHref(slug, { locationId, serviceId, barberId })}
+          />
+        )}
+
+        {slot !== undefined &&
+          serviceId !== undefined &&
+          barberId !== undefined &&
+          date !== undefined && (
+            <SummaryRow
+              label={COPY.booking.steps.slot}
+              value={formatSlotTime(slot)}
+              changeHref={bookingStepHref(slug, {
+                locationId,
+                serviceId,
+                barberId,
+                date: formatLocalDate(date),
+              })}
+            />
+          )}
       </dl>
     </section>
+  );
+}
+
+/**
+ * One label/value pair with its change link.
+ *
+ * Extracted when B3 took the summary from two rows to five: the branch row keeps
+ * its own shape because it is the one entry that can appear without a change
+ * link at all.
+ */
+function SummaryRow({
+  label,
+  value,
+  changeHref,
+}: {
+  label: string;
+  value: string;
+  changeHref: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-muted-foreground shrink-0">{label}</dt>
+      <dd className="flex min-w-0 items-baseline gap-2">
+        <span className="min-w-0 font-medium break-words">{value}</span>
+        <StepLink href={changeHref} className="text-primary shrink-0 underline">
+          {COPY.booking.change}
+        </StepLink>
+      </dd>
+    </div>
   );
 }

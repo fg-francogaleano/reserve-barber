@@ -4,6 +4,9 @@ import type { IPublicCatalogRepository } from '@/server/domain/repositories/IPub
 import type { ILogger } from '@/server/domain/repositories/ILogger';
 import { SLUG_MAX_LENGTH } from '@/server/domain/models/slugify';
 import { decidePublicSlugLookup } from '@/server/application/businessProfile/publicSlugLookup';
+import type { PublicAvailabilityService } from './PublicAvailabilityService';
+import type { LocalDate } from '@/server/domain/models/bookingCalendar';
+import type { Weekday } from '@/server/domain/models/weekday';
 
 /**
  * What the booking route should do with the slug it was given.
@@ -15,8 +18,32 @@ import { decidePublicSlugLookup } from '@/server/application/businessProfile/pub
  * `redirect` carries the canonical slug rather than a URL — composing the path,
  * and preserving the query string across it, is the route's job.
  */
+/**
+ * The availability reads for the shop that was just resolved, already bound to
+ * its owner.
+ *
+ * **This is how B3 asks an owner-scoped question without being told the owner**
+ * (B2 design D3, which this preserves rather than relaxes). The alternative was
+ * adding an `ownerId` field to the resolution below — the one thing that
+ * requirement says it must not have — or resolving the slug a second time, which
+ * would spend an extra Supavisor round trip on the route T47 is about, to
+ * recover a value the service already had.
+ *
+ * A bound function is neither: the owner is captured where it was resolved and
+ * is unreachable from the caller. It is also unserializable by construction, so
+ * it cannot be handed to a Client Component even by accident.
+ */
+export interface BoundAvailability {
+  /** The business's current calendar day. */
+  today(): LocalDate;
+  /** Which weekdays this barber works at all — the date strip's only input. */
+  workingWeekdays(barberId: string): Promise<Set<Weekday>>;
+  /** The start times on offer for one barber, service duration and day. */
+  slotsFor(input: { barberId: string; date: LocalDate; durationMinutes: number }): Promise<Date[]>;
+}
+
 export type BookingCatalogResolution =
-  | { type: 'render'; catalog: PublicBookingCatalog }
+  | { type: 'render'; catalog: PublicBookingCatalog; availability: BoundAvailability }
   | { type: 'redirect'; canonicalSlug: string }
   | { type: 'notFound' };
 
@@ -44,8 +71,18 @@ export class PublicBookingCatalogService {
   constructor(
     private readonly profiles: IBusinessProfileRepository,
     private readonly catalog: IPublicCatalogRepository,
-    private readonly logger: ILogger
+    private readonly logger: ILogger,
+    private readonly availability: PublicAvailabilityService
   ) {}
+
+  /** Binds the availability reads to an owner that never leaves this class. */
+  private bindAvailability(ownerId: string): BoundAvailability {
+    return {
+      today: () => this.availability.today(),
+      workingWeekdays: (barberId) => this.availability.workingWeekdays(barberId, ownerId),
+      slotsFor: (input) => this.availability.slotsFor({ ...input, ownerId }),
+    };
+  }
 
   async resolveBySlug(requestedSlug: string): Promise<BookingCatalogResolution> {
     const lookup = decidePublicSlugLookup(requestedSlug);
@@ -76,7 +113,11 @@ export class PublicBookingCatalogService {
       return { type: 'redirect', canonicalSlug: lookup.slug };
     }
 
-    return { type: 'render', catalog: await this.catalog.findBookableCatalog(ownerId) };
+    return {
+      type: 'render',
+      catalog: await this.catalog.findBookableCatalog(ownerId),
+      availability: this.bindAvailability(ownerId),
+    };
   }
 
   /**

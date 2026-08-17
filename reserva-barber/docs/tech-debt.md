@@ -534,8 +534,8 @@ Same root cause as T22: a cap that counts active rows being used to bound a quer
 
 - **Trigger:** M6 (service deactivation), together with T22.
 
-### T27 — One window per day cannot express a split shift, and slot generation will offer the break
-**Status:** accepted — **known product gap, not an oversight** · **Effort:** ~3 h · **Added:** M5a (2026-08-11)
+### T27 — One window per day cannot express a split shift *in the editor*
+**Status:** accepted — **halved by B3, not closed** · **Effort:** ~2 h (the editor's second window) · **Added:** M5a (2026-08-11) · **Narrowed:** B3 (2026-08-16)
 
 The owner chose a single continuous window per weekday. The common local pattern is a split shift — 9–13 and 16–20 — and a barber who works one must enter 9–20. Slot generation will then offer appointments at 14:00 with the shop closed: the client books, pays a deposit, and nobody is there.
 
@@ -543,7 +543,11 @@ The defect surfaces in the availability story, not here, but it is created here 
 
 **The schema is deliberately left capable.** The unique constraint is `(barberId, dayOfWeek, startMinute)` rather than `(barberId, dayOfWeek)`, so restoring the second window is a UI change plus re-enabling an overlap validation — **no migration over live data**. The cost of keeping it open is one column in an index.
 
-- **Trigger:** the first barber who works a split shift, or B3 — whichever comes first. B3 must not ship assuming a single window is sufficient.
+**B3 answered the half of this entry that was its own.** The entry predicted the defect would surface in the availability story; it does not, because slot generation consumes a **list** of windows and refuses an appointment that would span two of them. `scripts/b3-gate.ts` proves it against the live database with a real 9–13 / 16–20 barber: 12:30 is offered, 13:00 and 14:00 are not, 16:00 is. That barber cannot be created through the dashboard — only the gate can write the second window.
+
+**What remains is the editor**, and it is now the whole of this entry: the owner still has one pair of time fields per weekday, so a barber who works a split shift still has to enter 9–20, and the generator will faithfully sell the break they had no way to describe. The defect is unchanged in the product; what changed is that fixing the editor is now sufficient, and no availability code has to be revisited when it happens.
+
+- **Trigger:** the first barber who works a split shift. The generator, the schema and the gate are already waiting for them.
 
 ### T28 — "Every day has 1440 minutes" is an assumption, not a fact
 **Status:** accepted · **Effort:** ~2 h if it becomes real · **Added:** M5a (2026-08-11)
@@ -552,16 +556,22 @@ Working hours are stored as minutes from midnight, and all-day ranges are comput
 
 M5b adds a second consumer: a whole-day absence is computed as local midnight to local midnight, which is 23 or 25 hours on a transition day rather than 24. If DST returns, three things break together and must be revisited as one: a day is 23 or 25 hours rather than 1440 minutes, `BUSINESS_UTC_OFFSET_MINUTES` stops being a constant, and a window spanning the transition shifts by an hour. The conversion module already computes the offset per instant rather than assuming it, so the code path is prepared; the assumptions around it are not.
 
+**B3 adds the third consumer, and it is the one that sells things.** Slot generation converts each working window to instants per day and steps a five-minute grid across it, and the date strip is sixty calendar days built by adding one day at a time. Neither assumes a fixed day length — `dayBoundsOf` computes both midnights rather than adding 24 hours, and `addDays` goes through the calendar — so the arithmetic is prepared. What is **not** prepared is the day a transition falls inside a working window: the window would shift by an hour against the appointments already booked inside it, and nothing would report it.
+
 - **Trigger:** Argentina reinstating daylight saving, or a location outside the current timezone.
 
 ### T29 — Editing a schedule retroactively strands existing bookings
-**Status:** deferred · **Effort:** unknown until the booking model exists · **Added:** M5a (2026-08-11)
+**Status:** deferred · **Effort:** unknown until bookings can be created · **Added:** M5a (2026-08-11) · **Re-costed:** B3 (2026-08-16)
 
-Saving a schedule replaces the barber's week wholesale. Once bookings exist, narrowing or removing a window leaves confirmed appointments outside working hours, and nothing detects or reports it. At zero bookings — the current state — this is harmless.
+Saving a schedule replaces the barber's week wholesale. Once bookings exist, narrowing or removing a window leaves confirmed appointments outside working hours, and nothing detects or reports it.
 
 Same shape as T14 (barber reassignment rewriting derived history): the fix depends on what the booking model looks like, and may be either a warning that names the affected appointments or a refusal to narrow a window that has bookings inside it.
 
-- **Trigger:** B4 (booking creation), or any story that queries bookings against working hours.
+**B3 removed the sentence that made this safe to ignore.** The entry said "at zero bookings — the current state — this is harmless", and that was true only because the table did not exist. It exists now, with the index and the read that would find the stranded appointments. The count is still zero because nothing writes one until B4, so the *consequence* has not arrived — but the reason it could not arrive has.
+
+Note what B3 does **not** create: a barber whose schedule shrank still shows the shrunken schedule to clients, so no new booking lands outside working hours. The exposure is entirely to appointments booked before the edit.
+
+- **Trigger:** B4 (booking creation). The model it depended on is no longer the unknown.
 
 ### T30 — Per-barber absence cap is advisory, not guaranteed
 **Status:** accepted · **Effort:** ~1–2 h if it becomes real · **Added:** M5b (2026-08-11)
@@ -699,6 +709,25 @@ Fixed by routing all public-flow navigation through `src/components/booking/Step
 
 **This does not close the entry.** The per-request cost is unchanged; what went away is a multiplier nobody had asked for.
 
+**B3 adds a third public route shape and a parameter space that is no longer bounded by the catalogue.** Two changes, and the second is the one that matters:
+
+- **The slot step costs one round trip more than the barber step.** The availability inputs — the barber's windows for that weekday, the absences overlapping the day, and the blocking bookings — come back as a single composed read entered from `Barber`, measured at **~400 ms** against the live database (`scripts/b3-gate.ts`, 2026-08-16). Three separate reads would have made the slot step five round trips; it is three. The date step is cheaper still: it reads only the barber's seven schedule rows.
+
+  **Measured end to end on `workerd` against the live database** (B3 runtime verification, `opennextjs-cloudflare preview`, same location as the B2 row above):
+
+  | Step | Queries | Response |
+  | --- | --- | --- |
+  | branch / service / barber (unchanged by B3) | 2 | ~1.09–1.15 s |
+  | date step (adds the weekly schedule read) | 3 | ~1.40 s |
+  | slot step (adds the composed day read) | 3 | ~1.68 s |
+
+  So B3 costs about **+0.28 s on the date step and +0.53 s on the slot step**, against a route that already sat near a second. Both are one round trip more than the step before them, which is the contract the spec sets — but the flow is now five steps deep on a phone, and the total time from opening the link to seeing times is the sum of all of them.
+- **`?fecha` multiplies the crawlable space by the horizon.** B2 left this route generating on the order of `L × S` URLs per shop. B3 makes it `L × S × B × 61`, and each distinct date is a real availability read rather than a repeat of a cached one. `MAX_BOOKING_HORIZON_DAYS` is what keeps that number finite at all — without it the parameter is unbounded — and the parameterized URLs still declare the bare path as canonical, which asks politely and enforces nothing.
+
+Router prefetch was the multiplier B2 removed, and B3 would have reintroduced it at a worse rate: the slot step renders on the order of a hundred links on one screen, each of whose prefetch payload is an availability computation. Both new steps route through `StepLink`, so the count stays at one request per navigation.
+
+**The bet is unchanged and is now larger.** A single crawler sweeping dates costs more than the entire dashboard does in a day, against a pool the dashboard shares.
+
 Two consequences, and they are different problems:
 
 - **Cost amplification.** A slug-enumeration loop, or simply an Instagram story that lands, produces a traffic shape this project has never seen. The pool is shared with the dashboard, so saturation would take down the owner's admin surface alongside the public page.
@@ -764,6 +793,8 @@ Measured rather than guessed. Deploying `main` — identical to what was already
 **What bought the headroom** is `compilerBuild = "small"` on the workerd generator (`prisma/schema.prisma`). Prisma ships two builds of the wasm query compiler — 3591 KiB and 1809 KiB — and defaults to the larger one for every runtime except `vercel-edge`. Verified at runtime against the live database, not just by size: the three-level nested catalogue join, `Decimal` prices, per-location filtering, and the 404/308 statuses all behave identically, and response times are unchanged because the ~0.35–0.40 s Supavisor round trip dominates query compilation.
 
 **The ceiling is still there.** Current headroom is ~484 KiB against 3072, and the remaining bundle has no obvious fat: no duplicated Next runtimes, no `@edge-runtime/primitives`, and the 4 MB capsize font-metrics JSON is not inlined. The next lever is Workers Paid (US$5/month, 10 MiB) — there is no second `compilerBuild` trick to find.
+
+**B3 measured at 2608.15 KiB gzip** — two Prisma models, two components, a calendar module and a repository for **+19.97 KiB** over B2's 2588.18. Headroom is now **~464 KiB** against the 3072 KiB ceiling. The two new tables cost almost nothing because the wasm query compiler is a fixed size and the generated client grows only by its types, which do not ship.
 
 - **Trigger:** the next deploy rejection, or any story that adds more than ~400 KiB gzip. Payments (B5), email (N1) and the cron trigger (B7) are all still to come and all add dependencies.
 
@@ -1197,3 +1228,47 @@ state not surviving a no-JavaScript POST.
 
 That is why this closes rather than becoming a PC2 fix: the cause is project-wide, not in either
 form, and the remedy is a decision about the whole dashboard. It moves to **T44**.
+
+---
+
+### T52 — A day with working hours but no free time looks selectable until you tap it
+**Status:** accepted — **deliberate, and the cheaper of two honest answers** · **Effort:** ~2 h (a per-day availability summary, or a cached one) · **Added:** B3 (2026-08-16)
+
+The date strip marks a day the barber does not work at all, because that costs nothing: the seven
+schedule rows are already loaded. It does **not** mark a day whose every slot is taken or covered by
+an absence. Those days render as ordinary options, and the client learns the truth one tap later,
+from the slot step's empty state.
+
+**The alternative was measured and refused.** Answering "is anything free that day" for the whole
+strip means one full availability computation per day — sixty of them, each a composed read of
+windows, absences and bookings — on the public route that has neither a cache nor a rate limit and
+draws from the pool the owner's dashboard shares (T47). At ~400 ms per read that is not a page, it is
+an outage waiting for a crawler.
+
+What it costs today is one wasted tap on a fully-booked day, on a shop with no bookings at all. What
+it would cost the other way is the busiest public route in the product.
+
+**This entry exists so nobody "fixes" it without knowing the price.** The right solution when it
+becomes real is not to compute the strip honestly — it is to cache the per-day answer, or to derive a
+cheap upper bound (a day with no absence and no booking cannot be full) and mark only the days that
+bound rules out.
+
+- **Trigger:** the first barber whose days are regularly full, or any complaint about tapping into an
+  empty day. Also: whenever T47 gets a cache, since that is what makes the honest version affordable.
+
+### T53 — The lead time and the booking horizon are guesses, and they are per-product not per-shop
+**Status:** accepted · **Effort:** ~3 h (per-owner settings, with the dashboard UI) · **Added:** B3 (2026-08-16)
+
+`MIN_BOOKING_LEAD_MINUTES` is 60 and `MAX_BOOKING_HORIZON_DAYS` is 60. Both are judgements made
+without a single real shop using the product, and both are wrong for someone:
+
+- A barbershop that takes walk-in-shaped bookings wants the lead time at 15 minutes or zero, and
+  currently loses an hour of sellable time every day.
+- A shop that books a month out does not want sixty days of strip; one that books seasonally may want
+  more.
+
+Neither is a safety bound, so neither is dangerous to change — but both are currently a deploy rather
+than a setting, and the horizon is also load-bearing for T47's parameter space, so raising it is not
+free.
+
+- **Trigger:** the first owner who asks for either, which is likely to be the first owner.

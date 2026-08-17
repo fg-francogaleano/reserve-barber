@@ -2,7 +2,11 @@ import 'server-only';
 import { PublicBookingCatalogService } from '@/server/application/services/PublicBookingCatalogService';
 import { PrismaBusinessProfileRepository } from '@/server/infrastructure/prisma/PrismaBusinessProfileRepository';
 import { PrismaPublicCatalogRepository } from '@/server/infrastructure/prisma/PrismaPublicCatalogRepository';
+import { PrismaBarberAvailabilityRepository } from '@/server/infrastructure/prisma/PrismaBarberAvailabilityRepository';
+import { PrismaWorkingHoursRepository } from '@/server/infrastructure/prisma/PrismaWorkingHoursRepository';
+import { PublicAvailabilityService } from '@/server/application/services/PublicAvailabilityService';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
+import { systemClock } from '@/server/domain/repositories/IClock';
 import { logger } from '@/server/infrastructure/logger';
 
 /**
@@ -35,6 +39,18 @@ export function bookingCatalogService(): PublicBookingCatalogService {
   return new PublicBookingCatalogService(
     new PrismaBusinessProfileRepository(db),
     new PrismaPublicCatalogRepository(db),
-    logger
+    logger,
+    // B3's availability reads. Both repositories are owner-scoped by contract,
+    // and the owner they are scoped with is resolved from the slug inside the
+    // catalogue service and bound there — the page never receives it.
+    //
+    // `systemClock` rather than `new Date()` inside the rule: the slot rule's
+    // hardest cases are about what time it is, and a module that reads the clock
+    // itself cannot be tested for them.
+    new PublicAvailabilityService(
+      new PrismaBarberAvailabilityRepository(db),
+      new PrismaWorkingHoursRepository(db),
+      systemClock
+    )
   );
 }

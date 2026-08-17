@@ -198,17 +198,33 @@ describe('BookingStepIndicator', () => {
     expect(screen.getByText(COPY.booking.steps.service)).toHaveAttribute('aria-current', 'step');
   });
 
+  it('should_count_five_steps_when_the_branch_is_a_choice', () => {
+    // B3 took the flow from three steps to five. The count is derived from the
+    // flow definition, so this assertion protects the derivation rather than a
+    // literal someone would have to remember to update.
+    render(<BookingStepIndicator current="location" hasBranchChoice />);
+
+    expect(screen.getByText(COPY.booking.stepPosition(1, 5))).toBeInTheDocument();
+  });
+
   it('should_drop_the_branch_step_from_the_count_when_it_is_not_a_choice', () => {
     render(<BookingStepIndicator current="service" hasBranchChoice={false} />);
 
     expect(screen.queryByText(COPY.booking.steps.location)).toBeNull();
-    expect(screen.getByText(COPY.booking.stepPosition(1, 2))).toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.stepPosition(1, 4))).toBeInTheDocument();
+  });
+
+  it('should_mark_the_new_schedule_steps', () => {
+    render(<BookingStepIndicator current="date" hasBranchChoice />);
+
+    expect(screen.getByText(COPY.booking.steps.date)).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText(COPY.booking.stepPosition(4, 5))).toBeInTheDocument();
   });
 
   it('should_keep_the_last_step_marked_once_the_selection_is_complete', () => {
     render(<BookingStepIndicator current="complete" hasBranchChoice />);
 
-    expect(screen.getByText(COPY.booking.steps.barber)).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText(COPY.booking.steps.slot)).toHaveAttribute('aria-current', 'step');
   });
 });
 

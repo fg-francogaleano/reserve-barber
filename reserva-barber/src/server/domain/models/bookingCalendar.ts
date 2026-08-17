@@ -1,0 +1,167 @@
+/**
+ * Calendar arithmetic for the booking flow, in the business's calendar.
+ *
+ * Every function here is built on `businessTime.ts`, which remains the only
+ * module that talks to `Intl` and the only place a wall clock becomes an
+ * instant. This module adds the vocabulary the booking flow needs on top of it:
+ * a date without a time, the day a barber's schedule applies to, and the bounds
+ * of the range a day's availability is read over.
+ *
+ * **The runtime's own calendar readers are banned in this feature** — the local
+ * getters for weekday, hour and date, and slicing an ISO string down to a date.
+ * The deployment runtime is UTC and the business is at UTC−3, so for the last
+ * three hours of every local day they answer for tomorrow, and they answer with
+ * a plausible number rather than raising. This module exists so no caller is
+ * ever tempted to reach for them.
+ *
+ * They are named in prose rather than quoted because `businessTime.test.ts`
+ * scans this directory for those literals and cannot tell a comment from a
+ * call. That is the right trade: the scan is what keeps the ban true after
+ * everyone has forgotten it was agreed.
+ */
+
+import { instantToLocal, localToInstant, MINUTES_PER_DAY } from './businessTime';
+import { MAX_BOOKING_HORIZON_DAYS } from './bookingHorizon';
+import type { Interval } from './availability';
+import type { Weekday } from './weekday';
+
+/** A calendar day in the business's timezone. No time, no instant, no offset. */
+export interface LocalDate {
+  readonly year: number;
+  /** 1–12. */
+  readonly month: number;
+  /** 1–31. */
+  readonly day: number;
+}
+
+/** The business's current calendar day — never the runtime's. */
+export function businessToday(now: Date): LocalDate {
+  const local = instantToLocal(now);
+  return { year: local.year, month: local.month, day: local.day };
+}
+
+/**
+ * The stored `dayOfWeek` a date's schedule comes from: 0 = Sunday … 6 = Saturday.
+ *
+ * `Date.getUTCDay()` is correct **here** and nowhere else in this feature,
+ * because the value it reads is built from local calendar fields that are
+ * already resolved — there is no instant left to misinterpret.
+ */
+export function weekdayOfLocalDate(date: LocalDate): Weekday {
+  return new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay() as Weekday;
+}
+
+/**
+ * The half-open instant range covering a local day: `[00:00, next 00:00)`.
+ *
+ * This is what bounds the absence and booking reads. It is computed from both
+ * midnights rather than by adding 24 hours, so a day that is not 1440 minutes
+ * long stays correct — Argentina observes no daylight saving today
+ * (`docs/tech-debt.md` T28), and the arithmetic should not be what breaks if
+ * that changes.
+ */
+export function dayBoundsOf(date: LocalDate): Interval {
+  return {
+    start: localToInstant({ ...date, minuteOfDay: 0 }),
+    end: localToInstant({ ...addDays(date, 1), minuteOfDay: 0 }),
+  };
+}
+
+/**
+ * A day's working windows as instants, chronologically.
+ *
+ * Windows are stored as wall-clock minutes and are never converted at rest
+ * (`data-model.md` §8). This is the conversion the storage convention defers,
+ * and the only one slot generation needs.
+ */
+export function workingIntervalsFor(
+  date: LocalDate,
+  windows: readonly { startMinute: number; endMinute: number }[]
+): Interval[] {
+  return windows
+    .map((window) => ({
+      start: localToInstant({ ...date, minuteOfDay: window.startMinute }),
+      end:
+        window.endMinute >= MINUTES_PER_DAY
+          ? localToInstant({ ...addDays(date, 1), minuteOfDay: window.endMinute - MINUTES_PER_DAY })
+          : localToInstant({ ...date, minuteOfDay: window.endMinute }),
+    }))
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+/** Calendar addition that carries months and years, including leap days. */
+export function addDays(date: LocalDate, days: number): LocalDate {
+  const shifted = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
+}
+
+const CANONICAL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * A `YYYY-MM-DD` from a stranger, or `undefined`.
+ *
+ * Two rules, both deliberate. The spelling must be **canonical** — `2026-8-1`
+ * is refused, because the flow builds its own links and a second spelling of one
+ * day can only arrive from outside. And the date must be **real**: `2026-02-30`
+ * parses fine under a naive reading and then silently becomes the 2nd of March,
+ * which would show a client one day's availability under another day's heading.
+ * The round trip through `Date.UTC` is what catches it.
+ */
+export function parseLocalDate(raw: string): LocalDate | undefined {
+  const match = CANONICAL_DATE.exec(raw);
+  if (match === null) return undefined;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  const normalized =
+    probe.getUTCFullYear() === year &&
+    probe.getUTCMonth() + 1 === month &&
+    probe.getUTCDate() === day;
+
+  return normalized ? { year, month, day } : undefined;
+}
+
+export function formatLocalDate(date: LocalDate): string {
+  return `${String(date.year).padStart(4, '0')}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`;
+}
+
+/**
+ * A slot's start as the `HH:mm` the business reads on the clock.
+ *
+ * This is both what `?hora` carries and what the client sees, which is
+ * deliberate: the parameter is matched against the formatted list rather than
+ * parsed into a time, so the two can never disagree about what "15:05" means.
+ */
+export function formatSlotTime(instant: Date): string {
+  const minuteOfDay = instantToLocal(instant).minuteOfDay;
+  const hours = Math.floor(minuteOfDay / 60);
+  const minutes = minuteOfDay % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+/** Ordering on calendar days, without building an instant for either. */
+function compareLocalDates(a: LocalDate, b: LocalDate): number {
+  return a.year - b.year || a.month - b.month || a.day - b.day;
+}
+
+/**
+ * Whether a date may be booked: today or later, and no further ahead than the
+ * horizon.
+ *
+ * The upper bound is not only a product judgement. `?fecha` is stranger-supplied
+ * on a route with neither a cache nor a rate limit, and each distinct value
+ * costs an availability read (`docs/tech-debt.md` T47).
+ */
+export function isWithinHorizon(date: LocalDate, today: LocalDate): boolean {
+  return (
+    compareLocalDates(date, today) >= 0 &&
+    compareLocalDates(date, addDays(today, MAX_BOOKING_HORIZON_DAYS)) <= 0
+  );
+}

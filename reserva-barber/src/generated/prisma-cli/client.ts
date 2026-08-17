@@ -155,3 +155,29 @@ export type TimeOff = Prisma.TimeOffModel
  * provisioning script may create it.
  */
 export type PaymentConfig = Prisma.PaymentConfigModel
+/**
+ * Model Client
+ * A guest customer. Clients have no accounts and no credentials; they are
+ * identified by contact data and deduplicated by email per owner
+ * (data-model.md §10).
+ * 
+ * **Created by B3 and written by none of it.** `Booking.clientId` is a
+ * required foreign key, so this table is not optional scope — it arrives with
+ * the booking table or the booking table cannot exist. The deduplication the
+ * unique constraint enables belongs to B4.
+ */
+export type Client = Prisma.ClientModel
+/**
+ * Model Booking
+ * A single appointment — the central entity of the system (data-model.md §11).
+ * 
+ * **Created by B3, which reads it and writes nothing.** The write path, the
+ * hold and the transactional no-overlap check are B4's. The table is created
+ * whole rather than assembled across stories, following the precedent
+ * PaymentConfig set: an entity built up over three migrations is three chances
+ * for those stories to disagree about its shape.
+ * 
+ * The interval is **half-open**: `[startTime, endTime)`, matching TimeOff so
+ * availability never has to reconcile two meanings of a boundary.
+ */
+export type Booking = Prisma.BookingModel

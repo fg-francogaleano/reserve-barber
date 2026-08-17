@@ -67,8 +67,32 @@ function props(search: Record<string, string | string[]> = {}, slug = 'barberia-
   return { params: Promise.resolve({ slug }), searchParams: Promise.resolve(search) };
 }
 
-function renders(catalog = TWO_BRANCHES) {
-  resolveBySlug.mockResolvedValue({ type: 'render', catalog });
+/** Monday 2026-08-17, so a fixed weekday backs the date-step assertions. */
+const TODAY = { year: 2026, month: 8, day: 17 };
+const EVERY_WEEKDAY = new Set([0, 1, 2, 3, 4, 5, 6]);
+
+/** Local 09:00 and 09:05 on that Monday. */
+const SLOTS = [new Date('2026-08-17T12:00:00.000Z'), new Date('2026-08-17T12:05:00.000Z')];
+
+function renders(
+  catalog = TWO_BRANCHES,
+  availabilityOverrides: {
+    workingWeekdays?: ReadonlySet<number>;
+    slots?: readonly Date[];
+  } = {}
+) {
+  const slotsFor = vi.fn().mockResolvedValue(availabilityOverrides.slots ?? SLOTS);
+  const workingWeekdays = vi
+    .fn()
+    .mockResolvedValue(availabilityOverrides.workingWeekdays ?? EVERY_WEEKDAY);
+
+  resolveBySlug.mockResolvedValue({
+    type: 'render',
+    catalog,
+    availability: { today: () => TODAY, workingWeekdays, slotsFor },
+  });
+
+  return { slotsFor, workingWeekdays };
 }
 
 beforeEach(() => {
@@ -147,14 +171,55 @@ describe('BookingPage - the steps', () => {
     expect(screen.queryByRole('link', { name: /Beto/ })).toBeNull();
   });
 
-  it('should_disclose_that_the_next_step_is_not_available_yet_once_complete', async () => {
+  it('should_advance_to_the_date_step_once_the_barber_is_chosen', async () => {
+    // B2 ended here with a disclosure. B3 adds two steps, so the same URL now
+    // renders the date step and the disclosure moves to the end of the flow.
     renders();
 
     render(
       await BookingPage(props({ local: 'loc-centro', servicio: 'svc-corte', barbero: 'bar-ana' }))
     );
 
+    expect(screen.getByRole('heading', { name: COPY.booking.dateHeading })).toBeInTheDocument();
+    expect(screen.queryByText(COPY.booking.continueUnavailable)).not.toBeInTheDocument();
+  });
+
+  it('should_disclose_that_booking_is_not_available_yet_once_a_time_is_chosen', async () => {
+    renders();
+
+    render(
+      await BookingPage(
+        props({
+          local: 'loc-centro',
+          servicio: 'svc-corte',
+          barbero: 'bar-ana',
+          fecha: '2026-08-17',
+          hora: '09:00',
+        })
+      )
+    );
+
     expect(screen.getByText(COPY.booking.continueUnavailable)).toBeInTheDocument();
+  });
+
+  it('should_not_imply_that_the_chosen_time_is_held', async () => {
+    // Nothing is reserved until B4's transaction, and two clients can be on
+    // this screen looking at the same start.
+    renders();
+
+    render(
+      await BookingPage(
+        props({
+          local: 'loc-centro',
+          servicio: 'svc-corte',
+          barbero: 'bar-ana',
+          fecha: '2026-08-17',
+          hora: '09:00',
+        })
+      )
+    );
+
+    expect(screen.getByText(COPY.booking.slotNotHeld)).toBeInTheDocument();
   });
 
   it('should_format_the_price_in_es_AR_with_two_decimals', async () => {
@@ -296,5 +361,146 @@ describe('BookingPage - metadata', () => {
     await generateMetadata(props());
 
     expect(resolveBySlug).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookingPage - the availability read is paid for by the step that needs it', () => {
+  it('should_issue_no_availability_read_on_the_catalogue_steps', async () => {
+    // The whole reason the schedule is resolved after the catalogue rather than
+    // beside it. A client on the branch step must not pay for a query about a
+    // barber they have not chosen.
+    const { slotsFor, workingWeekdays } = renders();
+
+    render(await BookingPage(props({ local: 'loc-centro' })));
+
+    expect(slotsFor).not.toHaveBeenCalled();
+    expect(workingWeekdays).not.toHaveBeenCalled();
+  });
+
+  it('should_issue_only_the_cheap_weekly_read_on_the_date_step', async () => {
+    const { slotsFor, workingWeekdays } = renders();
+
+    render(
+      await BookingPage(props({ local: 'loc-centro', servicio: 'svc-corte', barbero: 'bar-ana' }))
+    );
+
+    expect(workingWeekdays).toHaveBeenCalledTimes(1);
+    expect(slotsFor).not.toHaveBeenCalled();
+  });
+
+  it('should_issue_exactly_one_day_read_on_the_slot_step', async () => {
+    const { slotsFor } = renders();
+
+    render(
+      await BookingPage(
+        props({
+          local: 'loc-centro',
+          servicio: 'svc-corte',
+          barbero: 'bar-ana',
+          fecha: '2026-08-17',
+        })
+      )
+    );
+
+    expect(slotsFor).toHaveBeenCalledTimes(1);
+    expect(slotsFor).toHaveBeenCalledWith({
+      barberId: 'bar-ana',
+      date: { year: 2026, month: 8, day: 17 },
+      durationMinutes: CORTE.durationMinutes,
+    });
+  });
+});
+
+describe('BookingPage - a stale schedule link degrades', () => {
+  it('should_discard_a_past_date_and_keep_every_upstream_selection', async () => {
+    renders();
+
+    render(
+      await BookingPage(
+        props({
+          local: 'loc-centro',
+          servicio: 'svc-corte',
+          barbero: 'bar-ana',
+          fecha: '2020-01-01',
+        })
+      )
+    );
+
+    expect(screen.getByText(COPY.booking.staleDate)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: COPY.booking.dateHeading })).toBeInTheDocument();
+    // The branch and service survive: the client lost one choice, not three.
+    expect(screen.getByText('Centro')).toBeInTheDocument();
+    expect(screen.getByText('Corte')).toBeInTheDocument();
+  });
+
+  it('should_answer_a_taken_time_and_an_absurd_time_identically', async () => {
+    // No oracle. A start another client just booked and a syntactically absurd
+    // one must be indistinguishable to anyone sweeping the parameter.
+    renders();
+    const selection = {
+      local: 'loc-centro',
+      servicio: 'svc-corte',
+      barbero: 'bar-ana',
+      fecha: '2026-08-17',
+    };
+
+    const taken = render(await BookingPage(props({ ...selection, hora: '11:45' })));
+    const takenHtml = taken.container.innerHTML;
+    taken.unmount();
+
+    const absurd = render(await BookingPage(props({ ...selection, hora: '99:99' })));
+
+    expect(absurd.container.innerHTML).toBe(takenHtml);
+  });
+
+  it('should_render_the_empty_state_for_a_day_with_nothing_free', async () => {
+    renders(TWO_BRANCHES, { slots: [] });
+
+    render(
+      await BookingPage(
+        props({
+          local: 'loc-centro',
+          servicio: 'svc-corte',
+          barbero: 'bar-ana',
+          fecha: '2026-08-20',
+        })
+      )
+    );
+
+    expect(screen.getByText(COPY.booking.emptyDay)).toBeInTheDocument();
+  });
+
+  it('should_render_the_horizon_empty_state_for_a_barber_who_works_no_day', async () => {
+    renders(TWO_BRANCHES, { workingWeekdays: new Set() });
+
+    render(
+      await BookingPage(props({ local: 'loc-centro', servicio: 'svc-corte', barbero: 'bar-ana' }))
+    );
+
+    expect(screen.getByText(COPY.booking.emptyHorizon)).toBeInTheDocument();
+  });
+});
+
+describe('BookingPage - unavailable times are absent, not labelled', () => {
+  it('should_render_only_the_offered_starts', async () => {
+    renders();
+
+    const { container } = render(
+      await BookingPage(
+        props({
+          local: 'loc-centro',
+          servicio: 'svc-corte',
+          barbero: 'bar-ana',
+          fecha: '2026-08-17',
+        })
+      )
+    );
+
+    expect(screen.getByText('09:00')).toBeInTheDocument();
+    expect(screen.getByText('09:05')).toBeInTheDocument();
+    // Nothing announces a time as taken, and no disabled control stands in for
+    // one — that would publish the barber's agenda to an anonymous visitor.
+    expect(container.querySelectorAll('[aria-disabled="true"]')).toHaveLength(0);
+    expect(container.innerHTML).not.toMatch(/ocupado|reservado|no disponible/i);
   });
 });
