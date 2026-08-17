@@ -16,6 +16,20 @@ export type PublicProfileResolution =
   | { type: 'notFound' };
 
 /**
+ * The same resolution, plus the owner behind it — for the caller that also has
+ * to decide whether the shop can be booked (B2 design D10).
+ *
+ * A **separate type**, so that `PublicProfileResolution` stays exactly what it
+ * was and nothing that only renders a profile can accidentally receive an owner
+ * id. `ownerId` is a query predicate here and nothing else: it must not reach a
+ * component prop, the serialized payload, or a URL.
+ */
+export type PublicProfileWithOwner =
+  | { type: 'render'; profile: PublicBusinessProfile; ownerId: string }
+  | { type: 'redirect'; canonicalSlug: string }
+  | { type: 'notFound' };
+
+/**
  * Control characters and anything that could break out of a log line. The
  * requested slug is stranger-supplied and ends up in structured logs.
  */
@@ -37,7 +51,37 @@ export class PublicProfileService {
     private readonly logger: ILogger
   ) {}
 
+  /**
+   * What the page renders — the projection, and nothing else.
+   *
+   * A thin projection of `resolveWithOwner`, so there is one implementation of
+   * the slug decision rather than two that can drift. The owner is dropped here
+   * rather than never fetched: it is one more column on a row already being read
+   * by its unique key, and the alternative was a second round trip against the
+   * same row (B2 design D10).
+   */
   async resolveBySlug(requestedSlug: string): Promise<PublicProfileResolution> {
+    const resolution = await this.resolveWithOwner(requestedSlug);
+
+    if (resolution.type !== 'render') return resolution;
+
+    // Rebuilt field by field rather than spread-minus-`ownerId`: a spread would
+    // carry any field added to `PublicProfileWithOwner` later, which is the
+    // shape of mistake B1's projection rule exists to make impossible. A caller
+    // that only renders must not receive an owner id it could hand to a
+    // component by accident.
+    return { type: 'render', profile: resolution.profile };
+  }
+
+  /**
+   * The same resolution, keeping the owner for the caller that has to decide
+   * whether the shop can be booked at all (design D10).
+   *
+   * The value returned here is a **query predicate**. It must not reach a
+   * component prop, the serialized payload or a URL, and the profile page is
+   * expected to pass it straight to the bookability gate and nowhere else.
+   */
+  async resolveWithOwner(requestedSlug: string): Promise<PublicProfileWithOwner> {
     const lookup = decidePublicSlugLookup(requestedSlug);
 
     if (lookup.type === 'reject') {
@@ -52,9 +96,9 @@ export class PublicProfileService {
       return { type: 'notFound' };
     }
 
-    const profile = await this.profiles.findByPublicSlug(lookup.slug);
+    const found = await this.profiles.findWithOwnerByPublicSlug(lookup.slug);
 
-    if (profile === null) {
+    if (found === null) {
       // The T33 signal. This log is the only inventory that will exist of links
       // that stopped resolving after an owner changed their slug — and the only
       // way to tell that apart from someone enumerating slugs, which is why the
@@ -71,6 +115,6 @@ export class PublicProfileService {
       return { type: 'redirect', canonicalSlug: lookup.slug };
     }
 
-    return { type: 'render', profile };
+    return { type: 'render', profile: found.profile, ownerId: found.ownerId };
   }
 }

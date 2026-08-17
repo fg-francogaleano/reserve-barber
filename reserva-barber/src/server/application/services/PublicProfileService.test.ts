@@ -18,12 +18,24 @@ function createLogger(): ILogger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
+/**
+ * The repository fake takes the *profile* the read resolves to, and wraps it in
+ * the `{ profile, ownerId }` envelope B2 widened this read into. Tests keep
+ * talking about profiles; only the plumbing changed.
+ */
 function createService(findByPublicSlug: ReturnType<typeof vi.fn>) {
   const logger = createLogger();
+  const findWithOwnerByPublicSlug = vi.fn(async (slug: string) => {
+    const profile = (await (findByPublicSlug as (s: string) => Promise<unknown>)(
+      slug
+    )) as PublicBusinessProfile | null;
+    return profile === null ? null : { profile, ownerId: 'owner-1' };
+  });
   const profiles = {
     findByOwner: vi.fn(),
     save: vi.fn(),
-    findByPublicSlug,
+    findOwnerIdByPublicSlug: vi.fn(),
+    findWithOwnerByPublicSlug,
   } as unknown as IBusinessProfileRepository;
 
   return { service: new PublicProfileService(profiles, logger), logger, findByPublicSlug };

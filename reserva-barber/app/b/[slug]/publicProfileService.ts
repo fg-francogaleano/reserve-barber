@@ -1,6 +1,8 @@
 import 'server-only';
 import { PublicProfileService } from '@/server/application/services/PublicProfileService';
+import { PublicBookingCatalogService } from '@/server/application/services/PublicBookingCatalogService';
 import { PrismaBusinessProfileRepository } from '@/server/infrastructure/prisma/PrismaBusinessProfileRepository';
+import { PrismaPublicCatalogRepository } from '@/server/infrastructure/prisma/PrismaPublicCatalogRepository';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
 import { logger } from '@/server/infrastructure/logger';
 
@@ -20,4 +22,30 @@ import { logger } from '@/server/infrastructure/logger';
  */
 export function publicProfileService(): PublicProfileService {
   return new PublicProfileService(new PrismaBusinessProfileRepository(getPrismaClient()), logger);
+}
+
+/**
+ * The bookability gate for the "Reservar" control (B2 design D10).
+ *
+ * Composed here rather than inside `PublicProfileService` because the two answer
+ * different questions about different aggregates, and merging them would give
+ * the profile service a catalogue repository it has no other use for.
+ *
+ * **It reads the same catalogue the booking route reads**, not a cheaper count.
+ * The page and the route must agree about what "bookable" means, and two
+ * queries answering that separately are two definitions waiting to disagree.
+ *
+ * The absences from `publicProfileService` above apply here unchanged: no
+ * Supabase client, no cipher, and no `PaymentConfig` repository. This gate
+ * answers *is there anything to book* — whether a deposit can be charged is
+ * B4's question.
+ */
+export function bookingGate(): PublicBookingCatalogService {
+  const db = getPrismaClient();
+
+  return new PublicBookingCatalogService(
+    new PrismaBusinessProfileRepository(db),
+    new PrismaPublicCatalogRepository(db),
+    logger
+  );
 }

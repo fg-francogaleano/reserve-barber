@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { COPY } from '@/lib/copy';
 import { SocialLink, type PublicBusinessProfile } from '@/server/domain/models/BusinessProfile';
-import type { PublicProfileResolution } from '@/server/application/services/PublicProfileService';
+import type { PublicProfileWithOwner } from '@/server/application/services/PublicProfileService';
 
-const resolveBySlug = vi.fn(async (): Promise<PublicProfileResolution> => ({ type: 'notFound' }));
+const resolveWithOwner = vi.fn(async (): Promise<PublicProfileWithOwner> => ({ type: 'notFound' }));
+const isBookable = vi.fn(async (): Promise<boolean> => true);
 const notFound = vi.fn(() => {
   throw new Error('NEXT_NOT_FOUND');
 });
@@ -17,7 +18,8 @@ vi.mock('next/navigation', () => ({
   permanentRedirect: (to: string) => permanentRedirect(to),
 }));
 vi.mock('./publicProfileService', () => ({
-  publicProfileService: () => ({ resolveBySlug }),
+  publicProfileService: () => ({ resolveWithOwner }),
+  bookingGate: () => ({ isBookable }),
 }));
 
 const { default: PublicProfilePage, generateMetadata } = await import('./page');
@@ -39,7 +41,7 @@ function params(slug = 'barberia-don-juan') {
 }
 
 function renders(p: PublicBusinessProfile = profile()) {
-  resolveBySlug.mockResolvedValue({ type: 'render', profile: p });
+  resolveWithOwner.mockResolvedValue({ type: 'render', profile: p, ownerId: 'owner-1' });
 }
 
 beforeEach(() => {
@@ -89,25 +91,43 @@ describe('PublicProfilePage - a published profile', () => {
 });
 
 describe('PublicProfilePage - the booking call to action', () => {
-  it('should_render_it_as_present_but_not_actionable', async () => {
+  it('should_link_to_the_booking_route_when_the_shop_has_something_bookable', async () => {
     renders();
+    isBookable.mockResolvedValue(true);
 
     render(await PublicProfilePage(params()));
 
-    const control = screen.getByRole('button', { name: COPY.publicProfile.book });
-    expect(control).toBeDisabled();
+    expect(screen.getByRole('link', { name: COPY.publicProfile.book })).toHaveAttribute(
+      'href',
+      '/b/barberia-don-juan/reservar'
+    );
   });
 
-  it('should_explain_why_it_is_unavailable', async () => {
+  it('should_not_disclose_unavailability_when_the_shop_is_bookable', async () => {
     renders();
+    isBookable.mockResolvedValue(true);
 
     render(await PublicProfilePage(params()));
 
+    expect(screen.queryByText(COPY.publicProfile.bookUnavailable)).toBeNull();
+  });
+
+  it('should_keep_the_disabled_control_when_nothing_is_bookable', async () => {
+    // B1's treatment survives verbatim — it is simply no longer the ordinary
+    // case. Sending a client into a three-step flow that ends in an empty state
+    // is a worse answer than saying so on the page they already opened.
+    renders();
+    isBookable.mockResolvedValue(false);
+
+    render(await PublicProfilePage(params()));
+
+    expect(screen.getByRole('button', { name: COPY.publicProfile.book })).toBeDisabled();
     expect(screen.getByText(COPY.publicProfile.bookUnavailable)).toBeInTheDocument();
   });
 
-  it('should_not_link_to_a_booking_route_that_does_not_exist_yet', async () => {
+  it('should_not_link_to_the_booking_route_when_nothing_is_bookable', async () => {
     renders();
+    isBookable.mockResolvedValue(false);
 
     const { container } = render(await PublicProfilePage(params()));
 
@@ -115,14 +135,38 @@ describe('PublicProfilePage - the booking call to action', () => {
     expect(hrefs.some((href) => href?.includes('/reservar'))).toBe(false);
   });
 
-  it('should_render_identically_for_a_business_with_nothing_bookable', async () => {
-    // The gate belongs to B2, and this page must never read PaymentConfig to
-    // find out — that row holds the encrypted Mercado Pago token (design D11).
+  it('should_gate_on_the_catalog_and_never_on_the_payment_row', async () => {
+    // The gate is derived from the catalogue, and this page must never read
+    // PaymentConfig to answer it — that row holds the encrypted Mercado Pago
+    // access token (B1 design D11, B2 design D11).
     renders();
 
     render(await PublicProfilePage(params()));
 
-    expect(screen.getByRole('button', { name: COPY.publicProfile.book })).toBeInTheDocument();
+    expect(isBookable).toHaveBeenCalledExactlyOnceWith('owner-1');
+  });
+
+  it('should_fall_closed_when_the_gate_cannot_be_answered', async () => {
+    // The shop's brand, bio and links are what this page exists for. A gate
+    // failure degrades the button; it must not take down the page.
+    renders();
+    isBookable.mockRejectedValue(new Error('connection lost'));
+
+    render(await PublicProfilePage(params()));
+
+    expect(screen.getByRole('heading', { name: 'Barbería Don Juan' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: COPY.publicProfile.book })).toBeDisabled();
+  });
+
+  it('should_never_put_the_owner_id_in_the_rendered_output', async () => {
+    // The owner is a query predicate for the gate. B1 kept it out of the
+    // projection structurally; B2 brings it into the page's scope, so its
+    // absence from the output has to be asserted rather than assumed.
+    renders();
+
+    const { container } = render(await PublicProfilePage(params()));
+
+    expect(container.innerHTML).not.toContain('owner-1');
   });
 });
 
@@ -173,14 +217,14 @@ describe('PublicProfilePage - a profile carrying only a name', () => {
 
 describe('PublicProfilePage - slugs that do not render', () => {
   it('should_call_notFound_when_the_slug_does_not_resolve', async () => {
-    resolveBySlug.mockResolvedValue({ type: 'notFound' });
+    resolveWithOwner.mockResolvedValue({ type: 'notFound' });
 
     await expect(PublicProfilePage(params('ya-no-existe'))).rejects.toThrow('NEXT_NOT_FOUND');
     expect(notFound).toHaveBeenCalledOnce();
   });
 
   it('should_redirect_a_non_canonical_spelling_to_the_canonical_url', async () => {
-    resolveBySlug.mockResolvedValue({ type: 'redirect', canonicalSlug: 'barberia-don-juan' });
+    resolveWithOwner.mockResolvedValue({ type: 'redirect', canonicalSlug: 'barberia-don-juan' });
 
     await expect(PublicProfilePage(params('BARBERIA-DON-JUAN'))).rejects.toThrow(
       'NEXT_REDIRECT:/b/barberia-don-juan'
@@ -279,7 +323,7 @@ describe('generateMetadata', () => {
   it('should_return_noindex_rather_than_throwing_for_an_unknown_slug', async () => {
     // Metadata runs before the page. Throwing here turns a mistyped slug into a
     // 500 instead of a 404.
-    resolveBySlug.mockResolvedValue({ type: 'notFound' });
+    resolveWithOwner.mockResolvedValue({ type: 'notFound' });
 
     await expect(generateMetadata(params('ya-no-existe'))).resolves.toEqual({
       robots: { index: false, follow: false },
@@ -287,7 +331,7 @@ describe('generateMetadata', () => {
   });
 
   it('should_return_empty_metadata_rather_than_throwing_when_the_read_fails', async () => {
-    resolveBySlug.mockRejectedValue(new Error('connection lost'));
+    resolveWithOwner.mockRejectedValue(new Error('connection lost'));
 
     await expect(generateMetadata(params())).resolves.toEqual({});
   });

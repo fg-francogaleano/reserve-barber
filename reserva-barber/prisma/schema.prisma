@@ -6,6 +6,11 @@ generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
   runtime  = "workerd"
+  // Prisma ships two builds of the wasm query compiler and defaults to "fast"
+  // for every runtime except `vercel-edge`. On workerd that default does not
+  // fit: "fast" is 3591 KiB and "small" is 1809 KiB, against a Worker script
+  // limit of 3 MiB that the rest of the bundle already fills most of.
+  compilerBuild = "small"
 }
 
 // CLI-only client (seed, provisioning scripts). The `workerd` target above
