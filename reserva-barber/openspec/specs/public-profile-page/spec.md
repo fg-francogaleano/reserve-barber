@@ -19,11 +19,13 @@ The authenticated case is called out because the guard already branches on `hasS
 - **THEN** the client-facing page renders, without dashboard navigation and without a redirect
 
 ### Requirement: The profile is resolved by slug through a read that carries no owner
-The public read SHALL resolve a profile by `publicSlug` alone. It SHALL be the only method on `IBusinessProfileRepository` that is not owner-scoped, and the contract's documentation SHALL name it as a deliberate exception with its reason: on the public page the slug *is* the key, because no session exists to scope by.
+The public read SHALL resolve a profile by `publicSlug` alone. It SHALL be one of exactly **two** methods on `IBusinessProfileRepository` that are not owner-scoped, and the contract's documentation SHALL name both as deliberate exceptions with their reasons: on the public surface the slug *is* the key, because no session exists to scope by.
 
 The read SHALL return a narrow projection — business name, bio, image URLs, slug and ordered social links — built with an explicit `select`. It SHALL NOT return the persisted row, and no internal identifier or timestamp SHALL reach the rendered page.
 
 That the domain model happens not to carry `ownerId` today is not the protection. It carries `id`, and the next field added to it would ship to every anonymous visitor with nothing to catch it. The projection makes structural what is currently a coincidence.
+
+**The read also yields the owner id, in a field beside the projection and never inside it.** B2's bookability gate needs the owner, and resolving it through a second method would read the same row twice by the same unique key — on the busiest public page in the product, which has neither a cache nor a rate limit. Widening the projection to carry it was rejected outright: that would undo the guarantee above for every caller. The application layer SHALL strip the owner before returning a resolution to any caller that only renders, and the owner SHALL be used as a query predicate only.
 
 #### Scenario: The rendered page carries no internal identifiers
 - **WHEN** an anonymous client requests a stored slug
@@ -36,6 +38,14 @@ That the domain model happens not to carry `ownerId` today is not the protection
 #### Scenario: Social links arrive in the owner's order
 - **WHEN** a profile with several social links is read
 - **THEN** they are returned ordered by `orderIndex`, in the same single query as the profile
+
+#### Scenario: The owner travels beside the projection, never inside it
+- **WHEN** the read resolves a stored slug
+- **THEN** the projection carries no owner identifier and the owner is returned as a separate field
+
+#### Scenario: A render-only caller never receives the owner
+- **WHEN** the profile is resolved for rendering alone
+- **THEN** the resolution carries no owner identifier
 
 ### Requirement: The route parameter is percent-decoded before it is normalized
 The requested slug SHALL be percent-decoded before `slugify` is applied. A malformed percent sequence SHALL resolve to not-found rather than raising. The path-separator, null-byte and traversal checks SHALL run **after** decoding.
@@ -69,7 +79,11 @@ Canonicality SHALL be judged against the value **as it arrived**, not against th
 - **THEN** the response redirects to the canonical URL rather than serving the profile at a second address
 
 ### Requirement: Slug matching is canonical, and other spellings redirect to the canonical URL
-`publicSlug` is stored already normalized, so lookup SHALL first attempt an exact match. When no exact match exists, the requested value SHALL be normalized by the same `slugify` used at write time; if the normalized form differs from what was requested and matches a stored slug, the response SHALL be a **308** redirect to `/b/{canonical}`. Otherwise the request SHALL produce a not-found response.
+`publicSlug` is stored already normalized, so lookup SHALL first attempt an exact match. When no exact match exists, the requested value SHALL be normalized by the same `slugify` used at write time; if the normalized form differs from what was requested and matches a stored slug, the response SHALL be a **308** redirect to the canonical URL. Otherwise the request SHALL produce a not-found response.
+
+**Canonicalization applies to the whole namespace below the slug, not only to the profile page.** A non-canonical spelling of any path under `/b/{slug}` SHALL redirect to the same path under the canonical slug, **preserving the query string unchanged**. B1 shipped this for `/b/{slug}` alone, at a time when nothing existed below it; `/b/{SLUG}/reservar` answered at every spelling, which is a second address for the one page that leads to a payment.
+
+Preserving the query string is not cosmetic once a path below the slug carries state: dropping it would discard a client's selection during a redirect they never asked for, and the page would appear to lose their input.
 
 One address, not several. A shop whose page answers at more than one URL splits its link previews, its analytics and — if the page is indexed — its search results. This is the same rule P1 applied to the editor field, which shows the value that was persisted rather than the text the owner typed, moved up to the URL.
 
@@ -84,6 +98,14 @@ One address, not several. A shop whose page answers at more than one URL splits 
 #### Scenario: A value that normalizes to nothing stored
 - **WHEN** the requested value matches no stored slug in either its raw or its normalized form
 - **THEN** the request produces a not-found response rather than a redirect loop
+
+#### Scenario: A non-canonical spelling on a path below the slug
+- **WHEN** `/b/BARBERIA-DON-JUAN/reservar` is requested and `barberia-don-juan` is stored
+- **THEN** the response is a 308 redirect to `/b/barberia-don-juan/reservar`
+
+#### Scenario: A redirect carrying a selection
+- **WHEN** a non-canonical spelling is requested with a query string
+- **THEN** every parameter and value survives the redirect unchanged
 
 ### Requirement: An unknown slug is a real 404 that discloses nothing
 An unresolvable slug SHALL produce HTTP status 404 with a Spanish not-found page carrying no dashboard navigation and no link to `/login`. The copy SHALL NOT distinguish "this slug never existed" from "the owner changed their slug", because the system cannot distinguish them either.
@@ -150,21 +172,6 @@ P1 validates the protocol on the way in, and this page is what that control was 
 #### Scenario: A rendered social link
 - **WHEN** a valid social link renders
 - **THEN** it opens in a new tab and carries `rel="noopener noreferrer"`
-
-### Requirement: The booking call to action is present, primary and deliberately inert
-The page SHALL render a single primary **"Reservar"** control. Because `/b/{slug}/reservar` does not exist until B2, the control SHALL be non-actionable and SHALL disclose in Spanish that booking is not available yet. It SHALL NOT link to a route that does not exist.
-
-This mirrors exactly how P1 disclosed a shareable link that did not yet resolve — the same problem one story earlier, answered the same way. A control that navigates to a 404 sends a real client to a dead end.
-
-**The control's presence SHALL NOT depend on whether the business is actually bookable, and this page SHALL NOT read `PaymentConfig`.** That row holds the encrypted Mercado Pago access token; a page anonymous visitors open has no reason to touch it, and PC3 already established that a surface which does not need a cipher must not construct one. The bookability gate belongs to B2.
-
-#### Scenario: The call to action on a live profile
-- **WHEN** any published profile renders
-- **THEN** a single primary "Reservar" control is present, visibly deliberate in its unavailable state, with Spanish copy explaining it
-
-#### Scenario: A business with nothing bookable
-- **WHEN** the owner has no location, no barber, no assigned service or no deposit policy
-- **THEN** the page renders identically, and no read of `PaymentConfig` occurs
 
 ### Requirement: Absolute metadata is emitted only from a configured origin
 Link-preview metadata SHALL be built from `APP_ORIGIN`. When that value is absent or unusable, the page SHALL still render and every absolute value — `metadataBase`, the canonical URL and the OpenGraph tags — SHALL be **omitted**. The request's `Host` header SHALL NOT be used as a fallback on this route.
