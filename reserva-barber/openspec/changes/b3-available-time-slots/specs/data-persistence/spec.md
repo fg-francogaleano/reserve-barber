@@ -53,6 +53,33 @@ The table is created here and written by none of this change. Creating it in one
 - **WHEN** the change is reviewed
 - **THEN** no route, action or repository method in it inserts, updates or deletes a booking row
 
+### Requirement: A provisional hold cannot exist without its expiry
+The database SHALL refuse a `Booking` row whose status is `PENDING_PAYMENT` and whose `holdExpiresAt` is null.
+
+Availability treats a `PENDING_PAYMENT` booking as blocking when `holdExpiresAt` is null, deliberately: reading an absent deadline as "expired long ago" would release a slot the instant a write set the status without it. That decision is only safe if the combination cannot occur — otherwise it is a **permanent silent lock**, since the sweep job (B7) selects on `holdExpiresAt < now`, which is false for null, and no surface in the product would explain to the owner why the slot never came back.
+
+The guarantee SHALL be a database constraint rather than an application rule. The application that would enforce it does not exist yet — B4 writes the row — so a rule expressed anywhere else is a rule the story that needs it has not read.
+
+The constraint SHALL be expressed in raw SQL in a migration, because Prisma's schema language cannot declare it, and its existence SHALL be recorded in `prisma/schema.prisma` so that a future reader does not assume the schema file is the whole truth.
+
+`PENDING_APPROVAL` is deliberately **not** covered: a receipt has been uploaded and a human owes an answer, so that state blocks regardless of any deadline and needs none.
+
+#### Scenario: A hold without a deadline is refused
+- **WHEN** a booking is written with status `PENDING_PAYMENT` and no `holdExpiresAt`
+- **THEN** the database rejects it
+
+#### Scenario: A hold with a deadline is accepted
+- **WHEN** a booking is written with status `PENDING_PAYMENT` and a `holdExpiresAt`
+- **THEN** it is stored
+
+#### Scenario: The other statuses need no deadline
+- **WHEN** a booking is written as `CONFIRMED`, `PENDING_APPROVAL`, `CANCELLED` or `EXPIRED` with no `holdExpiresAt`
+- **THEN** it is stored
+
+#### Scenario: The constraint is discoverable from the schema file
+- **WHEN** `prisma/schema.prisma` is read
+- **THEN** the constraint is named there with the reason it cannot be declared in the schema language
+
 ### Requirement: An appointment instant survives storage without drifting
 Writing an appointment instant and reading it back SHALL return the same instant, confirmed against the real database rather than assumed.
 

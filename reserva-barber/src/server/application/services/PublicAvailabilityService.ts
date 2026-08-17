@@ -17,10 +17,16 @@ import type { Weekday } from '@/server/domain/models/weekday';
 /**
  * Raised when the runtime cannot tell the business's time from UTC.
  *
- * A runtime without timezone data does not throw — it silently reports UTC,
- * which would shift every offered time by three hours with nothing anywhere to
- * notice. Failing loudly is the only safe answer, and it happens before any
- * query rather than after a page of wrong times has been computed.
+ * **The route asserts this at its composition root**, before any repository is
+ * built — that is where the spec puts it, and it is the only place early enough
+ * that no wrong time can be computed. This check is the service's own invariant:
+ * it makes the class safe for any future caller that did not come through that
+ * root, without which the guarantee would be a property of one call site rather
+ * than of the rule.
+ *
+ * Two calls to `hasTimezoneSupport()` per request is a formatted date each. The
+ * duplication is in the assertion, not in the definition of what "supported"
+ * means, which lives in `businessTime`.
  */
 export class TimezoneUnavailableError extends Error {
   constructor() {

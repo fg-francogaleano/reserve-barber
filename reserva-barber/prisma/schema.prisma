@@ -470,5 +470,25 @@ model Booking {
   // range for this barber" read, and B4's transactional no-overlap check. A
   // partial index on the blocking statuses was considered and rejected as
   // premature — it would optimize a predicate B7 may still refine.
+  //
+  // The read also needs a LOWER bound on startTime to use this index at both
+  // ends. Measured with EXPLAIN: with only `startTime < rangeEnd`, `endTime`
+  // lands in Filter and the scan walks every earlier row of that barber. The
+  // repository bounds it by MAX_DURATION_MINUTES, which is safe only while that
+  // cap is enforced on write — raise the cap and the read must widen with it.
   @@index([barberId, startTime])
+
+  // THIS TABLE ALSO CARRIES A CHECK CONSTRAINT THAT PRISMA CANNOT DECLARE:
+  //
+  //   Booking_pending_payment_requires_hold_expiry
+  //     CHECK (status <> 'PENDING_PAYMENT' OR "holdExpiresAt" IS NOT NULL)
+  //
+  // Added in migration 20260817104600_booking_hold_requires_expiry. Availability
+  // treats a null holdExpiresAt on a PENDING_PAYMENT row as blocking, and B7
+  // sweeps on `holdExpiresAt < now` — which is false for null — so without the
+  // constraint that combination is a permanent silent lock on the slot.
+  //
+  // `prisma db push` and any schema-only reasoning will not see it. It lives in
+  // the migration; this comment exists so the schema file is not mistaken for
+  // the whole truth.
 }

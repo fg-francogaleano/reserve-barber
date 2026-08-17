@@ -504,3 +504,81 @@ describe('BookingPage - unavailable times are absent, not labelled', () => {
     expect(container.innerHTML).not.toMatch(/ocupado|reservado|no disponible/i);
   });
 });
+
+describe('BookingPage - a failed availability read fails closed', () => {
+  const SELECTION = {
+    local: 'loc-centro',
+    servicio: 'svc-corte',
+    barbero: 'bar-ana',
+  };
+
+  it('should_propagate_a_failed_day_read_instead_of_rendering_an_empty_slot_list', async () => {
+    // The whole point of failing closed. Rendering "no hay turnos" here would
+    // tell a client the barber is booked solid when the truth is that nobody
+    // asked the database — and rendering slots from a partial result would sell
+    // an appointment that is already taken. Propagating hands it to the
+    // client-toned boundary this namespace already has.
+    const { slotsFor } = renders();
+    slotsFor.mockRejectedValue(new Error('connection lost'));
+
+    await expect(
+      BookingPage(props({ ...SELECTION, fecha: '2026-08-17' }))
+    ).rejects.toThrow('connection lost');
+  });
+
+  it('should_propagate_a_failed_weekly_read_on_the_date_step', async () => {
+    const { workingWeekdays } = renders();
+    workingWeekdays.mockRejectedValue(new Error('connection lost'));
+
+    await expect(BookingPage(props(SELECTION))).rejects.toThrow('connection lost');
+  });
+
+  it('should_not_render_a_slot_list_from_a_failed_read', async () => {
+    const { slotsFor } = renders();
+    slotsFor.mockRejectedValue(new Error('connection lost'));
+
+    let markup = '';
+    try {
+      const { container } = render(await BookingPage(props({ ...SELECTION, fecha: '2026-08-17' })));
+      markup = container.innerHTML;
+    } catch {
+      // Expected: the read failed, so there is nothing to render.
+    }
+
+    expect(markup).toBe('');
+    expect(markup).not.toContain('09:00');
+    expect(markup).not.toContain(COPY.booking.emptyDay);
+  });
+
+  it('should_carry_no_internal_detail_when_the_read_fails', async () => {
+    // The boundary renders generic copy and never the message, but the message
+    // is what would reach a log or a digest — so it must not be dressed up with
+    // schema detail on the way out either.
+    const { slotsFor } = renders();
+    slotsFor.mockRejectedValue(
+      new Error('relation "Booking" does not exist: SELECT "startTime" FROM "Booking"')
+    );
+
+    const failure = await BookingPage(props({ ...SELECTION, fecha: '2026-08-17' })).catch(
+      (error: unknown) => error
+    );
+
+    // The page adds nothing of its own: what propagates is exactly what the
+    // driver raised, so no response body is ever built from it.
+    expect(failure).toBeInstanceOf(Error);
+    const rendered = (failure as Error).stack ?? '';
+    expect(rendered).not.toMatch(/DATABASE_URL|postgres:\/\/|PAYMENT_CREDENTIALS_KEY/);
+  });
+
+  it('should_still_answer_the_catalogue_steps_when_availability_is_broken', async () => {
+    // A failure of the availability read must not take down the steps that do
+    // not need it — those issue no availability query at all.
+    const { slotsFor, workingWeekdays } = renders();
+    slotsFor.mockRejectedValue(new Error('connection lost'));
+    workingWeekdays.mockRejectedValue(new Error('connection lost'));
+
+    render(await BookingPage(props({ local: 'loc-centro' })));
+
+    expect(screen.getByRole('heading', { name: COPY.booking.serviceHeading })).toBeInTheDocument();
+  });
+});

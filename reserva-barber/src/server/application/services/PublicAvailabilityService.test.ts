@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
-import { PublicAvailabilityService } from './PublicAvailabilityService';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { PublicAvailabilityService, TimezoneUnavailableError } from './PublicAvailabilityService';
+import * as businessTime from '@/server/domain/models/businessTime';
 import { formatSlotTime, type LocalDate } from '@/server/domain/models/bookingCalendar';
 import type { IBarberAvailabilityRepository } from '@/server/domain/repositories/IBarberAvailabilityRepository';
 import type { IWorkingHoursRepository } from '@/server/domain/repositories/IWorkingHoursRepository';
@@ -13,6 +14,11 @@ const DATE: LocalDate = { year: 2026, month: 8, day: 17 };
 const NOW = new Date('2026-08-15T12:00:00.000Z');
 
 const NINE_TO_SIX = [{ startMinute: 9 * 60, endMinute: 18 * 60 }];
+
+// The timezone probe is spied on in the last block. Restoring it matters: a
+// leaked `false` would make every other test in this file fail for the wrong
+// reason.
+afterEach(() => vi.restoreAllMocks());
 
 function createService(inputs: Partial<DayAvailabilityInputs>, now: Date = NOW) {
   const findDayInputs = vi.fn().mockResolvedValue({
@@ -197,5 +203,45 @@ describe('PublicAvailabilityService - the date step read', () => {
     await service.workingWeekdays(BARBER, OWNER);
 
     expect(findDayInputs).not.toHaveBeenCalled();
+  });
+});
+
+describe('PublicAvailabilityService - a runtime that cannot place an instant', () => {
+  // The failure this guards against is silent: a runtime without timezone data
+  // does not throw, it reports UTC. Every offered time would be three hours off
+  // and every one of them would look plausible.
+  it('should_refuse_to_compute_slots_rather_than_answer_in_utc', async () => {
+    vi.spyOn(businessTime, 'hasTimezoneSupport').mockReturnValue(false);
+    const { service } = createService({ windows: NINE_TO_SIX });
+
+    await expect(
+      service.slotsFor({ barberId: BARBER, ownerId: OWNER, date: DATE, durationMinutes: 30 })
+    ).rejects.toBeInstanceOf(TimezoneUnavailableError);
+  });
+
+  it('should_refuse_before_issuing_the_availability_read', async () => {
+    vi.spyOn(businessTime, 'hasTimezoneSupport').mockReturnValue(false);
+    const { service, findDayInputs } = createService({ windows: NINE_TO_SIX });
+
+    await service
+      .slotsFor({ barberId: BARBER, ownerId: OWNER, date: DATE, durationMinutes: 30 })
+      .catch(() => undefined);
+
+    expect(findDayInputs).not.toHaveBeenCalled();
+  });
+
+  it('should_refuse_to_name_today', () => {
+    vi.spyOn(businessTime, 'hasTimezoneSupport').mockReturnValue(false);
+    const { service } = createService({});
+
+    expect(() => service.today()).toThrow(TimezoneUnavailableError);
+  });
+
+  it('should_carry_no_internal_detail_in_the_message', () => {
+    // It reaches a log and a digest, never a client — but it should not be
+    // dressed up with anything on the way there either.
+    expect(new TimezoneUnavailableError().message).not.toMatch(
+      /DATABASE_URL|postgres|America\/|-180/
+    );
   });
 });
