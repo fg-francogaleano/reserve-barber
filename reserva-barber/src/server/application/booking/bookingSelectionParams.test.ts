@@ -3,6 +3,7 @@ import {
   resolveBookingSelection,
   withImpliedBranch,
   hasBranchChoice,
+  bookingStepHref,
 } from './bookingSelectionParams';
 import {
   buildBookingCatalog,
@@ -75,16 +76,63 @@ describe('resolveBookingSelection - which step and what survives', () => {
     expect(result.selection.service!.service.id).toBe('svc-corte');
   });
 
-  it('should_report_the_selection_complete_when_all_three_resolve', () => {
+  it('should_advance_to_the_date_step_when_all_three_catalogue_selections_resolve', () => {
+    // B2 reported `complete` here. B3 adds two steps after the barber, so three
+    // catalogue selections no longer finish the flow — they finish the part of
+    // it that a catalogue can answer.
     const result = resolveBookingSelection(CATALOG, {
       local: 'loc-centro',
       servicio: 'svc-corte',
       barbero: 'bar-ana',
     });
 
-    expect(result.step).toBe('complete');
+    expect(result.step).toBe('date');
     expect(result.selection.barber!.id).toBe('bar-ana');
     expect(result.discarded).toEqual([]);
+  });
+});
+
+describe('bookingStepHref - the schedule keys are nested like the rest', () => {
+  it('should_carry_a_date_and_a_time_when_everything_above_them_is_present', () => {
+    const href = bookingStepHref('don-juan', {
+      locationId: 'loc-centro',
+      serviceId: 'svc-corte',
+      barberId: 'bar-ana',
+      date: '2026-08-17',
+      time: '09:05',
+    });
+
+    expect(href).toBe(
+      '/b/don-juan/reservar?local=loc-centro&servicio=svc-corte&barbero=bar-ana&fecha=2026-08-17&hora=09%3A05'
+    );
+  });
+
+  it('should_drop_the_date_and_time_when_the_barber_is_being_changed', () => {
+    // The "change barber" control passes no barberId. A link that still named a
+    // date would be a selection made for a barber the client just abandoned.
+    const href = bookingStepHref('don-juan', {
+      locationId: 'loc-centro',
+      serviceId: 'svc-corte',
+      date: '2026-08-17',
+      time: '09:05',
+    });
+
+    expect(href).toBe('/b/don-juan/reservar?local=loc-centro&servicio=svc-corte');
+  });
+
+  it('should_drop_the_time_when_the_date_is_being_changed', () => {
+    const href = bookingStepHref('don-juan', {
+      locationId: 'loc-centro',
+      serviceId: 'svc-corte',
+      barberId: 'bar-ana',
+      time: '09:05',
+    });
+
+    expect(href).toBe('/b/don-juan/reservar?local=loc-centro&servicio=svc-corte&barbero=bar-ana');
+  });
+
+  it('should_drop_everything_downstream_when_the_branch_is_being_changed', () => {
+    expect(bookingStepHref('don-juan', {})).toBe('/b/don-juan/reservar');
   });
 });
 

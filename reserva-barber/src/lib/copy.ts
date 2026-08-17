@@ -14,7 +14,8 @@ export const COPY = {
     empty: 'Todavía no hay sucursales cargadas.',
     manageHeading: 'Sucursales',
     nav: 'Sucursales',
-    emptyManage: 'Todavía no cargaste ninguna sucursal. Creá la primera para empezar a recibir reservas.',
+    emptyManage:
+      'Todavía no cargaste ninguna sucursal. Creá la primera para empezar a recibir reservas.',
     create: 'Nueva sucursal',
     edit: 'Editar',
     editLabel: (name: string) => `Editar ${name}`,
@@ -80,8 +81,7 @@ export const COPY = {
     // Never colour alone: the marker carries its own text and is announced as
     // part of the service's description.
     notBookableBadge: 'No reservable',
-    notBookableHint:
-      'Asignale al menos un barbero activo para que se pueda reservar.',
+    notBookableHint: 'Asignale al menos un barbero activo para que se pueda reservar.',
     form: {
       createHeading: 'Nuevo servicio',
       editHeading: 'Editar servicio',
@@ -110,7 +110,8 @@ export const COPY = {
       durationOutOfRange: 'La duración tiene que estar entre 5 y 480 minutos.',
       durationNotMultiple: 'La duración tiene que ser múltiplo de 5 minutos.',
       duplicateName: 'Ya tenés un servicio con ese nombre.',
-      limitReached: 'Llegaste al máximo de servicios activos. Editá uno existente en lugar de crear otro.',
+      limitReached:
+        'Llegaste al máximo de servicios activos. Editá uno existente en lugar de crear otro.',
       // A timed-out write may still have been committed, so a blind retry would
       // meet the duplicate error and report a success as a failure.
       infrastructureError:
@@ -253,7 +254,8 @@ export const COPY = {
     imageReselect: 'Volvé a elegir la imagen y guardá de nuevo.',
 
     slugLabel: 'Dirección de tu link',
-    slugHint: 'Solo minúsculas, números y guiones. Se arma sola a partir del nombre, pero podés cambiarla.',
+    slugHint:
+      'Solo minúsculas, números y guiones. Se arma sola a partir del nombre, pero podés cambiarla.',
     slugRequired: 'Ingresá la dirección de tu link.',
     slugTooShort: 'La dirección tiene que tener al menos 3 caracteres.',
     // Shows the normalized value: the owner may have typed "Barbería Don Juan"
@@ -335,7 +337,8 @@ export const COPY = {
     // Says nothing about which of the two happened, because the system cannot
     // tell either: the slug may never have existed, or the owner may have
     // changed it and stranded this link (T33).
-    notFoundBody: 'El link puede estar mal escrito o haber cambiado. Pedile el link actualizado a la barbería.',
+    notFoundBody:
+      'El link puede estar mal escrito o haber cambiado. Pedile el link actualizado a la barbería.',
     errorHeading: 'No pudimos cargar la página',
     errorBody: 'Puede ser un problema momentáneo. Probá de nuevo en un rato.',
     retry: 'Reintentar',
@@ -352,6 +355,8 @@ export const COPY = {
       location: 'Sucursal',
       service: 'Servicio',
       barber: 'Barbero',
+      date: 'Día',
+      slot: 'Horario',
     },
     stepPosition: (current: number, total: number) => `Paso ${current} de ${total}`,
     locationHeading: '¿En qué sucursal?',
@@ -380,11 +385,41 @@ export const COPY = {
     staleLocation: 'La sucursal que habías elegido ya no está disponible. Elegí otra.',
     staleService: 'El servicio que habías elegido ya no está disponible en esta sucursal.',
     staleBarber: 'El barbero que habías elegido ya no está disponible. Elegí otro.',
-    // B3 turns the completed selection into a date and a time. Until it ships,
-    // the flow says so rather than ending on a control that goes nowhere — the
-    // same disclosure P1 made for a link that did not resolve and B1 made for
-    // this very button.
-    continueUnavailable: 'La elección de día y horario se habilita muy pronto.',
+    // A link shared on WhatsApp outlives the calendar faster than it outlives
+    // the catalogue: a date that was bookable last week is in the past today.
+    // Neither notice says why — "ya pasó", "está fuera de rango" and "no existe"
+    // are one thing to the client, who simply needs to pick again.
+    staleDate: 'El día que habías elegido ya no está disponible. Elegí otro.',
+    staleSlot: 'Ese horario ya no está disponible. Elegí otro.',
+
+    dateHeading: '¿Qué día?',
+    slotHeading: '¿A qué hora?',
+    // The strip marks a day the barber does not work rather than hiding it, so
+    // the client sees that Sundays are closed instead of wondering why a date
+    // is missing.
+    dayUnavailable: (label: string) => `${label} (no atiende)`,
+    // Grouping is what makes a five-minute grid scannable: a 9-to-18 day with a
+    // 30-minute service is 103 starts, and a flat column of 103 is a scroll with
+    // no landmarks (design D11).
+    daypartMorning: 'Mañana',
+    daypartAfternoon: 'Tarde',
+    daypartEvening: 'Noche',
+    // Four availability empty states. Like the catalogue ones, none discloses
+    // whether a booking, an absence or a closed day is responsible — publishing
+    // that would hand an anonymous visitor the barber's agenda.
+    emptyDay: 'No quedan turnos disponibles para este día.',
+    emptyDayHelp: 'Probá con otro día.',
+    emptyToday: 'Ya no quedan turnos para hoy.',
+    emptyTodayHelp: 'Probá con otro día.',
+    emptyHorizon: 'Este barbero no tiene turnos disponibles por ahora.',
+    emptyHorizonHelp: 'Probá con otro barbero.',
+    // B4 creates the booking. Until it ships the flow says so rather than ending
+    // on a control that goes nowhere — the same disclosure P1 made for a link
+    // that did not resolve and B1 made for the "Reservar" button.
+    continueUnavailable: 'La reserva del turno se habilita muy pronto.',
+    // The list is a snapshot and nothing is held until B4's transaction. The
+    // copy must not imply otherwise: two clients can be looking at this time.
+    slotNotHeld: 'Todavía no reservamos este horario.',
   },
   transfer: {
     nav: 'Transferencia',
@@ -467,8 +502,7 @@ export const COPY = {
     none: '—',
 
     accessTokenLabel: 'Access Token',
-    accessTokenHelp:
-      'Se guarda cifrado y nunca se muestra. Dejalo vacío si no querés cambiarlo.',
+    accessTokenHelp: 'Se guarda cifrado y nunca se muestra. Dejalo vacío si no querés cambiarlo.',
     publicKeyHelp: 'Es el dato que ve el navegador de tu cliente. No es secreto.',
     submit: 'Guardar',
     submitting: 'Guardando…',
@@ -519,8 +553,7 @@ export const COPY = {
       'Revisá que sea tu cuenta. A partir de ahora, las señas de tus clientes se cobran acá.',
     confirmRemoveIntro:
       'Vas a borrar tus credenciales de Mercado Pago. Tus clientes no van a poder pagar online.',
-    confirmUnverified:
-      'No pudimos verificar estas credenciales con Mercado Pago en este momento.',
+    confirmUnverified: 'No pudimos verificar estas credenciales con Mercado Pago en este momento.',
     confirmNewLabel: 'Credenciales nuevas',
     confirmStoredLabel: 'Credenciales actuales',
     confirmSubmit: 'Sí, es mi cuenta',
@@ -605,7 +638,8 @@ export const COPY = {
     readinessHeading: 'Estado de tu negocio',
     readinessReady: 'Ya podés recibir reservas.',
     readinessNotReady: 'Todavía no podés recibir reservas.',
-    readinessMissingPaymentMethod: 'Falta configurar un medio de pago: Mercado Pago o transferencia.',
+    readinessMissingPaymentMethod:
+      'Falta configurar un medio de pago: Mercado Pago o transferencia.',
     readinessMissingDeposit: 'Falta configurar la seña.',
     readinessHasPaymentMethod: 'Medio de pago configurado.',
     readinessHasDeposit: 'Seña configurada.',

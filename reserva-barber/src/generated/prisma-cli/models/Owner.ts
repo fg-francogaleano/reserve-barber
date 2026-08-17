@@ -187,6 +187,7 @@ export type OwnerWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"Owner"> | Date | string
   locations?: Prisma.LocationListRelationFilter
   services?: Prisma.ServiceListRelationFilter
+  clients?: Prisma.ClientListRelationFilter
   businessProfile?: Prisma.XOR<Prisma.BusinessProfileNullableScalarRelationFilter, Prisma.BusinessProfileWhereInput> | null
   paymentConfig?: Prisma.XOR<Prisma.PaymentConfigNullableScalarRelationFilter, Prisma.PaymentConfigWhereInput> | null
 }
@@ -199,6 +200,7 @@ export type OwnerOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   locations?: Prisma.LocationOrderByRelationAggregateInput
   services?: Prisma.ServiceOrderByRelationAggregateInput
+  clients?: Prisma.ClientOrderByRelationAggregateInput
   businessProfile?: Prisma.BusinessProfileOrderByWithRelationInput
   paymentConfig?: Prisma.PaymentConfigOrderByWithRelationInput
 }
@@ -214,6 +216,7 @@ export type OwnerWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"Owner"> | Date | string
   locations?: Prisma.LocationListRelationFilter
   services?: Prisma.ServiceListRelationFilter
+  clients?: Prisma.ClientListRelationFilter
   businessProfile?: Prisma.XOR<Prisma.BusinessProfileNullableScalarRelationFilter, Prisma.BusinessProfileWhereInput> | null
   paymentConfig?: Prisma.XOR<Prisma.PaymentConfigNullableScalarRelationFilter, Prisma.PaymentConfigWhereInput> | null
 }, "id" | "email" | "authUserId">
@@ -248,6 +251,7 @@ export type OwnerCreateInput = {
   updatedAt?: Date | string
   locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
   services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientCreateNestedManyWithoutOwnerInput
   businessProfile?: Prisma.BusinessProfileCreateNestedOneWithoutOwnerInput
   paymentConfig?: Prisma.PaymentConfigCreateNestedOneWithoutOwnerInput
 }
@@ -260,6 +264,7 @@ export type OwnerUncheckedCreateInput = {
   updatedAt?: Date | string
   locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
   services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientUncheckedCreateNestedManyWithoutOwnerInput
   businessProfile?: Prisma.BusinessProfileUncheckedCreateNestedOneWithoutOwnerInput
   paymentConfig?: Prisma.PaymentConfigUncheckedCreateNestedOneWithoutOwnerInput
 }
@@ -272,6 +277,7 @@ export type OwnerUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
   services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUpdateManyWithoutOwnerNestedInput
   businessProfile?: Prisma.BusinessProfileUpdateOneWithoutOwnerNestedInput
   paymentConfig?: Prisma.PaymentConfigUpdateOneWithoutOwnerNestedInput
 }
@@ -284,6 +290,7 @@ export type OwnerUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
   services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUncheckedUpdateManyWithoutOwnerNestedInput
   businessProfile?: Prisma.BusinessProfileUncheckedUpdateOneWithoutOwnerNestedInput
   paymentConfig?: Prisma.PaymentConfigUncheckedUpdateOneWithoutOwnerNestedInput
 }
@@ -409,6 +416,20 @@ export type OwnerUpdateOneRequiredWithoutPaymentConfigNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.OwnerUpdateToOneWithWhereWithoutPaymentConfigInput, Prisma.OwnerUpdateWithoutPaymentConfigInput>, Prisma.OwnerUncheckedUpdateWithoutPaymentConfigInput>
 }
 
+export type OwnerCreateNestedOneWithoutClientsInput = {
+  create?: Prisma.XOR<Prisma.OwnerCreateWithoutClientsInput, Prisma.OwnerUncheckedCreateWithoutClientsInput>
+  connectOrCreate?: Prisma.OwnerCreateOrConnectWithoutClientsInput
+  connect?: Prisma.OwnerWhereUniqueInput
+}
+
+export type OwnerUpdateOneRequiredWithoutClientsNestedInput = {
+  create?: Prisma.XOR<Prisma.OwnerCreateWithoutClientsInput, Prisma.OwnerUncheckedCreateWithoutClientsInput>
+  connectOrCreate?: Prisma.OwnerCreateOrConnectWithoutClientsInput
+  upsert?: Prisma.OwnerUpsertWithoutClientsInput
+  connect?: Prisma.OwnerWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.OwnerUpdateToOneWithWhereWithoutClientsInput, Prisma.OwnerUpdateWithoutClientsInput>, Prisma.OwnerUncheckedUpdateWithoutClientsInput>
+}
+
 export type OwnerCreateWithoutBusinessProfileInput = {
   id?: string
   email: string
@@ -417,6 +438,7 @@ export type OwnerCreateWithoutBusinessProfileInput = {
   updatedAt?: Date | string
   locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
   services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientCreateNestedManyWithoutOwnerInput
   paymentConfig?: Prisma.PaymentConfigCreateNestedOneWithoutOwnerInput
 }
 
@@ -428,6 +450,7 @@ export type OwnerUncheckedCreateWithoutBusinessProfileInput = {
   updatedAt?: Date | string
   locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
   services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientUncheckedCreateNestedManyWithoutOwnerInput
   paymentConfig?: Prisma.PaymentConfigUncheckedCreateNestedOneWithoutOwnerInput
 }
 
@@ -455,6 +478,7 @@ export type OwnerUpdateWithoutBusinessProfileInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
   services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUpdateManyWithoutOwnerNestedInput
   paymentConfig?: Prisma.PaymentConfigUpdateOneWithoutOwnerNestedInput
 }
 
@@ -466,6 +490,7 @@ export type OwnerUncheckedUpdateWithoutBusinessProfileInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
   services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUncheckedUpdateManyWithoutOwnerNestedInput
   paymentConfig?: Prisma.PaymentConfigUncheckedUpdateOneWithoutOwnerNestedInput
 }
 
@@ -476,6 +501,7 @@ export type OwnerCreateWithoutLocationsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientCreateNestedManyWithoutOwnerInput
   businessProfile?: Prisma.BusinessProfileCreateNestedOneWithoutOwnerInput
   paymentConfig?: Prisma.PaymentConfigCreateNestedOneWithoutOwnerInput
 }
@@ -487,6 +513,7 @@ export type OwnerUncheckedCreateWithoutLocationsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientUncheckedCreateNestedManyWithoutOwnerInput
   businessProfile?: Prisma.BusinessProfileUncheckedCreateNestedOneWithoutOwnerInput
   paymentConfig?: Prisma.PaymentConfigUncheckedCreateNestedOneWithoutOwnerInput
 }
@@ -514,6 +541,7 @@ export type OwnerUpdateWithoutLocationsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUpdateManyWithoutOwnerNestedInput
   businessProfile?: Prisma.BusinessProfileUpdateOneWithoutOwnerNestedInput
   paymentConfig?: Prisma.PaymentConfigUpdateOneWithoutOwnerNestedInput
 }
@@ -525,6 +553,7 @@ export type OwnerUncheckedUpdateWithoutLocationsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUncheckedUpdateManyWithoutOwnerNestedInput
   businessProfile?: Prisma.BusinessProfileUncheckedUpdateOneWithoutOwnerNestedInput
   paymentConfig?: Prisma.PaymentConfigUncheckedUpdateOneWithoutOwnerNestedInput
 }
@@ -536,6 +565,7 @@ export type OwnerCreateWithoutServicesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientCreateNestedManyWithoutOwnerInput
   businessProfile?: Prisma.BusinessProfileCreateNestedOneWithoutOwnerInput
   paymentConfig?: Prisma.PaymentConfigCreateNestedOneWithoutOwnerInput
 }
@@ -547,6 +577,7 @@ export type OwnerUncheckedCreateWithoutServicesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientUncheckedCreateNestedManyWithoutOwnerInput
   businessProfile?: Prisma.BusinessProfileUncheckedCreateNestedOneWithoutOwnerInput
   paymentConfig?: Prisma.PaymentConfigUncheckedCreateNestedOneWithoutOwnerInput
 }
@@ -574,6 +605,7 @@ export type OwnerUpdateWithoutServicesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUpdateManyWithoutOwnerNestedInput
   businessProfile?: Prisma.BusinessProfileUpdateOneWithoutOwnerNestedInput
   paymentConfig?: Prisma.PaymentConfigUpdateOneWithoutOwnerNestedInput
 }
@@ -585,6 +617,7 @@ export type OwnerUncheckedUpdateWithoutServicesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUncheckedUpdateManyWithoutOwnerNestedInput
   businessProfile?: Prisma.BusinessProfileUncheckedUpdateOneWithoutOwnerNestedInput
   paymentConfig?: Prisma.PaymentConfigUncheckedUpdateOneWithoutOwnerNestedInput
 }
@@ -597,6 +630,7 @@ export type OwnerCreateWithoutPaymentConfigInput = {
   updatedAt?: Date | string
   locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
   services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientCreateNestedManyWithoutOwnerInput
   businessProfile?: Prisma.BusinessProfileCreateNestedOneWithoutOwnerInput
 }
 
@@ -608,6 +642,7 @@ export type OwnerUncheckedCreateWithoutPaymentConfigInput = {
   updatedAt?: Date | string
   locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
   services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
+  clients?: Prisma.ClientUncheckedCreateNestedManyWithoutOwnerInput
   businessProfile?: Prisma.BusinessProfileUncheckedCreateNestedOneWithoutOwnerInput
 }
 
@@ -635,6 +670,7 @@ export type OwnerUpdateWithoutPaymentConfigInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
   services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUpdateManyWithoutOwnerNestedInput
   businessProfile?: Prisma.BusinessProfileUpdateOneWithoutOwnerNestedInput
 }
 
@@ -646,7 +682,72 @@ export type OwnerUncheckedUpdateWithoutPaymentConfigInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
   services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+  clients?: Prisma.ClientUncheckedUpdateManyWithoutOwnerNestedInput
   businessProfile?: Prisma.BusinessProfileUncheckedUpdateOneWithoutOwnerNestedInput
+}
+
+export type OwnerCreateWithoutClientsInput = {
+  id?: string
+  email: string
+  authUserId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  locations?: Prisma.LocationCreateNestedManyWithoutOwnerInput
+  services?: Prisma.ServiceCreateNestedManyWithoutOwnerInput
+  businessProfile?: Prisma.BusinessProfileCreateNestedOneWithoutOwnerInput
+  paymentConfig?: Prisma.PaymentConfigCreateNestedOneWithoutOwnerInput
+}
+
+export type OwnerUncheckedCreateWithoutClientsInput = {
+  id?: string
+  email: string
+  authUserId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  locations?: Prisma.LocationUncheckedCreateNestedManyWithoutOwnerInput
+  services?: Prisma.ServiceUncheckedCreateNestedManyWithoutOwnerInput
+  businessProfile?: Prisma.BusinessProfileUncheckedCreateNestedOneWithoutOwnerInput
+  paymentConfig?: Prisma.PaymentConfigUncheckedCreateNestedOneWithoutOwnerInput
+}
+
+export type OwnerCreateOrConnectWithoutClientsInput = {
+  where: Prisma.OwnerWhereUniqueInput
+  create: Prisma.XOR<Prisma.OwnerCreateWithoutClientsInput, Prisma.OwnerUncheckedCreateWithoutClientsInput>
+}
+
+export type OwnerUpsertWithoutClientsInput = {
+  update: Prisma.XOR<Prisma.OwnerUpdateWithoutClientsInput, Prisma.OwnerUncheckedUpdateWithoutClientsInput>
+  create: Prisma.XOR<Prisma.OwnerCreateWithoutClientsInput, Prisma.OwnerUncheckedCreateWithoutClientsInput>
+  where?: Prisma.OwnerWhereInput
+}
+
+export type OwnerUpdateToOneWithWhereWithoutClientsInput = {
+  where?: Prisma.OwnerWhereInput
+  data: Prisma.XOR<Prisma.OwnerUpdateWithoutClientsInput, Prisma.OwnerUncheckedUpdateWithoutClientsInput>
+}
+
+export type OwnerUpdateWithoutClientsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  authUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  locations?: Prisma.LocationUpdateManyWithoutOwnerNestedInput
+  services?: Prisma.ServiceUpdateManyWithoutOwnerNestedInput
+  businessProfile?: Prisma.BusinessProfileUpdateOneWithoutOwnerNestedInput
+  paymentConfig?: Prisma.PaymentConfigUpdateOneWithoutOwnerNestedInput
+}
+
+export type OwnerUncheckedUpdateWithoutClientsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  authUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  locations?: Prisma.LocationUncheckedUpdateManyWithoutOwnerNestedInput
+  services?: Prisma.ServiceUncheckedUpdateManyWithoutOwnerNestedInput
+  businessProfile?: Prisma.BusinessProfileUncheckedUpdateOneWithoutOwnerNestedInput
+  paymentConfig?: Prisma.PaymentConfigUncheckedUpdateOneWithoutOwnerNestedInput
 }
 
 
@@ -657,11 +758,13 @@ export type OwnerUncheckedUpdateWithoutPaymentConfigInput = {
 export type OwnerCountOutputType = {
   locations: number
   services: number
+  clients: number
 }
 
 export type OwnerCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   locations?: boolean | OwnerCountOutputTypeCountLocationsArgs
   services?: boolean | OwnerCountOutputTypeCountServicesArgs
+  clients?: boolean | OwnerCountOutputTypeCountClientsArgs
 }
 
 /**
@@ -688,6 +791,13 @@ export type OwnerCountOutputTypeCountServicesArgs<ExtArgs extends runtime.Types.
   where?: Prisma.ServiceWhereInput
 }
 
+/**
+ * OwnerCountOutputType without action
+ */
+export type OwnerCountOutputTypeCountClientsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ClientWhereInput
+}
+
 
 export type OwnerSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -697,6 +807,7 @@ export type OwnerSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   updatedAt?: boolean
   locations?: boolean | Prisma.Owner$locationsArgs<ExtArgs>
   services?: boolean | Prisma.Owner$servicesArgs<ExtArgs>
+  clients?: boolean | Prisma.Owner$clientsArgs<ExtArgs>
   businessProfile?: boolean | Prisma.Owner$businessProfileArgs<ExtArgs>
   paymentConfig?: boolean | Prisma.Owner$paymentConfigArgs<ExtArgs>
   _count?: boolean | Prisma.OwnerCountOutputTypeDefaultArgs<ExtArgs>
@@ -730,6 +841,7 @@ export type OwnerOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = ru
 export type OwnerInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   locations?: boolean | Prisma.Owner$locationsArgs<ExtArgs>
   services?: boolean | Prisma.Owner$servicesArgs<ExtArgs>
+  clients?: boolean | Prisma.Owner$clientsArgs<ExtArgs>
   businessProfile?: boolean | Prisma.Owner$businessProfileArgs<ExtArgs>
   paymentConfig?: boolean | Prisma.Owner$paymentConfigArgs<ExtArgs>
   _count?: boolean | Prisma.OwnerCountOutputTypeDefaultArgs<ExtArgs>
@@ -742,6 +854,7 @@ export type $OwnerPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   objects: {
     locations: Prisma.$LocationPayload<ExtArgs>[]
     services: Prisma.$ServicePayload<ExtArgs>[]
+    clients: Prisma.$ClientPayload<ExtArgs>[]
     businessProfile: Prisma.$BusinessProfilePayload<ExtArgs> | null
     paymentConfig: Prisma.$PaymentConfigPayload<ExtArgs> | null
   }
@@ -1147,6 +1260,7 @@ export interface Prisma__OwnerClient<T, Null = never, ExtArgs extends runtime.Ty
   readonly [Symbol.toStringTag]: "PrismaPromise"
   locations<T extends Prisma.Owner$locationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$locationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LocationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   services<T extends Prisma.Owner$servicesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$servicesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ServicePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  clients<T extends Prisma.Owner$clientsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$clientsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ClientPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   businessProfile<T extends Prisma.Owner$businessProfileArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$businessProfileArgs<ExtArgs>>): Prisma.Prisma__BusinessProfileClient<runtime.Types.Result.GetResult<Prisma.$BusinessProfilePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   paymentConfig<T extends Prisma.Owner$paymentConfigArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Owner$paymentConfigArgs<ExtArgs>>): Prisma.Prisma__PaymentConfigClient<runtime.Types.Result.GetResult<Prisma.$PaymentConfigPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
@@ -1621,6 +1735,30 @@ export type Owner$servicesArgs<ExtArgs extends runtime.Types.Extensions.Internal
   take?: number
   skip?: number
   distinct?: Prisma.ServiceScalarFieldEnum | Prisma.ServiceScalarFieldEnum[]
+}
+
+/**
+ * Owner.clients
+ */
+export type Owner$clientsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Client
+   */
+  select?: Prisma.ClientSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Client
+   */
+  omit?: Prisma.ClientOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ClientInclude<ExtArgs> | null
+  where?: Prisma.ClientWhereInput
+  orderBy?: Prisma.ClientOrderByWithRelationInput | Prisma.ClientOrderByWithRelationInput[]
+  cursor?: Prisma.ClientWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ClientScalarFieldEnum | Prisma.ClientScalarFieldEnum[]
 }
 
 /**

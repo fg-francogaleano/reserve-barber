@@ -3,7 +3,11 @@ import { PublicProfileService } from '@/server/application/services/PublicProfil
 import { PublicBookingCatalogService } from '@/server/application/services/PublicBookingCatalogService';
 import { PrismaBusinessProfileRepository } from '@/server/infrastructure/prisma/PrismaBusinessProfileRepository';
 import { PrismaPublicCatalogRepository } from '@/server/infrastructure/prisma/PrismaPublicCatalogRepository';
+import { PrismaBarberAvailabilityRepository } from '@/server/infrastructure/prisma/PrismaBarberAvailabilityRepository';
+import { PrismaWorkingHoursRepository } from '@/server/infrastructure/prisma/PrismaWorkingHoursRepository';
+import { PublicAvailabilityService } from '@/server/application/services/PublicAvailabilityService';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
+import { systemClock } from '@/server/domain/repositories/IClock';
 import { logger } from '@/server/infrastructure/logger';
 
 /**
@@ -46,6 +50,15 @@ export function bookingGate(): PublicBookingCatalogService {
   return new PublicBookingCatalogService(
     new PrismaBusinessProfileRepository(db),
     new PrismaPublicCatalogRepository(db),
-    logger
+    logger,
+    // Constructed and never exercised: this gate only ever calls `isBookable`,
+    // which reads the catalogue. Instantiating repositories issues no query, so
+    // the cost is nothing — but it is named here rather than left to look like
+    // the profile page computes availability, which it does not.
+    new PublicAvailabilityService(
+      new PrismaBarberAvailabilityRepository(db),
+      new PrismaWorkingHoursRepository(db),
+      systemClock
+    )
   );
 }

@@ -16,9 +16,7 @@ describe('businessTime - timezone support', () => {
     // A runtime without tzdata does not throw — it silently reports UTC. So the
     // check must compare against a known value or it proves nothing.
     expect(hasTimezoneSupport()).toBe(true);
-    expect(offsetMinutesAt(new Date('2026-01-01T12:00:00.000Z'))).toBe(
-      BUSINESS_UTC_OFFSET_MINUTES
-    );
+    expect(offsetMinutesAt(new Date('2026-01-01T12:00:00.000Z'))).toBe(BUSINESS_UTC_OFFSET_MINUTES);
   });
 });
 
@@ -62,6 +60,14 @@ describe('businessTime - the business calendar, not the runtime clock', () => {
 const SCHEDULING_ROOTS = [
   join(process.cwd(), 'src', 'server', 'application', 'schedule'),
   join(process.cwd(), 'src', 'server', 'domain', 'models'),
+  // B3 makes the booking flow a scheduling consumer: it resolves a weekday, a
+  // calendar day and a horizon, all from instants. Adding the roots here rather
+  // than trusting review is the point of the scan — the failure it prevents is
+  // three hours of wrong answers every evening, with a plausible number in
+  // place of an error.
+  join(process.cwd(), 'src', 'server', 'application', 'booking'),
+  join(process.cwd(), 'src', 'server', 'application', 'availability'),
+  join(process.cwd(), 'src', 'components', 'booking'),
 ];
 
 /** Calendar readers that silently return the runtime's UTC answer. */

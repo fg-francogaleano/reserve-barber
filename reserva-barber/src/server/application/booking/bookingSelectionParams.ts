@@ -21,12 +21,25 @@ export interface RawBookingSelection {
   local?: string | string[] | undefined;
   servicio?: string | string[] | undefined;
   barbero?: string | string[] | undefined;
+  /** Canonical `YYYY-MM-DD`, resolved by `bookingScheduleParams`. */
+  fecha?: string | string[] | undefined;
+  /** `HH:mm`, matched against the generated slot list and never parsed as a time. */
+  hora?: string | string[] | undefined;
 }
 
-export type BookingStep = 'location' | 'service' | 'barber' | 'complete';
+/**
+ * The steps of the flow, in order.
+ *
+ * `date` and `slot` sit after the catalogue selections and are **not** resolved
+ * here: a date is checked against a calendar and a time against the barber's
+ * availability, and neither is knowable from the catalogue alone. This function
+ * therefore stops at `date`, which means "the catalogue selections are settled;
+ * the schedule is next".
+ */
+export type BookingStep = 'location' | 'service' | 'barber' | 'date' | 'slot' | 'complete';
 
 /** Which selection was dropped, so the page can say so without guessing. */
-export type DiscardedSelection = 'location' | 'service' | 'barber';
+export type DiscardedSelection = 'location' | 'service' | 'barber' | 'date' | 'slot';
 
 export interface BookingSelection {
   readonly location?: BookableLocation | undefined;
@@ -144,7 +157,10 @@ export function resolveBookingSelection(
     return { step: 'barber', selection: { location, service }, discarded };
   }
 
-  return { step: 'complete', selection: { location, service, barber }, discarded };
+  // Not `complete`: three catalogue selections no longer finish this flow. The
+  // date and the time are resolved by the caller, which is the only layer that
+  // can — one needs a calendar and the other needs a query.
+  return { step: 'date', selection: { location, service, barber }, discarded };
 }
 
 /**
@@ -184,6 +200,10 @@ export interface BookingHrefParts {
   readonly locationId?: string | undefined;
   readonly serviceId?: string | undefined;
   readonly barberId?: string | undefined;
+  /** Canonical `YYYY-MM-DD`. */
+  readonly date?: string | undefined;
+  /** `HH:mm` as the slot list renders it. */
+  readonly time?: string | undefined;
 }
 
 /**
@@ -202,10 +222,21 @@ export interface BookingHrefParts {
 export function bookingStepHref(slug: string, parts: BookingHrefParts = {}): string {
   const query = new URLSearchParams();
 
+  // Strictly nested: each key is emitted only when every key above it is
+  // present. That is what makes the "change branch" control unable to produce a
+  // link still naming the service — and now the date and time — chosen under the
+  // previous one. The resolver would discard them anyway; not emitting them
+  // means the client is never shown a notice about a loss they did not cause.
   if (parts.locationId !== undefined) query.set('local', parts.locationId);
   if (parts.locationId !== undefined && parts.serviceId !== undefined) {
     query.set('servicio', parts.serviceId);
-    if (parts.barberId !== undefined) query.set('barbero', parts.barberId);
+    if (parts.barberId !== undefined) {
+      query.set('barbero', parts.barberId);
+      if (parts.date !== undefined) {
+        query.set('fecha', parts.date);
+        if (parts.time !== undefined) query.set('hora', parts.time);
+      }
+    }
   }
 
   const suffix = query.size === 0 ? '' : `?${query}`;

@@ -7,14 +7,25 @@ import { BookingSelectionSummary } from '@/components/booking/BookingSelectionSu
 import { LocationStep } from '@/components/booking/LocationStep';
 import { ServiceStep } from '@/components/booking/ServiceStep';
 import { BarberStep } from '@/components/booking/BarberStep';
+import { DateStep } from '@/components/booking/DateStep';
+import { SlotStep } from '@/components/booking/SlotStep';
 import {
   bookingStepHref,
   hasBranchChoice,
   resolveBookingSelection,
   withImpliedBranch,
+  type BookingSelection,
+  type BookingStep,
   type DiscardedSelection,
   type RawBookingSelection,
 } from '@/server/application/booking/bookingSelectionParams';
+import {
+  resolveDateSelection,
+  resolveSlotSelection,
+} from '@/server/application/booking/bookingScheduleParams';
+import { formatLocalDate, type LocalDate } from '@/server/domain/models/bookingCalendar';
+import type { Weekday } from '@/server/domain/models/weekday';
+import type { BoundAvailability } from '@/server/application/services/PublicBookingCatalogService';
 import { resolveOrigin } from '@/server/application/businessProfile/resolveOrigin';
 import { logger } from '@/server/infrastructure/logger';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
@@ -74,6 +85,8 @@ const STALE_NOTICE: Record<DiscardedSelection, string> = {
   location: COPY.booking.staleLocation,
   service: COPY.booking.staleService,
   barber: COPY.booking.staleBarber,
+  date: COPY.booking.staleDate,
+  slot: COPY.booking.staleSlot,
 };
 
 /**
@@ -120,16 +133,26 @@ export default async function BookingPage({ params, searchParams }: PageProps) {
         locationId: firstValue(raw.local),
         serviceId: firstValue(raw.servicio),
         barberId: firstValue(raw.barbero),
+        date: firstValue(raw.fecha),
+        time: firstValue(raw.hora),
       })
     );
   }
 
-  const { catalog } = resolution;
+  const { catalog, availability } = resolution;
+  const raw = await searchParams;
   const branchChoice = hasBranchChoice(catalog);
-  const { step, selection, discarded } = withImpliedBranch(
-    catalog,
-    resolveBookingSelection(catalog, await searchParams)
-  );
+  const catalogSelection = withImpliedBranch(catalog, resolveBookingSelection(catalog, raw));
+
+  // The schedule is resolved after the catalogue and only when the catalogue
+  // selections are settled, because a date means nothing without a barber and a
+  // time means nothing without a date. An earlier step therefore issues no
+  // availability read at all.
+  const schedule = await resolveSchedule(catalogSelection, raw, availability);
+
+  const { selection } = catalogSelection;
+  const step = schedule.step;
+  const discarded = [...catalogSelection.discarded, ...schedule.discarded];
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
@@ -151,7 +174,13 @@ export default async function BookingPage({ params, searchParams }: PageProps) {
         </p>
       ))}
 
-      <BookingSelectionSummary slug={slug} selection={selection} hasBranchChoice={branchChoice} />
+      <BookingSelectionSummary
+        slug={slug}
+        selection={selection}
+        hasBranchChoice={branchChoice}
+        date={schedule.date}
+        slot={schedule.slot}
+      />
 
       {step === 'location' && <LocationStep slug={slug} catalog={catalog} />}
 
@@ -159,20 +188,57 @@ export default async function BookingPage({ params, searchParams }: PageProps) {
         <ServiceStep slug={slug} location={selection.location} hasBranchChoice={branchChoice} />
       )}
 
-      {(step === 'barber' || step === 'complete') &&
+      {step === 'barber' && selection.location !== undefined && selection.service !== undefined && (
+        <BarberStep slug={slug} location={selection.location} service={selection.service} />
+      )}
+
+      {step === 'date' &&
         selection.location !== undefined &&
-        selection.service !== undefined && (
-          <BarberStep slug={slug} location={selection.location} service={selection.service} />
+        selection.service !== undefined &&
+        selection.barber !== undefined &&
+        schedule.today !== undefined &&
+        schedule.workingWeekdays !== undefined && (
+          <DateStep
+            slug={slug}
+            locationId={selection.location.location.id}
+            serviceId={selection.service.service.id}
+            barberId={selection.barber.id}
+            today={schedule.today}
+            workingWeekdays={schedule.workingWeekdays}
+          />
         )}
 
-      {/* B3 turns the completed triple into a date and a time. Until it ships
-          the flow says so plainly rather than ending on a control that goes
-          nowhere — the same disclosure P1 made for an unresolvable link and B1
-          made for this very button one story ago. */}
+      {step === 'slot' &&
+        selection.location !== undefined &&
+        selection.service !== undefined &&
+        selection.barber !== undefined &&
+        schedule.date !== undefined &&
+        schedule.slots !== undefined && (
+          <SlotStep
+            slug={slug}
+            locationId={selection.location.location.id}
+            serviceId={selection.service.service.id}
+            barberId={selection.barber.id}
+            date={schedule.date}
+            slots={schedule.slots}
+            isToday={
+              schedule.today !== undefined &&
+              formatLocalDate(schedule.date) === formatLocalDate(schedule.today)
+            }
+          />
+        )}
+
+      {/* B4 creates the booking. Until it ships the flow says so plainly rather
+          than ending on a control that goes nowhere — the same disclosure P1
+          made for an unresolvable link and B1 made for the "Reservar" button.
+          The second line exists because the client has just picked a time and
+          would otherwise reasonably assume it is now theirs: nothing is held
+          until B4's transaction, and two clients can be on this screen. */}
       {step === 'complete' && (
-        <p className="text-muted-foreground text-center text-sm">
-          {COPY.booking.continueUnavailable}
-        </p>
+        <div className="flex flex-col items-center gap-1 text-center">
+          <p className="text-muted-foreground text-sm">{COPY.booking.continueUnavailable}</p>
+          <p className="text-muted-foreground text-sm">{COPY.booking.slotNotHeld}</p>
+        </div>
       )}
 
       {step !== 'location' && branchChoice && (
@@ -187,4 +253,78 @@ export default async function BookingPage({ params, searchParams }: PageProps) {
 /** A repeated parameter keeps its first value across a redirect, matching the resolver. */
 function firstValue(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
+}
+
+interface ScheduleResolution {
+  readonly step: BookingStep;
+  readonly discarded: readonly DiscardedSelection[];
+  readonly today?: LocalDate;
+  readonly workingWeekdays?: ReadonlySet<Weekday>;
+  readonly date?: LocalDate;
+  readonly slots?: readonly Date[];
+  readonly slot?: Date;
+}
+
+/**
+ * The date and the time, resolved in that order and only when they can be.
+ *
+ * **Each read is paid for only by the step that needs it.** A client on the
+ * branch, service or barber step issues no availability query; the date step
+ * issues the cheap weekly one; the slot step issues the composed day read. That
+ * ordering is the whole reason this lives here rather than above the switch —
+ * it is the difference between one extra round trip and three.
+ *
+ * A discarded date or time behaves exactly as a discarded id does: the step it
+ * belongs to renders, everything upstream survives, a Spanish notice says so,
+ * and it is never a 404 and never a substitution.
+ */
+async function resolveSchedule(
+  catalogSelection: { step: BookingStep; selection: BookingSelection },
+  raw: RawBookingSelection,
+  availability: BoundAvailability
+): Promise<ScheduleResolution> {
+  const { step, selection } = catalogSelection;
+  const { barber, service } = selection;
+
+  if (step !== 'date' || barber === undefined || service === undefined) {
+    return { step, discarded: [] };
+  }
+
+  const today = availability.today();
+  const requestedDate = resolveDateSelection(raw.fecha, today);
+  const dateDiscarded: DiscardedSelection[] = requestedDate.discarded ? ['date'] : [];
+
+  if (requestedDate.date === undefined) {
+    return {
+      step: 'date',
+      discarded: dateDiscarded,
+      today,
+      workingWeekdays: await availability.workingWeekdays(barber.id),
+    };
+  }
+
+  const slots = await availability.slotsFor({
+    barberId: barber.id,
+    date: requestedDate.date,
+    durationMinutes: service.service.durationMinutes,
+  });
+
+  const requestedSlot = resolveSlotSelection(raw.hora, slots);
+  const discarded: DiscardedSelection[] = [
+    ...dateDiscarded,
+    ...(requestedSlot.discarded ? (['slot'] as const) : []),
+  ];
+
+  if (requestedSlot.slot === undefined) {
+    return { step: 'slot', discarded, today, date: requestedDate.date, slots };
+  }
+
+  return {
+    step: 'complete',
+    discarded,
+    today,
+    date: requestedDate.date,
+    slots,
+    slot: requestedSlot.slot,
+  };
 }

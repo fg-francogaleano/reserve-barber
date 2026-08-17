@@ -3,6 +3,7 @@ import { PublicBookingCatalogService } from './PublicBookingCatalogService';
 import type { IBusinessProfileRepository } from '@/server/domain/repositories/IBusinessProfileRepository';
 import type { IPublicCatalogRepository } from '@/server/domain/repositories/IPublicCatalogRepository';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
+import type { PublicAvailabilityService } from './PublicAvailabilityService';
 import { buildBookingCatalog } from '@/server/domain/models/BookingCatalog';
 
 const CATALOG = buildBookingCatalog([
@@ -43,11 +44,24 @@ function createService(
   } as unknown as IBusinessProfileRepository;
   const catalog = { findBookableCatalog } as unknown as IPublicCatalogRepository;
 
+  // B3's availability reads, bound to the resolved owner inside the service.
+  // Stubbed rather than real: what this file tests is slug resolution and owner
+  // scoping, and the slot rule has its own tests.
+  const slotsFor = vi.fn().mockResolvedValue([]);
+  const workingWeekdays = vi.fn().mockResolvedValue(new Set());
+  const availability = {
+    today: vi.fn().mockReturnValue({ year: 2026, month: 8, day: 17 }),
+    workingWeekdays,
+    slotsFor,
+  } as unknown as PublicAvailabilityService;
+
   return {
-    service: new PublicBookingCatalogService(profiles, catalog, logger),
+    service: new PublicBookingCatalogService(profiles, catalog, logger, availability),
     logger,
     findOwnerIdByPublicSlug,
     findBookableCatalog,
+    slotsFor,
+    workingWeekdays,
   };
 }
 
@@ -57,10 +71,33 @@ describe('PublicBookingCatalogService - resolving a slug', () => {
   it('should_render_the_catalog_for_a_canonical_slug', async () => {
     const { service } = createService(vi.fn().mockResolvedValue('owner-1'));
 
-    await expect(service.resolveBySlug('barberia-don-juan')).resolves.toEqual({
+    await expect(service.resolveBySlug('barberia-don-juan')).resolves.toMatchObject({
       type: 'render',
       catalog: CATALOG,
     });
+  });
+
+  it('should_bind_the_availability_reads_to_the_owner_without_disclosing_it', async () => {
+    // How B3 asks an owner-scoped question on a route that must never be told
+    // the owner: the value is captured in the binding, not returned in a field.
+    const { service, slotsFor } = createService(vi.fn().mockResolvedValue('owner-secreto'));
+
+    const resolution = await service.resolveBySlug('barberia-don-juan');
+    if (resolution.type !== 'render') throw new Error('expected a render');
+
+    await resolution.availability.slotsFor({
+      barberId: 'bar-ana',
+      date: { year: 2026, month: 8, day: 17 },
+      durationMinutes: 30,
+    });
+
+    expect(slotsFor).toHaveBeenCalledExactlyOnceWith({
+      barberId: 'bar-ana',
+      date: { year: 2026, month: 8, day: 17 },
+      durationMinutes: 30,
+      ownerId: 'owner-secreto',
+    });
+    expect(JSON.stringify(resolution)).not.toContain('owner-secreto');
   });
 
   it('should_scope_the_catalog_read_by_the_resolved_owner', async () => {
@@ -200,7 +237,7 @@ describe('PublicBookingCatalogService - a shop with nothing bookable', () => {
       vi.fn().mockResolvedValue([])
     );
 
-    await expect(service.resolveBySlug('barberia-nueva')).resolves.toEqual({
+    await expect(service.resolveBySlug('barberia-nueva')).resolves.toMatchObject({
       type: 'render',
       catalog: [],
     });
