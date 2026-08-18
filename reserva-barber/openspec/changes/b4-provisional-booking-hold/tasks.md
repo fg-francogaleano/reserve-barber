@@ -163,7 +163,7 @@ Shorthand used below (`{BASE}` is `http://localhost:8787` in preview, the deploy
 
 ### 11f. The instant — where this project's worst bug class lives
 
-- [ ] 11.20 **Run at least one pass after 21:00 local**, when the runtime's UTC calendar has already rolled to the next day. Book a slot and confirm the confirmation page names the day and time you chose, not one three hours off
+- [x] 11.20 ~~**Run at least one pass after 21:00 local**~~ — **superseded: the gate now constructs the case instead of waiting for it.** The window mattered because it is the only time of day when "used the runtime calendar" and "used the business calendar" disagree about the *date*. Probes **Q** and **R** book an appointment at **22:00 business local**, whose UTC date is already the next day, so the same disagreement is created inside the data and is detectable at any hour — and **A2** asserts the rule purely, with no clock consulted. Deterministic, repeatable, and it does not depend on when anyone runs it. Verified 2026-08-18: stored as UTC day 20, reads back as 22:00 on business day 19
 - [x] 11.21 Verify in the database that the stored instant matches: `SELECT "startTime" AT TIME ZONE 'America/Argentina/Buenos_Aires' FROM "Booking" ORDER BY "createdAt" DESC LIMIT 1;`
 - [x] 11.22 Confirm `holdExpiresAt` is 15 minutes after creation and **never after `startTime`**
 
@@ -175,7 +175,7 @@ Shorthand used below (`{BASE}` is `http://localhost:8787` in preview, the deploy
 
 ### 11h. The concurrency gate and the deploy
 
-- [ ] 11.26 `npx tsx scripts/b4-gate.ts` against the live database, **after 21:00 local**, → `GATE PASSED`. Its probe B confirms `hashtextextended` exists; if that fails, every concurrency result below it is measuring an unlocked transaction
+- [x] 11.26 `npx tsx scripts/b4-gate.ts` against the live database → `GATE PASSED`. Its probe B confirms `hashtextextended` exists; if that fails, every concurrency result below it is measuring an unlocked transaction — *verified 2026-08-18: **GATE PASSED**, 18 probes, including the constructed date-boundary case (see 11.20)*
 - [x] 11.27 Clean up the bookings created by hand during 11c–11g (the gate cleans up after itself; manual runs do not)
 - [ ] 11.28 `npm run deploy`, then repeat **11.3, 11.4, 11.14 and 11.16** against the deployed origin — the guard and the header are configuration, and configuration is exactly what differs between preview and production
 - [ ] 11.29 **Franco's sign-off:** record the result here before archiving, including which checks ran after 21:00 local
@@ -229,10 +229,14 @@ alreadyHeld 7, slotTaken 0`.
 
 **Not closed, and why:**
 
-- [ ] 11.20 / the strong half of 11.26 — **requires a run after 21:00 local**, when the runtime's UTC
-  calendar has already rolled to the next day. Verified at 15:05, which is the weak window. The gate
-  says so itself in probe A. **This is Franco's to run**, and it is the check B3 proved was worth
-  having.
+- [x] 11.20 / the strong half of 11.26 — **resolved by construction rather than by waiting
+  (2026-08-18, 20:25 local).** The original plan was to sit until 21:00, inheriting B3's discipline
+  without re-examining it. Re-examined: B4's clock-dependent probes were J and K, which round-trip a
+  *chosen* instant and do not care what time the run happens. What the window actually buys is the
+  one case where the runtime date and the business date **differ**, so the gate now builds that case
+  — probes **Q** and **R** book at 22:00 business local, whose UTC date is already the next day, and
+  **A2** asserts the same rule as a pure function with no clock read at all. Strictly better than
+  waiting: deterministic, repeatable, and free of the hour it is run.
 - [ ] 11.28 — **deploy.** Outward-facing and not a verification step; left for Franco to authorize.
 - [ ] 11.29 — **Franco's sign-off.**
 

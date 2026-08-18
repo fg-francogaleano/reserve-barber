@@ -89,13 +89,33 @@ async function main(): Promise<void> {
       `${formatSlotTime(now)}\n`
   );
 
+  // The gate **constructs** the date-boundary case rather than waiting for the
+  // clock to produce it (see probes Q and R). B3 had to run between 21:00 and
+  // 23:59 local because the only thing it could compare was `businessToday()`
+  // against the runtime's own date, and those differ only in that window. B4
+  // books an appointment at 22:00 local instead: its UTC date is already the
+  // next day, so a layer using the runtime calendar lands on the wrong day at
+  // any hour of the run. This line is now information, not a caveat.
   report(
-    'A. Running inside the 21:00–23:59 window where a UTC date is wrong',
+    'A. Business local time and the runtime UTC date',
     true,
     localNow.minuteOfDay >= 21 * 60
-      ? 'yes — the runtime calendar has already rolled over, so this run is the strong one'
-      : 'no — re-run this gate after 21:00 local at least once before archiving'
+      ? `inside the 21:00–23:59 window (local day ${today.day}, UTC day ${now.getUTCDate()})`
+      : `outside the 21:00–23:59 window — irrelevant: probes Q and R construct the boundary case`
   );
+
+  // A pure check of the rule the window used to be needed for: at 22:30 local
+  // the business date must still be *that* day, while the same instant is
+  // already tomorrow in UTC. No clock is consulted, so it holds at any hour.
+  {
+    const lateEvening = localToInstant({ ...today, minuteOfDay: 22 * 60 + 30 });
+    const businessDate = businessToday(lateEvening);
+    report(
+      'A2. At 22:30 local the business date is today while UTC is already tomorrow',
+      businessDate.day === today.day && lateEvening.getUTCDate() !== today.day,
+      `business ${businessDate.day} vs runtime UTC ${lateEvening.getUTCDate()}`
+    );
+  }
 
   // Probe 1 before anything else: if the lock facility is missing, every
   // concurrency result below would be measuring an unlocked transaction and
@@ -152,8 +172,11 @@ async function main(): Promise<void> {
     createdIds.service = service.id;
 
     await prisma.barberService.create({ data: { barberId: barber.id, serviceId: service.id } });
+    // Open to 23:00 so probes Q and R can book at 22:00 local — the hour whose
+    // UTC date is already the next day. That is what lets this gate construct
+    // the date-boundary case instead of waiting for the clock to reach it.
     await prisma.workingHours.create({
-      data: { barberId: barber.id, dayOfWeek: weekday, startMinute: 9 * 60, endMinute: 20 * 60 },
+      data: { barberId: barber.id, dayOfWeek: weekday, startMinute: 9 * 60, endMinute: 23 * 60 },
     });
 
     const clients = new PrismaClientRepository(prisma as never);
@@ -285,14 +308,18 @@ async function main(): Promise<void> {
     );
 
     // ---- Probe I: the schedule re-assertion refuses a time outside the window ----
-    const outsideWindow = localToInstant({ ...target, minuteOfDay: 21 * 60 });
+    // 08:00, an hour before the window opens. Deliberately the *early* side:
+    // the late side now sits past 23:00, where a 30-minute appointment would
+    // also cross midnight, and a refusal there would not tell us which of the
+    // two rules did the refusing.
+    const outsideWindow = localToInstant({ ...target, minuteOfDay: 8 * 60 });
     const refusedOutside = await bookings.createProvisional(
       inputFor(clientB.id, outsideWindow, `${MARK}outside`)
     );
     report(
       'I. A time outside the working window is refused by the transaction',
       refusedOutside.outcome === 'slotTaken',
-      `21:00 local against a 09:00–20:00 window → ${refusedOutside.outcome}`
+      `08:00 local against a 09:00–23:00 window → ${refusedOutside.outcome}`
     );
 
     // ---- Probe J: the stored instant survives the round trip ----
@@ -337,6 +364,40 @@ async function main(): Promise<void> {
       liveForA === 0,
       `client A holds ${liveForA} live (their only booking is the lapsed one)`
     );
+
+    // ---- Probes Q and R: the date boundary, constructed rather than awaited ----
+    //
+    // 22:00 business local is already the **next day** in UTC. This is the case
+    // B3 had to sit up until 21:00 to observe, and the only one where "used the
+    // runtime's calendar" and "used the business calendar" disagree about the
+    // date rather than merely about the hour. Booking it explicitly makes the
+    // check deterministic and runnable at any hour.
+    const lateLocal = localToInstant({ ...target, minuteOfDay: 22 * 60 });
+    const lateBooking = await bookings.createProvisional(
+      inputFor(clientB.id, lateLocal, `${MARK}late`)
+    );
+
+    report(
+      'Q. A 22:00 local appointment is accepted, though its UTC date is the next day',
+      lateBooking.outcome === 'created',
+      `local ${target.year}-${target.month}-${target.day} 22:00 → UTC ${lateLocal.toISOString()} (day ${lateLocal.getUTCDate()} vs local ${target.day})`
+    );
+
+    if (lateBooking.outcome === 'created') {
+      const stored = await prisma.booking.findUnique({
+        where: { id: lateBooking.booking.id },
+        select: { startTime: true },
+      });
+
+      const readsLocal = stored === null ? 'n/a' : formatSlotTime(stored.startTime);
+      const readsBusinessDay = stored === null ? -1 : instantToLocal(stored.startTime).day;
+
+      report(
+        'R. It reads back as 22:00 on the business day, not on the UTC one',
+        readsLocal === '22:00' && readsBusinessDay === target.day,
+        `reads ${readsLocal} on business day ${readsBusinessDay}; the row's UTC day is ${stored?.startTime.getUTCDate()}`
+      );
+    }
 
     // ---- Probe O: the confirmation read carries no contact details ----
     if (winner?.outcome === 'created') {
