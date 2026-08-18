@@ -50,6 +50,15 @@ export class PrismaClientRepository implements IClientRepository {
     }
   }
 
+  /** A read, deliberately: the refusal path must leave no row behind. */
+  async findByEmail(ownerId: string, email: string): Promise<ResolvedClient | null> {
+    const row = await this.db.client.findUnique({
+      where: { ownerId_email: { ownerId, email } },
+      select: { id: true },
+    });
+    return row === null ? null : { id: row.id };
+  }
+
   private async upsert(input: ClientContactInput): Promise<ResolvedClient> {
     const row = await this.db.client.upsert({
       where: { ownerId_email: { ownerId: input.ownerId, email: input.email } },

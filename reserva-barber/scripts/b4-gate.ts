@@ -101,7 +101,10 @@ async function main(): Promise<void> {
   // concurrency result below would be measuring an unlocked transaction and
   // reporting it as a pass.
   try {
-    await prisma.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended('probe', 0))`;
+    // `$executeRaw`, not `$queryRaw`: the function returns `void` and the pg
+    // driver adapter cannot deserialize a void column. Using the wrong call
+    // here would report the facility as missing when it is present.
+    await prisma.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('probe', 0))`;
     report('B. The advisory-lock facility is available', true, 'pg_advisory_xact_lock + hashtextextended');
   } catch (error) {
     report(

@@ -49,4 +49,14 @@ export interface IClientRepository {
    * re-labels that client's earlier bookings.
    */
   resolve(input: ClientContactInput): Promise<ResolvedClient>;
+
+  /**
+   * The client behind an address, **without creating one**.
+   *
+   * Used on the refusal path, where a booking is not going to be written: a
+   * repeat submission has to be told apart from a lost race, and asking
+   * "does this person already hold this slot" must not leave a `Client` row
+   * behind for someone whose booking failed.
+   */
+  findByEmail(ownerId: string, email: string): Promise<ResolvedClient | null>;
 }

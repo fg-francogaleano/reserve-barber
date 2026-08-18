@@ -123,6 +123,26 @@ export interface IBookingRepository {
   countLiveHoldsForClient(clientId: string, now: Date): Promise<number>;
 
   /**
+   * This client's still-live holds with this barber on one day.
+   *
+   * Exists for the repeat-submission rule, and only on the path where the
+   * availability read has already refused the requested time. **A client's own
+   * hold removes their own slot from the offered list**, so a second identical
+   * submission fails the membership check before the transaction — whose
+   * `alreadyHeld` branch would otherwise have caught it — and the client is
+   * told the slot they are holding is taken.
+   *
+   * The caller compares formatted start times rather than parsing the
+   * submitted one, so the "matched, never parsed" rule holds here too.
+   */
+  findLiveHoldsForClientOnDay(input: {
+    clientId: string;
+    barberId: string;
+    dayRange: Interval;
+    now: Date;
+  }): Promise<HeldBooking[]>;
+
+  /**
    * The booking behind a cancellation token, for the confirmation page.
    *
    * Returns a **named projection** that carries no client email and no client

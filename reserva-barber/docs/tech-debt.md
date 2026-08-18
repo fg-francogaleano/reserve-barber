@@ -1454,3 +1454,69 @@ it is worth deciding before it is not.
 - **Trigger:** the first real shop taking real bookings, or any request from a client to be removed.
   Also **N1**, which is when these addresses start receiving email and the data stops being merely
   stored.
+
+### T57 — An optional constructor dependency is a hole the type system stops guarding
+**Status:** accepted — **one instance fixed, the pattern is not** · **Effort:** ~1 h (a composition-root
+test per public route) · **Added:** B4 (2026-08-18, found in runtime verification)
+
+`PublicBookingCatalogService` takes its `PaymentConfig` repository as an **optional** fifth
+constructor argument, and the optionality is correct: the public profile page builds the same service
+for its bookability gate and must not be able to reach a payment row at all.
+
+**B4 then omitted it from the booking route's composition root.** The result compiled, passed
+`tsc --noEmit`, and passed all 2061 tests — while `depositFor` returned `null` on every request, so
+the details step rendered "esta barbería todavía no está tomando reservas online" for a shop whose
+deposit was configured correctly. The entire story was dead in the runtime with a fully green suite.
+It was caught by the first manual check of the change's group 11, not by anything automated.
+
+**Why the suite could not see it.** The page tests mock `bookingCatalogService()` wholesale and stub
+`depositFor`; the service tests construct `PublicBookingCatalogService` directly and pass the
+repository. Neither exercises the real composer. That is not an oversight in those tests — it is what
+they are for — but it means **nothing in the suite asserted what the application actually builds at
+startup**.
+
+The instance is fixed and pinned by a test that reads the composer's source. The **pattern** is not:
+every public route in this project has a composition root, every one of them is a plain function
+returning a hand-wired object graph, and any dependency any of them takes optionally can be dropped
+the same way. B5 (Mercado Pago client), B6 (Supabase Storage) and N1 (Resend) each add one.
+
+Two candidate fixes, neither taken yet:
+- **A composition-root test per route**, asserting the graph it builds — cheap, and the shape B4 used.
+- **Make the dependency required and pass an explicit null object** for the profile page, so omission
+  is a type error rather than a silent default. Stronger, and it costs a null implementation.
+
+- **Trigger:** **B5** — the first story after this one to add a dependency to a public composition
+  root, and therefore the first chance to repeat the defect exactly.
+
+### T58 — A mock can certify a call that cannot work against the real database
+**Status:** **fixed for this instance, open as a pattern** · **Effort:** ~2 h (audit the raw-SQL call
+sites) · **Added:** B4 (2026-08-18, found in runtime verification)
+
+B4's booking transaction took its per-barber advisory lock with
+`tx.$queryRaw\`SELECT pg_advisory_xact_lock(...)\``. `pg_advisory_xact_lock` returns **`void`**, and
+the Prisma pg driver adapter cannot deserialize a void column: it raises `UnsupportedNativeDataType`,
+which Prisma surfaces as a generic `P2010` and which aborts the whole transaction. **Every booking
+write failed**, in the runtime, from the first one.
+
+The repository test mocked `$queryRaw`, asserted it was called first, and passed — so the suite
+certified the precise call that could not work. Twenty-four repository tests, all green, over a
+mechanism that had never executed successfully once.
+
+Fixed by using `$executeRaw`, which runs a statement for its effect and reads no columns back, and by
+making the test's transaction stub expose **only** `$executeRaw`, so a regression fails as "not a
+function" rather than passing.
+
+**What stays open is the pattern.** Any raw-SQL call in this project is mocked in its unit test and
+therefore unverified in shape: the mock proves the call was made, never that PostgreSQL and the driver
+adapter would accept it. Today the raw call sites are few — this lock, and the `mpAccessToken IS NOT
+NULL` presence check in `findPaymentReadinessForPublic`, which the gate does not cover either. B5's
+webhook and D5's aggregate statistics will add more, and `GROUP BY` aggregates are exactly where the
+driver's type mapping is easiest to get wrong.
+
+The general defence is the one B3 established and B4 leaned on: **a gate script that runs the real
+call against the live database**. This entry exists to say that the gate is not optional garnish on
+raw SQL — it is the only thing that tests it.
+
+- **Trigger:** the next raw-SQL call added anywhere (**B5**, **D5**), or any `P2010` /
+  `UnsupportedNativeDataType` seen in logs. When it fires, add the call to the relevant gate script in
+  the same change rather than after it.

@@ -44,7 +44,12 @@ function input(overrides: Partial<ProvisionalBookingInput> = {}): ProvisionalBoo
 function createDb(
   barberRow: unknown = { workingHours: [FULL_DAY_WINDOW], timeOffs: [], bookings: [] }
 ) {
-  const queryRaw = vi.fn().mockResolvedValue([]);
+  // `$executeRaw`, not `$queryRaw`. The lock function returns `void` and the pg
+  // driver adapter cannot deserialize a void column, so `$queryRaw` fails
+  // against the real database with `UnsupportedNativeDataType`. Mocking the
+  // wrong one is how the original defect passed this suite while every booking
+  // write failed in the runtime — so the name is asserted, not just the call.
+  const executeRaw = vi.fn().mockResolvedValue(1);
   const barber = { findFirst: vi.fn().mockResolvedValue(barberRow) };
   const booking = {
     create: vi.fn().mockResolvedValue({
@@ -59,13 +64,13 @@ function createDb(
     findUnique: vi.fn().mockResolvedValue(null),
   };
 
-  const tx = { $queryRaw: queryRaw, barber, booking };
+  const tx = { $executeRaw: executeRaw, barber, booking };
   const db = {
     $transaction: vi.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
     booking,
   } as unknown as PrismaClient;
 
-  return { db, tx, queryRaw, barber, booking };
+  return { db, tx, executeRaw, barber, booking };
 }
 
 /** A blocking booking overlapping 09:00–09:30. */
@@ -87,26 +92,26 @@ beforeEach(() => vi.clearAllMocks());
 
 describe('PrismaBookingRepository - the lock comes first', () => {
   it('should_take_a_barber_scoped_advisory_lock_before_reading_anything', async () => {
-    const { db, queryRaw, barber } = createDb();
+    const { db, executeRaw, barber } = createDb();
 
     await new PrismaBookingRepository(db).createProvisional(input());
 
-    expect(queryRaw).toHaveBeenCalled();
+    expect(executeRaw).toHaveBeenCalled();
     // Reading before the lock would be reading a state the lock exists to
     // freeze, so the ordering is the rule rather than an implementation detail.
-    expect(queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
       barber.findFirst.mock.invocationCallOrder[0]!
     );
   });
 
   it('should_key_the_lock_on_the_barber', async () => {
-    const { db, queryRaw } = createDb();
+    const { db, executeRaw } = createDb();
 
     await new PrismaBookingRepository(db).createProvisional(input());
 
     // The barber id is interpolated as a parameter, so it arrives in the
     // template's value list rather than in the SQL text.
-    expect(queryRaw.mock.calls[0]).toContain(BARBER);
+    expect(executeRaw.mock.calls[0]).toContain(BARBER);
   });
 
   it('should_run_inside_a_transaction_with_explicit_timeouts', async () => {

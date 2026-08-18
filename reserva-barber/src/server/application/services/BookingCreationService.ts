@@ -7,6 +7,7 @@ import {
   formatSlotTime,
   parseLocalDate,
   weekdayOfLocalDate,
+  type LocalDate,
 } from '@/server/domain/models/bookingCalendar';
 import { hasTimezoneSupport } from '@/server/domain/models/businessTime';
 import { findBarber, findLocation, findService } from '@/server/domain/models/BookingCatalog';
@@ -165,7 +166,16 @@ export class BookingCreationService {
     // tell anyone sweeping which times a barber has taken.
     const startTime = slots.find((slot) => formatSlotTime(slot) === input.hora);
     if (startTime === undefined) {
-      return { outcome: 'slotTaken' };
+      // **A client's own hold removes their own slot from this list**, so a
+      // repeat submission lands here rather than in the transaction, whose
+      // `alreadyHeld` branch was written for exactly this and never sees it.
+      // Without this check a double tap, a retried POST or a back-button
+      // re-submit is told the slot is taken — by the person holding it.
+      //
+      // The lookup does not create a client: on a genuinely lost race the
+      // submitter may be someone this shop has never seen, and a failed
+      // booking must not leave a `Client` row behind.
+      return this.repeatSubmissionOrLost(ownerId, barber.id, localDate, input, now);
     }
 
     const endTime = new Date(startTime.getTime() + service.service.durationMinutes * 60_000);
@@ -237,5 +247,52 @@ export class BookingCreationService {
     );
 
     return result;
+  }
+
+  /**
+   * Tells a repeat submission apart from a genuinely lost race.
+   *
+   * Reached only when the requested time is absent from a freshly generated
+   * list, which has two very different causes: somebody else took it, or
+   * **this client is the one holding it**. The second must not be reported as
+   * the first.
+   *
+   * The stored start times are formatted and compared against the submitted
+   * `hora`, rather than the submitted value being parsed into an instant — the
+   * same discipline the read side applies, kept on this path too.
+   */
+  private async repeatSubmissionOrLost(
+    ownerId: string,
+    barberId: string,
+    localDate: LocalDate,
+    input: BookingRequestInput,
+    now: Date
+  ): Promise<BookingCreationResult> {
+    const client = await this.clients.findByEmail(ownerId, input.email);
+    if (client === null) {
+      return { outcome: 'slotTaken' };
+    }
+
+    const holds = await this.bookings.findLiveHoldsForClientOnDay({
+      clientId: client.id,
+      barberId,
+      dayRange: dayBoundsOf(localDate),
+      now,
+    });
+
+    const own = holds.find((hold) => formatSlotTime(hold.startTime) === input.hora);
+    if (own === undefined) {
+      return { outcome: 'slotTaken' };
+    }
+
+    this.logger.info('Booking already held by this client', {
+      operation: 'BookingCreationService.create',
+      ownerId,
+      bookingId: own.id,
+      barberId,
+      clientId: client.id,
+    });
+
+    return { outcome: 'alreadyHeld', booking: own };
   }
 }

@@ -109,7 +109,15 @@ export class PrismaBookingRepository implements IBookingRepository {
       // `hashtextextended` is a PostgreSQL built-in (11+) needing no
       // extension. The zero seed is arbitrary and fixed: every caller must
       // hash the same way or they would take different locks for one barber.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.barberId}, 0))`;
+      //
+      // **`$executeRaw`, never `$queryRaw`.** `pg_advisory_xact_lock` returns
+      // `void`, and the pg driver adapter cannot deserialize a void column —
+      // it raises `UnsupportedNativeDataType`, which surfaces as a generic
+      // P2010 and aborts the transaction. This statement is run for its
+      // effect, not its result, and `$executeRaw` is the call that does not
+      // try to read columns back. Measured against the live database: with
+      // `$queryRaw` every booking write failed.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.barberId}, 0))`;
 
       // 2. Re-read the day under the lock. Entered from `Barber` so the owner
       // predicate, the weekday filter and both range filters hang off one row
@@ -265,6 +273,45 @@ export class PrismaBookingRepository implements IBookingRepository {
         ],
       },
     });
+  }
+
+  /**
+   * This client's live holds with one barber on one day (design D7's second
+   * half).
+   *
+   * The `blocksAvailability` question, expressed as the SQL that can be
+   * answered without loading the day: a `PENDING_PAYMENT` row past its
+   * deadline is not holding anything.
+   */
+  async findLiveHoldsForClientOnDay(input: {
+    clientId: string;
+    barberId: string;
+    dayRange: Interval;
+    now: Date;
+  }): Promise<HeldBooking[]> {
+    const rows = await this.db.booking.findMany({
+      where: {
+        clientId: input.clientId,
+        barberId: input.barberId,
+        startTime: { gte: input.dayRange.start, lt: input.dayRange.end },
+        OR: [
+          { status: 'PENDING_APPROVAL' },
+          { status: 'CONFIRMED' },
+          { status: 'PENDING_PAYMENT', holdExpiresAt: null },
+          { status: 'PENDING_PAYMENT', holdExpiresAt: { gt: input.now } },
+        ],
+      },
+      select: {
+        id: true,
+        cancellationToken: true,
+        startTime: true,
+        endTime: true,
+        holdExpiresAt: true,
+        depositAmount: true,
+      },
+    });
+
+    return rows.map((row) => this.toHeldBooking(row));
   }
 
   /**

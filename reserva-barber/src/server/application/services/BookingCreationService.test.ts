@@ -56,6 +56,10 @@ function build(overrides: {
   slots?: Date[];
   liveHolds?: number;
   createResult?: unknown;
+  /** A client this shop already knows, for the repeat-submission path. */
+  knownClient?: { id: string } | null;
+  /** That client's live holds with this barber on the requested day. */
+  ownHolds?: unknown[];
 } = {}) {
   const profiles = {
     findOwnerIdByPublicSlug: vi
@@ -73,8 +77,12 @@ function build(overrides: {
   const availability = {
     slotsFor: vi.fn().mockResolvedValue(overrides.slots ?? [SLOT]),
   };
-  const clients = { resolve: vi.fn().mockResolvedValue({ id: 'cli-1' }) };
+  const clients = {
+    resolve: vi.fn().mockResolvedValue({ id: 'cli-1' }),
+    findByEmail: vi.fn().mockResolvedValue(overrides.knownClient ?? null),
+  };
   const bookings = {
+    findLiveHoldsForClientOnDay: vi.fn().mockResolvedValue(overrides.ownHolds ?? []),
     countLiveHoldsForClient: vi.fn().mockResolvedValue(overrides.liveHolds ?? 0),
     createProvisional: vi.fn().mockResolvedValue(
       overrides.createResult ?? {
@@ -359,6 +367,82 @@ describe('BookingCreationService - the client resolution', () => {
     await expect(service.create(input())).resolves.toEqual({
       outcome: 'alreadyHeld',
       booking: held,
+    });
+  });
+});
+
+describe('BookingCreationService - a repeat submission is not a lost race', () => {
+  const OWN_HOLD = {
+    id: 'bkg-mine',
+    cancellationToken: 'tok-mine',
+    startTime: SLOT,
+    endTime: new Date(SLOT.getTime() + 30 * 60_000),
+    holdExpiresAt: new Date(NOW.getTime() + 10 * 60_000),
+    depositAmount: '1000.00',
+  };
+
+  it('should_return_the_clients_own_hold_when_their_slot_is_no_longer_offered', async () => {
+    // **The defect this test exists for.** A client's own hold removes their
+    // own slot from the generated list, so a second identical submission never
+    // reaches the transaction's `alreadyHeld` branch — and without this path
+    // the person holding the slot is told the slot is taken. Found in runtime
+    // verification, not by the suite.
+    const { service, bookings } = build({
+      slots: [],
+      knownClient: { id: 'cli-1' },
+      ownHolds: [OWN_HOLD],
+    });
+
+    await expect(service.create(input())).resolves.toEqual({
+      outcome: 'alreadyHeld',
+      booking: OWN_HOLD,
+    });
+    expect(bookings.createProvisional).not.toHaveBeenCalled();
+  });
+
+  it('should_still_report_a_lost_race_when_the_client_holds_nothing', async () => {
+    const { service } = build({ slots: [], knownClient: { id: 'cli-1' }, ownHolds: [] });
+
+    await expect(service.create(input())).resolves.toEqual({ outcome: 'slotTaken' });
+  });
+
+  it('should_report_a_lost_race_for_a_client_this_shop_has_never_seen', async () => {
+    const { service, bookings } = build({ slots: [], knownClient: null });
+
+    await expect(service.create(input())).resolves.toEqual({ outcome: 'slotTaken' });
+    expect(bookings.findLiveHoldsForClientOnDay).not.toHaveBeenCalled();
+  });
+
+  it('should_create_no_client_row_on_the_refusal_path', async () => {
+    // A booking that fails must not leave a Client behind for someone who
+    // never booked.
+    const { service, clients } = build({ slots: [], knownClient: null });
+
+    await service.create(input());
+
+    expect(clients.resolve).not.toHaveBeenCalled();
+  });
+
+  it('should_not_return_a_hold_of_the_clients_at_a_different_time', async () => {
+    // Their own booking, but not this one — returning it would confirm an
+    // appointment at a time they did not ask for.
+    const elsewhere = { ...OWN_HOLD, startTime: new Date(SLOT.getTime() + 60 * 60_000) };
+    const { service } = build({ slots: [], knownClient: { id: 'cli-1' }, ownHolds: [elsewhere] });
+
+    await expect(service.create(input())).resolves.toEqual({ outcome: 'slotTaken' });
+  });
+
+  it('should_match_the_stored_time_by_formatting_it_rather_than_parsing_the_submission', async () => {
+    // The same discipline the read side applies: `hora` is compared, never
+    // turned into an instant that is then trusted.
+    const { service } = build({
+      slots: [],
+      knownClient: { id: 'cli-1' },
+      ownHolds: [OWN_HOLD],
+    });
+
+    await expect(service.create(input({ hora: '2026-08-17T12:00:00.000Z' }))).resolves.toEqual({
+      outcome: 'slotTaken',
     });
   });
 });

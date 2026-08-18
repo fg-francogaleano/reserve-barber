@@ -4,6 +4,7 @@ import { PrismaBusinessProfileRepository } from '@/server/infrastructure/prisma/
 import { PrismaPublicCatalogRepository } from '@/server/infrastructure/prisma/PrismaPublicCatalogRepository';
 import { PrismaBarberAvailabilityRepository } from '@/server/infrastructure/prisma/PrismaBarberAvailabilityRepository';
 import { PrismaWorkingHoursRepository } from '@/server/infrastructure/prisma/PrismaWorkingHoursRepository';
+import { PrismaPaymentConfigRepository } from '@/server/infrastructure/prisma/PrismaPaymentConfigRepository';
 import { PublicAvailabilityService } from '@/server/application/services/PublicAvailabilityService';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
 import { systemClock } from '@/server/domain/repositories/IClock';
@@ -19,20 +20,29 @@ import { logger } from '@/server/infrastructure/logger';
  * `backend-standards.md` requires it to be a Route Handler rather than anything
  * composed here.
  *
- * **What is absent must stay absent** (design D11), and the list is the same one
- * B1 wrote down:
+ * **What is absent must stay absent** (design D11) — with one item struck off
+ * by B4, deliberately and with its replacement named:
  *
  * - no Supabase client — nothing here uploads,
  * - no `ICredentialCipher` — PC3's rule is that a surface with no need for a
- *   cipher must not construct one,
- * - and **no `PaymentConfig` repository**. That row holds the encrypted Mercado
- *   Pago access token. This flow answers *is there anything to book*; whether a
- *   deposit can be charged is B4's question, asked somewhere a stranger is not
- *   already standing.
+ *   cipher must not construct one, and this one still has no need. The payment
+ *   repository below is built **without** one, so `findMercadoPagoAccessToken`
+ *   would throw here rather than quietly return a token in the clear.
+ * - **the `PaymentConfig` repository is now wired, and B1's reason for
+ *   withholding it is preserved rather than abandoned.** B1 and B2 wrote "no
+ *   `PaymentConfig` repository" because that row holds the encrypted Mercado
+ *   Pago access token and no earlier surface needed the row at all. B4's
+ *   details step has to answer *can a deposit be charged*, so the guarantee
+ *   changes shape: the only method this flow calls is
+ *   `findPaymentReadinessForPublic`, whose return type has no field the access
+ *   token fits into and whose query answers `mpAccessToken IS NOT NULL` in SQL
+ *   — the credential never enters the process. An absent dependency protects
+ *   until someone adds it; a type that cannot carry a value protects
+ *   afterwards.
  *
- * The cheapest way to guarantee all three is for the composer never to hand one
- * over, which is why this file exists rather than the page wiring its own
- * repositories.
+ * The read is also paid for only by the step that needs it: `depositFor` is
+ * called from the details step and nowhere else, so a client on the branch,
+ * service, barber, date or time step issues no payment query at all.
  */
 /**
  * Raised before anything is read when the runtime cannot place an instant in the
@@ -79,6 +89,11 @@ export function bookingCatalogService(): PublicBookingCatalogService {
       new PrismaBarberAvailabilityRepository(db),
       new PrismaWorkingHoursRepository(db),
       systemClock
-    )
+    ),
+    // B4's readiness read, and the second argument is deliberately absent: no
+    // cipher. This repository can therefore serve `findPaymentReadinessForPublic`
+    // — the only method this flow calls — and would throw on any method that
+    // needs to decrypt.
+    new PrismaPaymentConfigRepository(db)
   );
 }

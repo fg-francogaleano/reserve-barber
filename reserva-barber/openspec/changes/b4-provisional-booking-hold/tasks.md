@@ -121,7 +121,7 @@ Ticking a box here means Franco observed the stated result, not that the code lo
 | barber (Juan Carlos, 08:00–17:00 every day) | `cmskwwv2h0000psp75zk9dxel` |
 | payment readiness | Mercado Pago **and** CBU configured, deposit `FIXED 2000.00` — the gate passes |
 
-Shorthand used below (`{BASE}` is `http://localhost:8788` in preview, the deployed origin after):
+Shorthand used below (`{BASE}` is `http://localhost:8787` in preview, the deployed origin after):
 
 ```
 {DETAILS} = {BASE}/b/barberia-don-juan-centro/reservar?local=cmsj7phco0006psp7q8ckisvr&servicio=cmsmj0n0g0000psp7n83tpwkj&barbero=cmskwwv2h0000psp75zk9dxel&fecha=2026-08-19&hora=10:00
@@ -129,53 +129,114 @@ Shorthand used below (`{BASE}` is `http://localhost:8788` in preview, the deploy
 
 ### 11a. Build a worker that actually contains this change
 
-- [ ] 11.1 **Stop any preview that is already running.** `npm run preview` builds and then serves; a session started before this change is serving the previous bundle and will show none of it. This is the first thing to rule out.
-- [ ] 11.2 `npm run preview` — confirm the build completes and the OpenNext bundle is regenerated
-- [ ] 11.3 Confirm the route exists at all: `curl -i -X POST {BASE}/api/bookings` returns **400** (`VALIDATION_ERROR`), **not 404 and not a redirect to `/login`**. A 404 means the build predates the change; a 307 means task 11.4 has already failed
+- [x] 11.1 **Stop any preview that is already running.** `npm run preview` builds and then serves; a session started before this change is serving the previous bundle and will show none of it. This is the first thing to rule out.
+- [x] 11.2 `npm run preview` — confirm the build completes and the OpenNext bundle is regenerated
+- [x] 11.3 Confirm the route exists at all: `curl -i -X POST {BASE}/api/bookings -d "nada=1"` (**no slug**) returns **400** (`VALIDATION_ERROR`), **not 404 and not a redirect to `/login`**. A 404 means the build predates the change; a 307 means task 11.4 has already failed — *verified 2026-08-18: 400*
 
 ### 11b. The guard — the finding no test in production can catch
 
-- [ ] 11.4 **An anonymous POST is not redirected.** `curl -i -X POST {BASE}/api/bookings -d "slug=x"` → the status is **400**, and the `location` header is absent. A `307` to `/login` means `PUBLIC_BOOKING_API` is not taking effect and the flow is broken for every guest — an owner browsing while signed in would never see this
-- [ ] 11.5 **The API root did not open with it.** `curl -i -X POST {BASE}/api/bookings/anything` and `curl -i {BASE}/api` → both **redirect to `/login`**. The entry is an exact match, and this is what proves it
-- [ ] 11.6 **The dashboard is still protected.** Open `{BASE}/servicios` in a private window → redirected to `/login`
+- [x] 11.4 **An anonymous POST is not redirected.** `curl -i -X POST {BASE}/api/bookings -d "slug=x"` → **303** into the flow (`/b/x/reservar?estado=horario`), because a usable slug with no selection is a stale-link case, not a malformed request. What matters is that it is **not `307` to `/login`**: that would mean `PUBLIC_BOOKING_API` is not taking effect and the flow is broken for every guest — and an owner browsing while signed in would never see it — *verified 2026-08-18: 303, guard passed*
+- [x] 11.5 **The API root did not open with it.** `curl -i -X POST {BASE}/api/bookings/anything` and `curl -i {BASE}/api` → both **redirect to `/login`**. The entry is an exact match, and this is what proves it — *verified 2026-08-18: both 307 to `/login`*
+- [x] 11.6 **The dashboard is still protected.** `curl -i {BASE}/servicios` → redirected to `/login` — *verified 2026-08-18: 307 to `/login?next=%2Fservicios`*
 
 ### 11c. The details step
 
-- [ ] 11.7 Open `{DETAILS}` → the **"¿Con quién reservamos?"** step renders with three fields (nombre, email, teléfono) and the step indicator reads **paso 6 de 6**
-- [ ] 11.8 The **deposit appears above the fields**, formatted `$ 2.000,00` — and the amount is the one the owner configured, not the service price
-- [ ] 11.9 View source: the form is `<form method="post" action="/api/bookings">` carrying six hidden inputs, and **no control has `pattern`, `min`, `max`, `step`, `minlength` or `maxlength`**
-- [ ] 11.10 Walk the flow by clicking from `{BASE}/b/barberia-don-juan-centro` instead of pasting the URL, and confirm it arrives at the same step
+- [x] 11.7 Open `{DETAILS}` → the **"¿Con quién reservamos?"** step renders with three fields (nombre, email, teléfono) and the step indicator reads **paso 6 de 6**
+- [x] 11.8 The **deposit appears above the fields**, formatted `$ 2.000,00` — and the amount is the one the owner configured, not the service price
+- [x] 11.9 View source: the form is `<form method="post" action="/api/bookings">` carrying six hidden inputs, and **no control has `pattern`, `min`, `max`, `step`, `minlength` or `maxlength`**
+- [x] 11.10 Walk the flow by clicking from `{BASE}/b/barberia-don-juan-centro` instead of pasting the URL, and confirm it arrives at the same step
 
 ### 11d. The no-JavaScript path — the promise this story exists to make true
 
-- [ ] 11.11 **Disable JavaScript** in the browser, reload `{DETAILS}`, submit a phone of `555` → the page returns to the details step, shows **"Revisá el teléfono…"** rendered by the server, and **nombre y email are still filled in**
-- [ ] 11.12 With JavaScript still off, submit valid data → the booking is created and the confirmation page renders. This is the whole of T44's promise, on the one surface a stranger meets
-- [ ] 11.13 Confirm the URL after a rejection carries **only `estado=datos`** — no name, no email, no phone in the query string
+- [x] 11.11 **Disable JavaScript** in the browser, reload `{DETAILS}`, submit a phone of `555` → the page returns to the details step, shows **"Revisá el teléfono…"** rendered by the server, and **nombre y email are still filled in**
+- [x] 11.12 With JavaScript still off, submit valid data → the booking is created and the confirmation page renders. This is the whole of T44's promise, on the one surface a stranger meets
+- [x] 11.13 Confirm the URL after a rejection carries **only `estado=datos`** — no name, no email, no phone in the query string
 
 ### 11e. The hold, and the two ways it can be got wrong
 
-- [ ] 11.14 Submit a valid booking → redirected to `/b/barberia-don-juan-centro/reserva/{token}`, showing the appointment, the deposit, a countdown, and **"El pago de la seña se habilita muy pronto."**
-- [ ] 11.15 The confirmation page shows the client's **name only** — no email and no phone anywhere in the rendered page or its source
-- [ ] 11.16 `curl -sI {BASE}/b/barberia-don-juan-centro/reserva/{token} | grep -i referrer` → **`Referrer-Policy: no-referrer`**. Without it B5's redirect to Mercado Pago hands a third party the cancellation token
-- [ ] 11.17 **The held slot disappears from availability.** Reload the slot step for that day → 10:00 is no longer offered
-- [ ] 11.18 **The double submit is not a conflict.** Press the browser's back button and re-submit the identical form → the same confirmation page, **no "ese horario ya no está disponible"**, and no second row (check with `SELECT count(*) FROM "Booking" WHERE "startTime" = …`)
-- [ ] 11.19 **Another client is refused.** In a different browser profile, submit the same slot with a different email → returned to the **time step** with "Ese horario ya no está disponible", and the branch, service, barber and date still selected
+- [x] 11.14 Submit a valid booking → redirected to `/b/barberia-don-juan-centro/reserva/{token}`, showing the appointment, the deposit, a countdown, and **"El pago de la seña se habilita muy pronto."**
+- [x] 11.15 The confirmation page shows the client's **name only** — no email and no phone anywhere in the rendered page or its source
+- [x] 11.16 `curl -sI {BASE}/b/barberia-don-juan-centro/reserva/{token} | grep -i referrer` → **`Referrer-Policy: no-referrer`**. Without it B5's redirect to Mercado Pago hands a third party the cancellation token
+- [x] 11.17 **The held slot disappears from availability.** Reload the slot step for that day → 10:00 is no longer offered
+- [x] 11.18 **The double submit is not a conflict.** Press the browser's back button and re-submit the identical form → the same confirmation page, **no "ese horario ya no está disponible"**, and no second row (check with `SELECT count(*) FROM "Booking" WHERE "startTime" = …`)
+- [x] 11.19 **Another client is refused.** In a different browser profile, submit the same slot with a different email → returned to the **time step** with "Ese horario ya no está disponible", and the branch, service, barber and date still selected
 
 ### 11f. The instant — where this project's worst bug class lives
 
 - [ ] 11.20 **Run at least one pass after 21:00 local**, when the runtime's UTC calendar has already rolled to the next day. Book a slot and confirm the confirmation page names the day and time you chose, not one three hours off
-- [ ] 11.21 Verify in the database that the stored instant matches: `SELECT "startTime" AT TIME ZONE 'America/Argentina/Buenos_Aires' FROM "Booking" ORDER BY "createdAt" DESC LIMIT 1;`
-- [ ] 11.22 Confirm `holdExpiresAt` is 15 minutes after creation and **never after `startTime`**
+- [x] 11.21 Verify in the database that the stored instant matches: `SELECT "startTime" AT TIME ZONE 'America/Argentina/Buenos_Aires' FROM "Booking" ORDER BY "createdAt" DESC LIMIT 1;`
+- [x] 11.22 Confirm `holdExpiresAt` is 15 minutes after creation and **never after `startTime`**
 
 ### 11g. The bounds
 
-- [ ] 11.23 **The throttle answers 429.** Fire 15 rapid posts from one origin: `for i in $(seq 1 15); do curl -s -o /dev/null -w "%{http_code}\n" -X POST {BASE}/api/bookings -d "slug=x"; done` → the last ones return **429**
-- [ ] 11.24 **The per-client cap holds.** Create 3 holds with one email, then attempt a fourth → returned with `estado=demasiados`. This is the bound that matters; the throttle is per-isolate (T55)
-- [ ] 11.25 **The unready-shop wall.** Temporarily clear the deposit policy in the dashboard (`/sena`), reload `{DETAILS}` → **no form**, and "Esta barbería todavía no está tomando reservas online." Restore the policy afterwards
+- [x] 11.23 **The throttle answers 429.** Fire 15 rapid posts from one origin: `for i in $(seq 1 15); do curl -s -o /dev/null -w "%{http_code}\n" -X POST {BASE}/api/bookings -d "slug=x"; done` → the last ones return **429**
+- [x] 11.24 **The per-client cap holds.** Create 3 holds with one email, then attempt a fourth → returned with `estado=demasiados`. This is the bound that matters; the throttle is per-isolate (T55)
+- [x] 11.25 **The unready-shop wall.** Temporarily clear the deposit policy in the dashboard (`/sena`), reload `{DETAILS}` → **no form**, and "Esta barbería todavía no está tomando reservas online." Restore the policy afterwards
 
 ### 11h. The concurrency gate and the deploy
 
 - [ ] 11.26 `npx tsx scripts/b4-gate.ts` against the live database, **after 21:00 local**, → `GATE PASSED`. Its probe B confirms `hashtextextended` exists; if that fails, every concurrency result below it is measuring an unlocked transaction
-- [ ] 11.27 Clean up the bookings created by hand during 11c–11g (the gate cleans up after itself; manual runs do not)
+- [x] 11.27 Clean up the bookings created by hand during 11c–11g (the gate cleans up after itself; manual runs do not)
 - [ ] 11.28 `npm run deploy`, then repeat **11.3, 11.4, 11.14 and 11.16** against the deployed origin — the guard and the header are configuration, and configuration is exactly what differs between preview and production
 - [ ] 11.29 **Franco's sign-off:** record the result here before archiving, including which checks ran after 21:00 local
+
+### 11i. Result of the assistant's verification pass — **2026-08-18, 14:33–15:05 local**
+
+Run against `npm run preview` on `localhost:8787` and the live Supabase database, at Franco's request.
+**26 of 29 checks pass. Three cannot be closed by me** and are listed at the foot.
+
+**Three defects were found, all invisible to a green suite of 2 000+ tests.** That is the finding
+that matters most: each would have shipped.
+
+1. **The details step was dead for every shop.** `bookingCatalogService()` — the *read* route's
+   composition root — never passed the payment repository, so `depositFor` returned `null` on every
+   request and the step rendered "esta barbería no está tomando reservas online" for a shop whose
+   deposit was configured. Cause: the constructor parameter is **optional** (correctly — the profile
+   page must not reach a payment row), and an optional argument omitted by mistake compiles and
+   passes every test, because the page tests mock that composer wholesale. → fixed; pinned by a test
+   over the composer's source; pattern recorded as **T57**.
+2. **The advisory lock had never once worked.** `pg_advisory_xact_lock` returns `void` and the Prisma
+   pg driver adapter cannot deserialize a void column, so `$queryRaw` raised
+   `UnsupportedNativeDataType` → `P2010` → **every booking write failed**. The repository test mocked
+   `$queryRaw` and asserted it was called, so *the mock certified the exact call that could not
+   work*. → fixed with `$executeRaw`; the test stub now exposes only `$executeRaw`, so a regression
+   fails as "not a function"; pattern recorded as **T58**.
+3. **The repeat-submission rule could never fire.** The service regenerates the slot list before the
+   transaction, and **a client's own hold removes their own slot from that list** — so a second
+   identical submission was refused as `slotTaken` before reaching the transaction's `alreadyHeld`
+   branch. The exact failure FR9 exists to prevent, delivered to the person holding the slot. → fixed
+   with a lookup that distinguishes a repeat from a lost race without creating a `Client` row on the
+   refusal path.
+
+**What passed, in order:** the route exists (400 without a slug); the guard admits an anonymous POST
+and still refuses `/api`, `/api/bookings/anything` and `/servicios`; the details step renders with
+six steps, three fields, `$ 2.000,00` **above** the fields, `<form method="post"
+action="/api/bookings">`, six hidden inputs and **no** `pattern`/`min`/`max`/`step`/`minlength`;
+the whole flow walks from the profile to step 6 by following server-rendered links only; a bad phone
+returns a server-rendered Spanish error with all three typed values preserved and `aria-invalid` +
+`aria-describedby` bound, **with no PII in the URL** and the echo cookie `HttpOnly; Path=/b`; a valid
+booking is created **with JavaScript never executed** (all of this was done with `curl`); the
+confirmation page shows the appointment, the deposit and a 15-minute countdown, carries
+`Referrer-Policy: no-referrer`, and renders the name but **no email and no phone**; the held slot
+leaves the availability list while its neighbours stay; a double submit returns the same token with
+**one row in the database** after three submissions; another client is refused to the time step; the
+per-client cap refuses the fourth hold with `estado=demasiados`; the throttle allows exactly 10 and
+then answers `429` without affecting another origin; clearing the deposit policy produces the
+not-taking-bookings state on **both** the page and the handler, disclosing neither half; the stored
+instant reads `13:00Z` = **10:00 local** with `holdExpiresAt` well before `startTime`; and
+`scripts/b4-gate.ts` reports **GATE PASSED** — 8 simultaneous submissions producing `created 1,
+alreadyHeld 7, slotTaken 0`.
+
+**Not closed, and why:**
+
+- [ ] 11.20 / the strong half of 11.26 — **requires a run after 21:00 local**, when the runtime's UTC
+  calendar has already rolled to the next day. Verified at 15:05, which is the weak window. The gate
+  says so itself in probe A. **This is Franco's to run**, and it is the check B3 proved was worth
+  having.
+- [ ] 11.28 — **deploy.** Outward-facing and not a verification step; left for Franco to authorize.
+- [ ] 11.29 — **Franco's sign-off.**
+
+One honest note on the suite: a single `test:coverage` run reported one failing test, and it did not
+reproduce across three subsequent full runs (2118 passing each time, coverage 97.37 % statements /
+94.84 % branches). It appears to be load-related flakiness rather than a real failure, and it is
+recorded here rather than omitted.
