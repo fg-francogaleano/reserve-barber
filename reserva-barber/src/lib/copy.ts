@@ -452,7 +452,20 @@ export const COPY = {
     // and the client cannot act on the difference.
     notTakingBookings: 'Esta barbería todavía no está tomando reservas online.',
     notTakingBookingsHelp: 'Escribile por sus redes para coordinar un turno.',
+    // Two different refusals that used to share one string, which read wrong
+    // for both. The throttle is "you are going too fast"; the hold cap is "you
+    // already have several turns waiting to be paid" — and only the second
+    // tells the client something they can act on.
     tooManyRequests: 'Esperá un momento antes de volver a intentar.',
+    tooManyHolds: 'Ya tenés varias reservas esperando el pago.',
+    tooManyHoldsHelp: 'Completá el pago de alguna antes de reservar otra.',
+
+    // The JSON envelope's messages. Spanish like everything else the client
+    // can see: a hydrated browser and a script both reach this endpoint, and
+    // the flow speaks one language.
+    apiInvalidRequest: 'Solicitud inválida.',
+    apiValidationFailed: 'Revisá los datos ingresados.',
+    apiBookingCreated: 'Turno reservado.',
 
     // ---- B4: the hold confirmation page ----
     holdHeading: 'Te guardamos el turno',

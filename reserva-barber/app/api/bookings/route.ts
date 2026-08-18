@@ -10,6 +10,7 @@ import {
 import { bookingStepHref } from '@/server/application/booking/bookingSelectionParams';
 import { BookingThrottle } from '@/server/application/booking/bookingThrottle';
 import { bookingCreationService } from './bookingCreationService';
+import { COPY } from '@/lib/copy';
 import { logger } from '@/server/infrastructure/logger';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
 
@@ -95,44 +96,42 @@ function redirectTo(request: NextRequest, path: string, code: BookingOutcomeCode
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const origin = originOf(request);
 
-  // Counted before the work, and every submission counts — not only failures.
-  // A booking flood is made of requests that each succeed, which is exactly
-  // what makes it a calendar lock.
-  if (throttle.isThrottled(origin)) {
-    if (wantsJson(request)) {
-      return jsonError('Demasiadas solicitudes', 'TOO_MANY_REQUESTS', 429);
-    }
-    return NextResponse.json(
-      { success: false, error: { message: 'Demasiadas solicitudes', code: 'TOO_MANY_REQUESTS' } },
-      { status: 429 }
-    );
-  }
-  throttle.record(origin);
-
+  // **The body is read before the throttle is consulted, deliberately.** A
+  // throttled browser has to be sent back into the flow with an outcome code,
+  // and the only thing that says where "back" is, is the slug inside the
+  // submission. Reading a form body is negligible next to the database work
+  // this endpoint otherwise does — and the throttle still short-circuits
+  // before any query, which is what it exists to protect.
   let submission: Record<string, unknown>;
   try {
     submission = await readSubmission(request);
   } catch {
-    return jsonError('Solicitud inválida', 'VALIDATION_ERROR', 400);
+    return jsonError(COPY.booking.apiInvalidRequest, 'VALIDATION_ERROR', 400);
   }
-
-  const parsed = parseBookingRequest(submission);
 
   // A slug that is not a usable string leaves nowhere to send them back to, so
   // this is the one validation failure answered with a status rather than a
   // redirect into the flow.
   const slug = typeof submission.slug === 'string' ? submission.slug : null;
   if (slug === null || slug.length === 0 || slug.length > 128) {
-    return jsonError('Solicitud inválida', 'VALIDATION_ERROR', 400);
+    return jsonError(COPY.booking.apiInvalidRequest, 'VALIDATION_ERROR', 400);
   }
 
-  const selection = {
-    locationId: asString(submission.locationId),
-    serviceId: asString(submission.serviceId),
-    barberId: asString(submission.barberId),
-    date: asString(submission.fecha),
-    time: asString(submission.hora),
-  };
+  // Every submission counts, not only failures: a booking flood is made of
+  // requests that each succeed, which is exactly what makes it a calendar lock.
+  if (throttle.isThrottled(origin)) {
+    if (wantsJson(request)) {
+      return jsonError(COPY.booking.tooManyRequests, 'TOO_MANY_REQUESTS', 429);
+    }
+    // A rendered state, like every other outcome. Answering a browser with a
+    // raw JSON body would leave one of the six outcomes with no page at all.
+    return redirectTo(request, bookingStepHref(slug, selectionOf(submission)), 'espera');
+  }
+  throttle.record(origin);
+
+  const parsed = parseBookingRequest(submission);
+
+  const selection = selectionOf(submission);
 
   const detailsStep = bookingStepHref(slug, selection);
   // A lost time sends them back to the slot step, which is the same URL with
@@ -145,7 +144,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (wantsJson(request)) {
-      return jsonError('Revisá los datos ingresados', 'VALIDATION_ERROR', 400);
+      return jsonError(COPY.booking.apiValidationFailed, 'VALIDATION_ERROR', 400);
     }
 
     // The values travel in an httpOnly cookie, never in the query string: a
@@ -184,7 +183,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           return NextResponse.json({
             success: true,
             data: { redirectTo: confirmation },
-            message: 'Turno reservado',
+            message: COPY.booking.apiBookingCreated,
           });
         }
         const response = NextResponse.redirect(new URL(confirmation, request.url), 303);
@@ -217,4 +216,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 && value.length <= 128 ? value : undefined;
+}
+
+/**
+ * The catalogue and schedule selection as href parts.
+ *
+ * Extracted because the throttle path needs it before validation runs — it has
+ * to know where to send a browser back to — and duplicating the five reads
+ * would be two places to keep in step.
+ */
+function selectionOf(submission: Record<string, unknown>) {
+  return {
+    locationId: asString(submission.locationId),
+    serviceId: asString(submission.serviceId),
+    barberId: asString(submission.barberId),
+    date: asString(submission.fecha),
+    time: asString(submission.hora),
+  };
 }

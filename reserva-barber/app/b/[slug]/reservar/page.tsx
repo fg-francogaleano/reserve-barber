@@ -337,7 +337,11 @@ async function resolveOutcome(rawCode: string | string[] | undefined): Promise<R
 const OUTCOME_NOTICE: Partial<Record<BookingOutcomeCode, string>> = {
   horario: COPY.booking.staleSlot,
   'sin-pagos': COPY.booking.notTakingBookings,
-  demasiados: COPY.booking.tooManyRequests,
+  // Two distinct refusals that briefly shared one string. The cap is about
+  // what the client already has and tells them what to do about it; the
+  // throttle is about how fast they are going.
+  demasiados: COPY.booking.tooManyHolds,
+  espera: COPY.booking.tooManyRequests,
   error: COPY.booking.bookingFailed,
 };
 

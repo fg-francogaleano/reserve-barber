@@ -19,7 +19,10 @@ export const BOOKING_OUTCOMES = [
   'datos',
   'horario',
   'sin-pagos',
+  /** The per-client hold cap: several turns already waiting to be paid. */
   'demasiados',
+  /** The per-origin throttle: going too fast. A different fact, so a different code. */
+  'espera',
   'error',
 ] as const;
 

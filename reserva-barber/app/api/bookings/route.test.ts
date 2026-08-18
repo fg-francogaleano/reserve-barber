@@ -212,7 +212,10 @@ describe('POST /api/bookings - failure and abuse', () => {
     expect(logged).not.toContain('5555-4444');
   });
 
-  it('should_throttle_a_tight_loop_from_one_origin', async () => {
+  it('should_answer_a_throttled_browser_with_a_rendered_state_not_raw_json', async () => {
+    // The adversarial review's finding: the spec enumerates six outcomes and
+    // requires a distinct **rendered** state for each, throttled included. A
+    // browser used to get a JSON body here, which is no page at all.
     const sameOrigin = { 'cf-connecting-ip': '203.0.113.99' };
     let last: Response | undefined;
 
@@ -226,7 +229,43 @@ describe('POST /api/bookings - failure and abuse', () => {
       );
     }
 
+    expect(last?.status).toBe(303);
+    expect(last?.headers.get('location')).toContain('estado=espera');
+    // And it sends them back into their own flow, not to the flow's root.
+    expect(last?.headers.get('location')).toContain('local=loc-centro');
+  });
+
+  it('should_still_answer_a_json_client_with_429', async () => {
+    const sameOrigin = { 'cf-connecting-ip': '203.0.113.55', accept: 'application/json' };
+    let last: Response | undefined;
+
+    for (let i = 0; i < 15; i += 1) {
+      last = await POST(
+        new Request('https://reserva.test/api/bookings', {
+          method: 'POST',
+          body: form(),
+          headers: sameOrigin,
+        }) as never
+      );
+    }
+
     expect(last?.status).toBe(429);
+    await expect(last?.json()).resolves.toMatchObject({
+      success: false,
+      error: { code: 'TOO_MANY_REQUESTS' },
+    });
+  });
+
+  it('should_keep_the_hold_cap_and_the_throttle_as_different_outcomes', async () => {
+    // They used to share one copy string, which read wrong for both: the cap
+    // is about what the client already has, the throttle about how fast they
+    // are going.
+    create.mockResolvedValue({ outcome: 'holdLimitReached' });
+
+    const response = await POST(request(form()));
+
+    expect(response.headers.get('location')).toContain('estado=demasiados');
+    expect(response.headers.get('location')).not.toContain('estado=espera');
   });
 
   it('should_disclose_nothing_about_the_calendar_in_any_refusal', async () => {

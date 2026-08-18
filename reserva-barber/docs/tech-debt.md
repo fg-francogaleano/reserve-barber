@@ -1520,3 +1520,27 @@ raw SQL — it is the only thing that tests it.
 - **Trigger:** the next raw-SQL call added anywhere (**B5**, **D5**), or any `P2010` /
   `UnsupportedNativeDataType` seen in logs. When it fires, add the call to the relevant gate script in
   the same change rather than after it.
+
+### T59 — A repeat submission over a CONFIRMED booking is reported as a live hold
+**Status:** accepted — **unreachable today, reachable the moment B5 lands** · **Effort:** ~1 h ·
+**Added:** B4 (2026-08-18, adversarial review)
+
+`findLiveHoldsForClientOnDay` answers the same question `blocksAvailability` does, which means it
+includes **`CONFIRMED`** bookings — correctly, because a confirmed appointment does hold its slot.
+
+The consequence sits one layer up. If a client re-submits a slot they have already **paid for**, the
+service returns `alreadyHeld` and the confirmation page renders "Te guardamos el turno", a countdown,
+and "el pago de la seña se habilita muy pronto" — over an appointment that is already confirmed and
+paid. The countdown is absent (a confirmed booking has no `holdExpiresAt`), so the page is not
+actively wrong about time, but the two sentences are wrong about state.
+
+**Nothing can be `CONFIRMED` today**: no story writes that status, so the path is unreachable and no
+client can meet it. **B5 is what makes it reachable**, and B5 is the next story.
+
+The fix is a state on the confirmation page, not a change to the lookup — the lookup is right. The
+page needs to distinguish "held, awaiting payment" from "confirmed", which B5 has to add anyway for
+the client returning from a successful checkout. Doing it as part of B5 costs nothing extra; doing it
+after costs a bug report from someone who paid.
+
+- **Trigger:** **B5**, before it merges. It is the story that both creates the state and needs the
+  screen for it.

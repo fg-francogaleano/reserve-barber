@@ -273,3 +273,42 @@ used, so they could not have reached it.
 not been exercised is a real browser — hydration, the pending state on the submit button, focus order
 and the six-step indicator at 360 px were verified by reading server-rendered HTML, not by using the
 page.
+
+## 12. Adversarial review — **2026-08-18, 20:40**
+
+Run with `/opsx:verify + /adversarial-review`. **Conflict of interest named rather than hidden: the
+review was performed by the session that implemented the change**, which is not what the skill asks
+for. A pass from a different session remains advisable; what follows was written by deliberately
+hunting for what it would have been convenient not to find.
+
+Five findings, three fixed here.
+
+- [x] 12.1 **Major — one of the six outcomes had no rendered state.** The spec requires a distinct
+  rendered state per outcome, *throttled* included; a throttled browser received a **raw JSON body**
+  instead of a page. Worse, the two arms of the `wantsJson` branch returned identical JSON, so the
+  check decided nothing and hid the gap. Fixed: the body is now read before the throttle is
+  consulted — the slug is the only thing that says where "back" is — and a browser is redirected with
+  `estado=espera`. A JSON client still gets `429`.
+- [x] 12.2 **Major — task 4.8 was ticked without its test.** It claimed "a test that a runtime without
+  timezone support refuses before writing". Only the composition-root half existed. This is the same
+  pattern this change caught three times in its own code, repeated in the artifact that keeps score.
+  Fixed: `BookingCreationService.timezone.test.ts`, asserting the refusal **and** that no repository
+  was touched, with a negative control so an always-throwing check could not pass.
+- [x] 12.3 **Minor — six user-facing Spanish strings were inline in the handler**, against the spec's
+  own copy rule. Fixed: moved to `copy.ts`. In the process, `demasiados` and the throttle were found
+  to share one string that read wrong for both — the cap is about what the client already has, the
+  throttle about how fast they are going. They are now two codes and two messages.
+- [x] 12.4 **Minor — dead branch** in the throttle response. Removed with 12.1; they were one change.
+- [x] 12.5 **Minor now, Major at B5 — a repeat submission over a `CONFIRMED` booking** is reported as
+  a live hold, and the confirmation page then says "te guardamos el turno" and "el pago se habilita
+  muy pronto" over an appointment already paid for. Unreachable today (nothing writes `CONFIRMED`);
+  **B5 makes it reachable**. Not fixed here — the fix is a confirmation-page state that B5 must add
+  anyway. Recorded as **T59** with its trigger.
+
+**What survived the pass, and is worth naming because it mitigates a documented risk:**
+`toErrorLogContext` suppresses `cause` for exactly the Prisma codes that embed values —
+`P2000/P2002/P2003/P2025`. `P2002` is the one that would carry a client's email on a unique-constraint
+violation. The rule "contact details never reach a log" does not depend on anyone remembering.
+
+**Verdict after fixes: PASS WITH GAPS.** The two Majors are closed; one Minor is deferred with a
+trigger. 131 test files, 2124 tests, lint clean.
