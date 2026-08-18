@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { decideGuardAction, LOGIN_PATH, DASHBOARD_HOME, PUBLIC_PROFILE_ROOT } from './routeGuard';
+import {
+  decideGuardAction,
+  isBookingConfirmationRoute,
+  LOGIN_PATH,
+  DASHBOARD_HOME,
+  PUBLIC_PROFILE_ROOT,
+  PUBLIC_BOOKING_API,
+} from './routeGuard';
 
 describe('decideGuardAction', () => {
   it('should_send_an_unauthenticated_visitor_to_login_carrying_the_requested_path', () => {
@@ -201,6 +208,88 @@ describe('decideGuardAction', () => {
       const action = decideGuardAction({ hasSession: false, pathname: '/bookings', search: '' });
 
       expect(action.type).toBe('redirect');
+    });
+  });
+
+  describe('the public booking write', () => {
+    // B4: an anonymous guest must be able to POST a provisional booking.
+    // Without this entry the deny-by-default guard answers 307 to /login for
+    // every guest, breaking the flow with no symptom a signed-in owner would
+    // ever see.
+    it('should_let_an_unauthenticated_request_reach_the_booking_write', () => {
+      const action = decideGuardAction({
+        hasSession: false,
+        pathname: PUBLIC_BOOKING_API,
+        search: '',
+      });
+
+      expect(action).toEqual({ type: 'continue' });
+    });
+
+    it('should_let_an_authenticated_owner_reach_it_too', () => {
+      // An owner testing their own shop's booking flow must not be redirected.
+      const action = decideGuardAction({
+        hasSession: true,
+        pathname: PUBLIC_BOOKING_API,
+        search: '',
+      });
+
+      expect(action).toEqual({ type: 'continue' });
+    });
+
+    // The entry is an EXACT match, never a prefix — opening `/api` as a
+    // prefix would admit every future endpoint the moment it is created,
+    // including the dashboard's own. These are the negative cases that prove it.
+    it.each(['/api', '/api/', '/api/bookings/', '/api/bookings/anything', '/api/webhooks/mercadopago'])(
+      'should_still_guard_%s_after_the_booking_write_was_opened',
+      (pathname) => {
+        const action = decideGuardAction({ hasSession: false, pathname, search: '' });
+
+        expect(action).toEqual({
+          type: 'redirect',
+          to: `${LOGIN_PATH}?next=${encodeURIComponent(pathname)}`,
+        });
+      }
+    );
+
+    it('should_still_guard_dashboard_paths_after_the_booking_write_was_opened', () => {
+      const action = decideGuardAction({ hasSession: false, pathname: '/servicios', search: '' });
+
+      expect(action.type).toBe('redirect');
+    });
+  });
+
+  describe('the hold-confirmation namespace', () => {
+    // Its URL contains a booking's cancellation token, so every response under
+    // it must carry `Referrer-Policy: no-referrer` — without it B5's redirect
+    // to Mercado Pago would hand a third party the credential in a header
+    // nobody reads.
+    it.each([
+      '/b/barberia-don-juan/reserva/tok-abc',
+      '/b/barberia-don-juan/reserva/tok-abc/',
+      '/b/otra/reserva/AAAA-bbbb_1234',
+    ])('should_recognize_%s_as_needing_no_referrer', (pathname) => {
+      expect(isBookingConfirmationRoute(pathname)).toBe(true);
+    });
+
+    it.each([
+      '/b/barberia-don-juan',
+      '/b/barberia-don-juan/reservar',
+      '/b/barberia-don-juan/reserva',
+      '/b/barberia-don-juan/reserva/tok/extra',
+      '/reserva/tok-abc',
+    ])('should_not_apply_the_policy_to_%s', (pathname) => {
+      expect(isBookingConfirmationRoute(pathname)).toBe(false);
+    });
+
+    it('should_still_be_reachable_without_a_session', () => {
+      const action = decideGuardAction({
+        hasSession: false,
+        pathname: '/b/barberia-don-juan/reserva/tok-abc',
+        search: '',
+      });
+
+      expect(action).toEqual({ type: 'continue' });
     });
   });
 });

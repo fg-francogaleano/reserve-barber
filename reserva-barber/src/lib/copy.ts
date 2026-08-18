@@ -357,6 +357,7 @@ export const COPY = {
       barber: 'Barbero',
       date: 'Día',
       slot: 'Horario',
+      datos: 'Tus datos',
     },
     stepPosition: (current: number, total: number) => `Paso ${current} de ${total}`,
     locationHeading: '¿En qué sucursal?',
@@ -413,13 +414,59 @@ export const COPY = {
     emptyTodayHelp: 'Probá con otro día.',
     emptyHorizon: 'Este barbero no tiene turnos disponibles por ahora.',
     emptyHorizonHelp: 'Probá con otro barbero.',
-    // B4 creates the booking. Until it ships the flow says so rather than ending
-    // on a control that goes nowhere — the same disclosure P1 made for a link
-    // that did not resolve and B1 made for the "Reservar" button.
-    continueUnavailable: 'La reserva del turno se habilita muy pronto.',
-    // The list is a snapshot and nothing is held until B4's transaction. The
-    // copy must not imply otherwise: two clients can be looking at this time.
+    // The list is a snapshot and nothing is held until the client submits their
+    // details. The copy must not imply otherwise: two clients can be looking at
+    // this time.
     slotNotHeld: 'Todavía no reservamos este horario.',
+
+    // ---- B4: the client-details step ----
+    datosHeading: '¿Con quién reservamos?',
+    // The deposit is shown above the fields: the client is about to hand over
+    // contact details, and the amount they will owe is what they consent to.
+    depositLabel: 'Seña para confirmar',
+    depositHelp: 'Se paga en el siguiente paso para asegurar el turno.',
+    nameLabel: 'Nombre y apellido',
+    emailLabel: 'Email',
+    emailHelp: 'Te mandamos la confirmación acá.',
+    phoneLabel: 'Teléfono',
+    phoneHelp: 'Por si la barbería necesita contactarte.',
+    submit: 'Reservar turno',
+    submitting: 'Reservando…',
+
+    // Field-level rejections. Each names its own mistake — "datos inválidos"
+    // over three fields tells the client nothing they can act on.
+    nameRequired: 'Escribí tu nombre y apellido.',
+    nameTooShort: 'Escribí tu nombre completo.',
+    nameTooLong: 'Ese nombre es demasiado largo.',
+    emailRequired: 'Escribí tu email.',
+    emailInvalid: 'Revisá el email: parece que falta algo.',
+    emailTooLong: 'Ese email es demasiado largo.',
+    phoneRequired: 'Escribí tu teléfono.',
+    phoneInvalid: 'Revisá el teléfono. Por ejemplo: 11 5555-4444.',
+
+    // Form-level outcomes. None discloses a cause: a taken slot, an absence and
+    // a narrowed schedule are one thing to the client, who simply picks again.
+    bookingFailed: 'No pudimos reservar el turno. Probá de nuevo en un momento.',
+    // The shop cannot charge a deposit yet. It never says which half of the
+    // owner's payment setup is missing — the owner did not agree to publish it
+    // and the client cannot act on the difference.
+    notTakingBookings: 'Esta barbería todavía no está tomando reservas online.',
+    notTakingBookingsHelp: 'Escribile por sus redes para coordinar un turno.',
+    tooManyRequests: 'Esperá un momento antes de volver a intentar.',
+
+    // ---- B4: the hold confirmation page ----
+    holdHeading: 'Te guardamos el turno',
+    holdIntro: 'Reservamos este horario a tu nombre mientras completás el pago.',
+    holdExpiresIn: (minutes: number) =>
+      minutes === 1 ? 'Vence en 1 minuto.' : `Vence en ${minutes} minutos.`,
+    holdExpired: 'La reserva venció y el horario volvió a estar disponible.',
+    holdExpiredHelp: 'Podés elegir otro horario cuando quieras.',
+    // B5 and B6 own the two ways to pay. Until they ship the page says so
+    // plainly rather than ending on a control that goes nowhere — the same
+    // disclosure B1 made for the "Reservar" button.
+    paymentUnavailable: 'El pago de la seña se habilita muy pronto.',
+    paymentUnavailableHelp: 'Guardá este link: acá vas a poder pagar la seña.',
+    holdBookingFor: 'Turno de',
   },
   transfer: {
     nav: 'Transferencia',

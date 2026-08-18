@@ -266,8 +266,9 @@ function SubmitButton() {
 ### Navigation Patterns
 
 - Use Next.js `<Link>` and `useRouter()` from `next/navigation` for all navigation — never manipulate `window.location` directly.
-- The public booking flow is a **multi-step wizard** (local → servicio → barbero → fecha/horario → datos → pago). Keep step state in a hook/URL search params so back/forward works and steps are shareable/restorable.
+- The public booking flow is a **six-step wizard** (local → servicio → barbero → fecha → horario → datos), each a distinct step in the flow's step model, followed by payment (B5/B6). Keep step state in the URL search params so back/forward works and steps are shareable/restorable.
 - Provide explicit back controls between steps.
+- **The flow's own no-JavaScript answer does not use `useActionState`.** Its mutation is a Route Handler (see Data Fetching & Mutations above), so the pattern below — `useActionState` plus a form-level error returned as action state — has no role on this surface. The handler answers a browser submission with a redirect carrying an outcome code, and the receiving page renders that outcome from the server. This is what makes the house no-JS promise hold on the one surface a stranger reaches; see T44 in `tech-debt.md` for why the dashboard's ten `useActionState` forms are a separate, still-open problem.
 
 ### Accessibility
 
@@ -281,7 +282,7 @@ function SubmitButton() {
 ## Data Fetching & Mutations
 
 - **Reads:** fetch in Server Components (dashboard pages, public profile) so data is rendered on the server and secrets never reach the client. The Mercado Pago **Public Key** is the only payment credential exposed to the browser.
-- **Mutations:** use **Server Actions** for dashboard operations (create service, assign barber, approve receipt) and for creating a booking from the public flow. Validate inputs with Zod inside the action.
+- **Mutations:** use **Server Actions** for dashboard operations (create service, assign barber, approve receipt). The public booking flow's mutations are **Route Handlers**, not Server Actions — see `backend-standards.md`'s API Design Standards, which states this as a hard rule rather than a preference: a Server Action is addressed by a build-time id, and a guest mid-checkout is exactly who must never meet one that Next.js no longer recognizes. Validate inputs with Zod inside the action or the handler.
 - **Client-side live data:** use TanStack Query only for polling/interactive cases (e.g., the "Comprobantes pendientes" badge).
 - **Never call the database or use the MP Access Token from a Client Component.** Client Components call Server Actions or Route Handlers.
 - Handle errors on every request; show accessible feedback (toast/inline) in Spanish.

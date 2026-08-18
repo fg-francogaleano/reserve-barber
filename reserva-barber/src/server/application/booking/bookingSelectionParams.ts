@@ -25,6 +25,12 @@ export interface RawBookingSelection {
   fecha?: string | string[] | undefined;
   /** `HH:mm`, matched against the generated slot list and never parsed as a time. */
   hora?: string | string[] | undefined;
+  /**
+   * What the booking write reported, if the client is arriving from a
+   * redirect (B4 design D8). Carries a code only — never a submitted value,
+   * which travels in an httpOnly cookie instead.
+   */
+  estado?: string | string[] | undefined;
 }
 
 /**
@@ -35,8 +41,14 @@ export interface RawBookingSelection {
  * availability, and neither is knowable from the catalogue alone. This function
  * therefore stops at `date`, which means "the catalogue selections are settled;
  * the schedule is next".
+ *
+ * `datos` is the last step and the only one that writes anything. It replaced
+ * B3's `complete`, which sat *past* the final step and rendered an inert
+ * control because the route it would have posted to did not exist yet. It does
+ * now (`POST /api/bookings`), so the terminal state is a real step with a real
+ * form rather than a disclosure standing in for one.
  */
-export type BookingStep = 'location' | 'service' | 'barber' | 'date' | 'slot' | 'complete';
+export type BookingStep = 'location' | 'service' | 'barber' | 'date' | 'slot' | 'datos';
 
 /** Which selection was dropped, so the page can say so without guessing. */
 export type DiscardedSelection = 'location' | 'service' | 'barber' | 'date' | 'slot';

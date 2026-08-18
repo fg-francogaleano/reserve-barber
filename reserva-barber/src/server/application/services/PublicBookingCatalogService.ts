@@ -7,6 +7,9 @@ import { decidePublicSlugLookup } from '@/server/application/businessProfile/pub
 import type { PublicAvailabilityService } from './PublicAvailabilityService';
 import type { LocalDate } from '@/server/domain/models/bookingCalendar';
 import type { Weekday } from '@/server/domain/models/weekday';
+import type { IPaymentConfigRepository } from '@/server/domain/repositories/IPaymentConfigRepository';
+import { isBookable } from '@/server/domain/models/PaymentConfig';
+import { computeDepositAmount } from '@/server/domain/models/depositPolicy';
 
 /**
  * What the booking route should do with the slug it was given.
@@ -40,6 +43,19 @@ export interface BoundAvailability {
   workingWeekdays(barberId: string): Promise<Set<Weekday>>;
   /** The start times on offer for one barber, service duration and day. */
   slotsFor(input: { barberId: string; date: LocalDate; durationMinutes: number }): Promise<Date[]>;
+  /**
+   * Whether a deposit can be charged, and what it would be for a given price
+   * (B4 design D5).
+   *
+   * Bound like the availability reads and for the same reason: the owner is
+   * captured where it was resolved and never reaches the page.
+   *
+   * Returns `null` when the shop cannot take bookings at all — no payment
+   * method, no deposit policy, or no configuration row. The caller renders the
+   * not-taking-bookings state and never learns which half is missing, because
+   * that is not a distinction the client can act on.
+   */
+  depositFor(price: string): Promise<string | null>;
 }
 
 export type BookingCatalogResolution =
@@ -72,16 +88,58 @@ export class PublicBookingCatalogService {
     private readonly profiles: IBusinessProfileRepository,
     private readonly catalog: IPublicCatalogRepository,
     private readonly logger: ILogger,
-    private readonly availability: PublicAvailabilityService
+    private readonly availability: PublicAvailabilityService,
+    /**
+     * Optional, and the optionality is the point (B4 design D5).
+     *
+     * The public **profile** page builds this service for its bookability gate
+     * and has no deposit to compute, so it passes nothing and cannot reach a
+     * payment row at all. Only the booking route wires it.
+     */
+    private readonly payments?: IPaymentConfigRepository
   ) {}
 
-  /** Binds the availability reads to an owner that never leaves this class. */
+  /** Binds the availability and deposit reads to an owner that never leaves this class. */
   private bindAvailability(ownerId: string): BoundAvailability {
     return {
       today: () => this.availability.today(),
       workingWeekdays: (barberId) => this.availability.workingWeekdays(barberId, ownerId),
       slotsFor: (input) => this.availability.slotsFor({ ...input, ownerId }),
+      depositFor: (price) => this.depositFor(ownerId, price),
     };
+  }
+
+  /**
+   * The deposit for a price, or `null` when this shop cannot take bookings.
+   *
+   * **This is the read B2's spec forbade and B4 narrowed** (design D5). The
+   * prohibition was absolute because no earlier surface needed the row, and the
+   * cheapest guarantee was to hand the flow no repository at all. The reason it
+   * gave was the encrypted access token — so the guarantee changes shape rather
+   * than weakening: `findPaymentReadinessForPublic` returns a type with no
+   * field the token fits into, and its query never selects that column.
+   *
+   * Called only from the details step. A client on any earlier step issues no
+   * payment-configuration query at all.
+   */
+  private async depositFor(ownerId: string, price: string): Promise<string | null> {
+    if (this.payments === undefined) return null;
+
+    const readiness = await this.payments.findPaymentReadinessForPublic(ownerId);
+    if (readiness === null || readiness.depositValue === null) return null;
+
+    const gate = isBookable({
+      hasMercadoPagoCredentials: readiness.hasMercadoPagoCredentials,
+      transfer: readiness.transfer,
+      depositValue: readiness.depositValue,
+    });
+
+    if (!gate.ready) return null;
+
+    return computeDepositAmount(
+      { type: readiness.depositType, value: readiness.depositValue },
+      price
+    );
   }
 
   async resolveBySlug(requestedSlug: string): Promise<BookingCatalogResolution> {

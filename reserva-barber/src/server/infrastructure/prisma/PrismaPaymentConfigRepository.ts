@@ -6,6 +6,7 @@ import type {
   DepositPolicySettings,
   DepositPolicyInput,
 } from '@/server/domain/models/PaymentConfig';
+import type { PublicPaymentReadiness } from '@/server/domain/models/PaymentConfig';
 import type { ICredentialCipher } from '@/server/domain/repositories/ICredentialCipher';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { toCanonicalDecimal } from './canonicalDecimal';
@@ -66,6 +67,27 @@ const MP_TOKEN_FIELDS = {
  * select `mpAccessToken` cannot leak it.
  */
 const PUBLIC_DEPOSIT_FIELDS = {
+  depositType: true,
+  depositValue: true,
+} as const;
+
+/**
+ * What the booking write needs to decide whether a deposit can be charged
+ * (B4 design D5) — the transfer destination, the deposit policy, and whether
+ * a Mercado Pago credential exists.
+ *
+ * **`mpAccessToken` is absent, and its presence is answered in SQL rather than
+ * in TypeScript.** The dashboard read selects the column and reduces it to a
+ * boolean at the boundary, which is safe there because that surface is behind
+ * a session. This one serves an anonymous, unauthenticated, unrate-limited
+ * endpoint, so the token never enters the process at all: the `IS NOT NULL`
+ * below is evaluated by PostgreSQL and only its boolean answer crosses the
+ * wire.
+ */
+const PUBLIC_READINESS_FIELDS = {
+  transferCbuCvu: true,
+  transferAlias: true,
+  transferHolderName: true,
   depositType: true,
   depositValue: true,
 } as const;
@@ -256,6 +278,51 @@ export class PrismaPaymentConfigRepository implements IPaymentConfigRepository {
       // the value B4 turns into a client's deposit, so the trailing zero the
       // driver drops is the difference between 2000.50 and 2000.05.
       value: row.depositValue === null ? null : toCanonicalDecimal(row.depositValue),
+    };
+  }
+
+  /**
+   * The readiness projection for the public booking write (B4 design D5).
+   *
+   * Two statements rather than one, and deliberately so: Prisma's `select`
+   * cannot express `"mpAccessToken" IS NOT NULL` as a projected column, and
+   * the alternative — selecting the token and reducing it here, as the
+   * dashboard read does — would bring a bearer credential into the process on
+   * the one route a stranger can reach without a session. The presence check
+   * is therefore evaluated by PostgreSQL, and only its boolean answer crosses
+   * the wire.
+   *
+   * They are issued together so the two round trips overlap rather than queue.
+   */
+  async findPaymentReadinessForPublic(ownerId: string): Promise<PublicPaymentReadiness | null> {
+    const [row, credentialPresence] = await Promise.all([
+      this.db.paymentConfig.findUnique({
+        where: { ownerId },
+        select: PUBLIC_READINESS_FIELDS,
+      }),
+      this.db.$queryRaw<{ hasMercadoPagoCredentials: boolean }[]>`
+        SELECT "mpAccessToken" IS NOT NULL AS "hasMercadoPagoCredentials"
+        FROM "PaymentConfig"
+        WHERE "ownerId" = ${ownerId}
+      `,
+    ]);
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      hasMercadoPagoCredentials: credentialPresence[0]?.hasMercadoPagoCredentials ?? false,
+      transfer: {
+        cbuCvu: row.transferCbuCvu,
+        alias: row.transferAlias,
+        holderName: row.transferHolderName,
+      },
+      depositType: row.depositType,
+      // Decimal to string at the boundary. This is the value that becomes a
+      // client's deposit, so the trailing zero the driver drops is the
+      // difference between charging 2000.50 and 2000.05.
+      depositValue: row.depositValue === null ? null : toCanonicalDecimal(row.depositValue),
     };
   }
 

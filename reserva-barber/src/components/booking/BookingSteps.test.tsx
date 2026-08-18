@@ -198,33 +198,42 @@ describe('BookingStepIndicator', () => {
     expect(screen.getByText(COPY.booking.steps.service)).toHaveAttribute('aria-current', 'step');
   });
 
-  it('should_count_five_steps_when_the_branch_is_a_choice', () => {
-    // B3 took the flow from three steps to five. The count is derived from the
-    // flow definition, so this assertion protects the derivation rather than a
-    // literal someone would have to remember to update.
+  it('should_count_six_steps_when_the_branch_is_a_choice', () => {
+    // B3 took the flow from three steps to five and B4 to six. The count is
+    // derived from the flow definition, so this assertion protects the
+    // derivation rather than a literal someone would have to remember.
     render(<BookingStepIndicator current="location" hasBranchChoice />);
 
-    expect(screen.getByText(COPY.booking.stepPosition(1, 5))).toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.stepPosition(1, 6))).toBeInTheDocument();
   });
 
   it('should_drop_the_branch_step_from_the_count_when_it_is_not_a_choice', () => {
     render(<BookingStepIndicator current="service" hasBranchChoice={false} />);
 
     expect(screen.queryByText(COPY.booking.steps.location)).toBeNull();
-    expect(screen.getByText(COPY.booking.stepPosition(1, 4))).toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.stepPosition(1, 5))).toBeInTheDocument();
   });
 
   it('should_mark_the_new_schedule_steps', () => {
     render(<BookingStepIndicator current="date" hasBranchChoice />);
 
     expect(screen.getByText(COPY.booking.steps.date)).toHaveAttribute('aria-current', 'step');
-    expect(screen.getByText(COPY.booking.stepPosition(4, 5))).toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.stepPosition(4, 6))).toBeInTheDocument();
   });
 
-  it('should_keep_the_last_step_marked_once_the_selection_is_complete', () => {
-    render(<BookingStepIndicator current="complete" hasBranchChoice />);
+  it('should_mark_the_details_step_as_the_last_one', () => {
+    // B3's `complete` sat past the final step and needed a special case here.
+    // B4 made it a real step, so it is marked like any other.
+    render(<BookingStepIndicator current="datos" hasBranchChoice />);
 
-    expect(screen.getByText(COPY.booking.steps.slot)).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText(COPY.booking.steps.datos)).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText(COPY.booking.stepPosition(6, 6))).toBeInTheDocument();
+  });
+
+  it('should_still_place_the_details_step_last_when_the_branch_is_implied', () => {
+    render(<BookingStepIndicator current="datos" hasBranchChoice={false} />);
+
+    expect(screen.getByText(COPY.booking.stepPosition(5, 5))).toBeInTheDocument();
   });
 });
 

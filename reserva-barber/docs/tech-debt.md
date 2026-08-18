@@ -571,7 +571,22 @@ Same shape as T14 (barber reassignment rewriting derived history): the fix depen
 
 Note what B3 does **not** create: a barber whose schedule shrank still shows the shrunken schedule to clients, so no new booking lands outside working hours. The exposure is entirely to appointments booked before the edit.
 
-- **Trigger:** B4 (booking creation). The model it depended on is no longer the unknown.
+**B4 closed the half it could and named the half it could not (2026-08-17).** The booking transaction
+re-asserts, under its lock and immediately before the insert, that the appointment still falls inside
+a working window and outside every absence. That closes the *race*: an owner narrowing a schedule
+while a client is on the details step can no longer produce a booking outside working hours, which was
+the one path B4 itself could have opened.
+
+What remains is the original entry, unchanged in kind: **an edit made after a booking already exists
+still strands it**, silently, with nothing that detects or reports it. B4 makes this reachable for the
+first time — bookings can now exist — so the entry moves from deferred to real. The fix is still the
+one this entry always described: a warning that names the affected appointments, or a refusal to
+narrow a window that has bookings inside it. The read that finds them is the one B4's transaction
+already performs.
+
+- **Trigger:** the first schedule edit made against a barber who has bookings — which is now possible
+  rather than hypothetical. Also **D1**, whose dashboard is the first surface that could show an
+  owner a stranded appointment at all.
 
 ### T30 — Per-barber absence cap is advisory, not guaranteed
 **Status:** accepted · **Effort:** ~1–2 h if it becomes real · **Added:** M5b (2026-08-11)
@@ -659,7 +674,20 @@ What still holds: Cloudflare Workers enforces a 10 ms CPU-time soft limit per re
 
 Note the scope difference B1 introduces. This entry is about *Server Action POSTs*, which remain undiscoverable. The new public **read** surface is a different shape and is tracked separately in T47.
 
-- **Trigger:** any observed spike in unauthenticated action POSTs, or B4 — the first story to put a Server Action-adjacent write behind a publicly linked flow.
+**B4 arrived, and it changed the shape of this entry rather than closing it (2026-08-17).** The first
+publicly-linked write shipped — but as a **Route Handler**, not a Server Action, so the endpoint this
+entry is about did not gain a new caller. What B4 added is its own throttle on `POST /api/bookings`
+(`bookingThrottle.ts`), plus a per-client hold cap checked against the database.
+
+Two consequences worth stating. First, the dashboard's Server Action POSTs are still entirely
+unmetered, and are now the *only* unmetered write surface in the application — B4 did not widen this
+entry, it narrowed it by covering everything except this. Second, B4's own throttle is **per-isolate**
+and is documented as such: `workerd` offers no counter shared across isolates, so it blunts a naive
+loop and does not defeat a distributed one. That limitation is tracked separately in **T55**.
+
+- **Trigger:** any observed spike in unauthenticated action POSTs, or the first Cloudflare
+  rate-limiting rule added for T47/T55 — at which point covering the action endpoints costs almost
+  nothing extra, because the rule is already there.
 
 ### T48 — The public profile has no loading state, because a skeleton costs its HTTP statuses
 **Status:** accepted — measured trade-off, statuses chosen over the skeleton · **Effort:** unknown; needs a way to stream a shell without committing the status early · **Added:** B1 (2026-08-15)
@@ -743,7 +771,28 @@ Dynamic rendering also buys something real: the owner saves their profile, reloa
 
 **The honest summary is that this is a bet on having no traffic, written down so it is a bet and not an oversight.**
 
-- **Trigger:** the first time the owner shares the link somewhere with reach (an Instagram bio, a story, printed cards), any measured growth in requests to `/b/**`, any Supavisor pool saturation, **any crawler observed sweeping the `reservar` parameter space**, or B4 — at which point the public surface starts creating rows and the calculation changes entirely.
+**B4 fired the last clause of the trigger, and the calculation did change (2026-08-17).** The public
+surface now **writes**. Three things follow that were not true when this entry was last costed:
+
+- **The details step adds a payment-configuration read**, and the write adds a catalogue read, an
+  availability read, a client upsert and an interactive transaction. The transaction is the expensive
+  one: it *pins* a pooled connection for its duration rather than borrowing one per statement, and the
+  pool is shared with the owner's dashboard. A burst on one barber queues on the advisory lock while
+  holding connections.
+- **A bad request now costs a slot, not a query.** That is a different kind of exposure, and it is why
+  B4 shipped bounds of its own rather than waiting for this entry: a per-origin throttle (**T55**,
+  per-isolate and explicitly not a rate limit) and a per-client hold cap checked against the database.
+- **The mitigation this entry keeps deferring is now the same work as T55's.** A Cloudflare
+  rate-limiting rule covers the read surface and the write surface at once. The objection recorded
+  above — that it "lives outside the repository, where nobody will remember it exists" — is answered by
+  these two entries naming it.
+
+The bet itself is unchanged: still no real traffic, still deliberate. What changed is the downside.
+
+- **Trigger:** the first time the owner shares the link somewhere with reach (an Instagram bio, a
+  story, printed cards), any measured growth in requests to `/b/**`, any Supavisor pool saturation,
+  **any crawler observed sweeping the `reservar` parameter space**, or any observed burst on
+  `POST /api/bookings`. Do this together with **T55** — it is one rule.
 
 ### T49 — The public 404 page renders an empty body without JavaScript
 **Status:** accepted · **Effort:** unknown — see the cause · **Added:** B2 (2026-08-15, runtime verification) · **Origin:** B1
@@ -795,6 +844,13 @@ Measured rather than guessed. Deploying `main` — identical to what was already
 **The ceiling is still there.** Current headroom is ~484 KiB against 3072, and the remaining bundle has no obvious fat: no duplicated Next runtimes, no `@edge-runtime/primitives`, and the 4 MB capsize font-metrics JSON is not inlined. The next lever is Workers Paid (US$5/month, 10 MiB) — there is no second `compilerBuild` trick to find.
 
 **B3 measured at 2608.15 KiB gzip** — two Prisma models, two components, a calendar module and a repository for **+19.97 KiB** over B2's 2588.18. Headroom is now **~464 KiB** against the 3072 KiB ceiling. The two new tables cost almost nothing because the wasm query compiler is a fixed size and the generated client grows only by its types, which do not ship.
+
+**B4 measured at 2746.52 KiB gzip** — **+138.37 KiB** over B3, the largest single-story increase since B2, leaving **~325 KiB** of headroom. The jump is proportionate to what the story added: a route handler, two repositories with an interactive transaction, a component, a confirmation page and a validation schema. Two things worth naming rather than inferring:
+
+- **This is the first story whose growth is visible against the remaining headroom.** At ~138 KiB per story there are two more stories of room, and B5 (Mercado Pago SDK or a hand-rolled client), B6 (Supabase Storage upload) and N1 (Resend) are each plausibly larger than B4. **B5 is the story that should assume it will not fit** and price the paid plan into its own plan rather than discovering the rejection at deploy time, as B2 did.
+- **The dry-run figure remains a lower bound, not a gate.** 2746.52 KiB is what wrangler prints; B2 proved Cloudflare's own measurement is stricter. "~325 KiB of headroom" means "definitely not rejected for size today", never "325 KiB may safely be added".
+
+- **Trigger (unchanged in kind, closer in time):** the next story that adds a runtime dependency of any size — realistically **B5**. The lever is still Workers Paid (US$5/month, 10 MiB); there is no second `compilerBuild` trick to find.
 
 - **Trigger:** the next deploy rejection, or any story that adds more than ~400 KiB gzip. Payments (B5), email (N1) and the cron trigger (B7) are all still to come and all add dependencies.
 
@@ -1171,10 +1227,10 @@ Options, none taken:
 - ~~**Trigger:** PC3 and the booking flow both add forms…~~ — **fired at PC3. Decided, not yet
   implemented.**
 
-**PC3 decision (2026-08-15): option 2, implemented in B4, not here.**
+**PC3 decision (2026-08-15): option 2, "implemented in B4" — superseded (2026-08-17), see below.**
 
 PC3 added a fourth form and inherited the behaviour exactly as predicted. It was **not** fixed in
-this story, and that is a choice rather than an omission:
+that story, and that was a choice rather than an omission:
 
 - Fixing it means supplying a `permalink` per form **and** dropping the group-level `loading.tsx`
   across ten routes. That is a decision about the whole dashboard's loading architecture, and riding
@@ -1189,9 +1245,33 @@ Option 1 (amend `frontend-standards.md` to stop claiming something untrue) is **
 the claim is the thing that keeps every form in this project built correctly — native `<form>`,
 uncontrolled inputs, confirmations as server-returned state, cancel controls as submit buttons. Every
 one of those choices is right on its own merits and would decay if the standard dropped the promise.
-The standard is aspirational today and should stay so until B4 makes it true.
+The standard is aspirational for the dashboard today and should stay so until that half is fixed.
 
-- **Trigger:** **B4.** Not "decide by then" any more — the decision above is made; B4 implements it.
+**B4 revision (2026-08-17): option 2 was unexecutable as written, and this entry now splits in two.**
+
+`backend-standards.md`'s API Design Standards make the public booking flow's mutations **Route
+Handlers**, a hard rule with its own reasoning, not a Server Action — and PC3's option 2
+(`permalink` + `useActionState`) is a Server Action pattern. B4's form posts to `POST /api/bookings`,
+where `useActionState` has no role at all. The decision could not be carried out by the story it was
+assigned to, which is a sharper failure than being merely undone: it was never a coherent instruction
+for that surface.
+
+**What B4 actually did (option 3, decided fresh):** the handler answers a browser submission with a
+redirect carrying an outcome code, and the receiving page renders that outcome — success, each
+validation failure, slot-taken, not-payment-ready, throttled — from the URL, on the server, before
+hydration. This is not a workaround borrowed from the dashboard's problem; it is the shape a Route
+Handler naturally produces, and it satisfies the house promise on the one surface a stranger actually
+reaches without touching `loading.tsx` or `useActionState` anywhere.
+
+**What remains open, and is now this entry's sole scope:** the ten dashboard forms behind
+`app/(dashboard)/loading.tsx`, still built on Server Actions, still silent with JavaScript off, for
+the reasons Cause 1 and Cause 2 above describe. B4 does not touch them and does not need to — nothing
+in the public booking flow depends on the dashboard's loading architecture. Fixing them is still a
+`permalink`-per-form-plus-skeleton-removal decision, or a move to the same server-rendered-from-URL
+shape B4 just proved out, which is now a validated precedent rather than a hypothesis.
+
+- **Trigger:** the next dashboard story that adds or meaningfully touches a form, or any report of a
+  no-JavaScript dashboard submission producing no feedback — whichever comes first. Not B4 again.
 
 ### T37 — The transfer editor's no-JavaScript path is reasoned, not verified
 **Status:** accepted · **Effort:** ~20 min · **Added:** PC1 (2026-08-13)
@@ -1253,6 +1333,12 @@ becomes real is not to compute the strip honestly — it is to cache the per-day
 cheap upper bound (a day with no absence and no booking cannot be full) and mark only the days that
 bound rules out.
 
+**B4 made it reachable for the first time (2026-08-17).** B3 shipped this with the table empty, so no
+day could ever be full and the wasted tap was theoretical. Bookings can now be created, so a fully
+booked day is a state a real client can meet — and they meet it exactly as designed: the day looks
+selectable, the slot step renders `emptyDay`, and they pick another. Nothing changed in the code;
+what changed is that the entry now describes something that happens.
+
 - **Trigger:** the first barber whose days are regularly full, or any complaint about tapping into an
   empty day. Also: whenever T47 gets a cache, since that is what makes the honest version affordable.
 
@@ -1271,4 +1357,100 @@ Neither is a safety bound, so neither is dangerous to change — but both are cu
 than a setting, and the horizon is also load-bearing for T47's parameter space, so raising it is not
 free.
 
-- **Trigger:** the first owner who asks for either, which is likely to be the first owner.
+**B4 added a third to the same family (2026-08-17): `HOLD_DURATION_MINUTES` = 15.** Comfortable for a
+Mercado Pago checkout, tight but workable for locating a bank transfer destination — and, like the
+other two, a judgement made before any real shop used the product. It is the one of the three with a
+cost in both directions: too short expires a client who was genuinely paying, too long lets an
+abandoned checkout hold a slot four times an hour, which is what makes the per-client cap load-bearing
+(`BookingCreationService.MAX_LIVE_HOLDS_PER_CLIENT`, itself a fourth guess of the same kind).
+
+One interaction to note before lowering the lead time: `holdExpiresAtFor` clamps the hold at
+`startTime`, and that clamp is currently unreachable *only* because the lead time is 60 minutes.
+Lowering it below the hold duration makes the clamp live. It is written into the rule and tested, so
+this is a fact to know rather than a change to make.
+
+- **Trigger:** the first owner who asks for any of them, which is likely to be the first owner. **B6**
+  for the hold duration specifically — it is the first story that can measure how long uploading a
+  transfer receipt actually takes.
+
+### T54 — A returning client's rename re-labels every booking they ever made
+**Status:** accepted — **decided, not discovered** · **Effort:** ~1 h now (a migration over an empty
+table), unknown later · **Added:** B4 (2026-08-17)
+
+`Client` is deduplicated by `(ownerId, email)`, and a returning client's `name` and `phone` overwrite
+what is stored. That is the right default: the owner needs the number that answers today, and a
+client who corrects a typo expects the correction to stick.
+
+The cost is that **`Booking` snapshots `priceAtBooking` and `depositAmount` but no contact detail**.
+So an overwrite silently rewrites what every earlier booking by that client displays — in D1's
+dashboard, in D4's client table, in D3's calendar. A booking from March shows the name entered in
+September.
+
+Two realistic ways it bites: a client mistypes their name, corrects it later, and the correction
+propagates backwards through history that should be immutable; or two people share one email address
+(a couple booking back-to-back), and each booking is labelled with whoever booked most recently.
+
+**The alternative was considered and declined.** Snapshotting `clientName` and `clientPhone` onto
+`Booking` would fix it exactly, and today it costs a migration over a table with **zero rows** — this
+is the cheapest this fix will ever be. It was declined because B4 was already the concurrency-critical
+story and `data-model.md` §11 does not model contact snapshots, so adding two columns mid-change would
+have been a schema decision ridden along inside a transaction review. That reasoning expires the
+moment the table is not empty.
+
+- **Trigger:** **D1 or D4** — the first surfaces that render a client's name against a historical
+  booking, and therefore the first place anyone can see this. Fix it before the table has meaningful
+  volume, because the migration is the whole cost and the migration only gets more expensive.
+
+### T55 — The booking write's throttle is per-isolate and does not defeat a distributed attempt
+**Status:** accepted · **Effort:** ~2 h (a Cloudflare rate-limiting rule, shared with T47) · **Added:**
+B4 (2026-08-17)
+
+`bookingThrottle.ts` limits `POST /api/bookings` to 10 attempts per origin per minute. It is a
+`Map` inside one isolate, and `workerd` gives no counter shared across them, so an attacker
+distributing requests simply lands on different instances and each sees a fresh map. What it does
+defeat is one script, one address, a tight loop — the shape of nearly every real abuse of an
+unauthenticated endpoint, and the reason it is worth having at all.
+
+**The bound that actually holds is elsewhere and is deliberate.**
+`MAX_LIVE_HOLDS_PER_CLIENT` (3) is checked against the database, so it cannot be spread across
+isolates: the rows are shared even when the isolates are not. An attacker can still burn requests, but
+they cannot hold more than three slots per email address per owner — which is the outcome that
+actually costs the owner money.
+
+This entry exists because an accepted debt with a false justification is worse than one with none
+(B1 design D12). The throttle looks like a rate limit and is not one; nobody should read its presence
+as meaning the endpoint is rate-limited.
+
+The real fix is the one T47 has been pointing at for three stories: a **Cloudflare rate-limiting
+rule**, which is edge-side, shared across isolates, and covers the read surface at the same time.
+
+- **Trigger:** any observed request spike on the public surface, or the first Cloudflare
+  rate-limiting rule added for T47 — the two are the same work and should be done together.
+
+### T56 — Guest personal data accumulates with no deletion path
+**Status:** accepted · **Effort:** unknown (a policy decision before an implementation) · **Added:**
+B4 (2026-08-17)
+
+B4 is the first story that stores a stranger's personal data: `Client` holds a name, an email address
+and a phone number for every guest who books, indefinitely. There is no path — in the dashboard, in
+the public flow, or in any script — that deletes one, and `Client` is `onDelete: Restrict` from
+`Booking`, so a client with any booking history cannot be removed without deciding what happens to the
+bookings first.
+
+This is the same shape as **T32** (unreferenced storage objects with no reclamation path), and it is
+listed beside it deliberately: both are things this product accumulates and cannot yet remove. The
+difference is that a stray image costs storage, and this one is a person's contact details held by a
+business they visited once.
+
+What makes it unresolved rather than simply unbuilt is that the policy question comes first. A booking
+is a financial record the owner has a legitimate reason to keep; the client's contact details are not
+the same thing, and the two currently live in one row. Anonymising the client (blanking name, email
+and phone while keeping the row for referential integrity) is the shape that satisfies both, and it is
+a decision nobody has made.
+
+Scope is small today — no real shop has used the product, so the table is empty — which is exactly why
+it is worth deciding before it is not.
+
+- **Trigger:** the first real shop taking real bookings, or any request from a client to be removed.
+  Also **N1**, which is when these addresses start receiving email and the data stops being merely
+  stored.

@@ -32,7 +32,7 @@ const CATALOG = buildBookingCatalog([
 ]);
 
 function createService(
-  findOwnerIdByPublicSlug: ReturnType<typeof vi.fn>,
+  findOwnerIdByPublicSlug: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue('owner-1'),
   findBookableCatalog: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue(CATALOG)
 ) {
   const logger: ILogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -55,13 +55,31 @@ function createService(
     slotsFor,
   } as unknown as PublicAvailabilityService;
 
+  // B4's payment-readiness read, wired only by the booking route. Optional by
+  // design: the profile page builds this service for its bookability gate and
+  // must not be able to reach a payment row at all.
+  const findPaymentReadinessForPublic = vi.fn().mockResolvedValue({
+    hasMercadoPagoCredentials: true,
+    transfer: { cbuCvu: null, alias: null, holderName: null },
+    depositType: 'PERCENT',
+    depositValue: '25',
+  });
+  const payments = { findPaymentReadinessForPublic } as never;
+
   return {
-    service: new PublicBookingCatalogService(profiles, catalog, logger, availability),
+    service: new PublicBookingCatalogService(profiles, catalog, logger, availability, payments),
+    serviceWithoutPayments: new PublicBookingCatalogService(
+      profiles,
+      catalog,
+      logger,
+      availability
+    ),
     logger,
     findOwnerIdByPublicSlug,
     findBookableCatalog,
     slotsFor,
     workingWeekdays,
+    findPaymentReadinessForPublic,
   };
 }
 
@@ -241,5 +259,97 @@ describe('PublicBookingCatalogService - a shop with nothing bookable', () => {
       type: 'render',
       catalog: [],
     });
+  });
+});
+
+describe('PublicBookingCatalogService - the bound deposit read (B4)', () => {
+  async function boundAvailabilityOf(builder: ReturnType<typeof createService>) {
+    const resolution = await builder.service.resolveBySlug('barberia-don-juan');
+    if (resolution.type !== 'render') throw new Error('expected a render resolution');
+    return resolution.availability;
+  }
+
+  it('should_compute_the_deposit_through_the_shared_rule', async () => {
+    const builder = createService();
+    const availability = await boundAvailabilityOf(builder);
+
+    // 25% of 4000.00, by the one deposit rule this project has.
+    await expect(availability.depositFor('4000.00')).resolves.toBe('1000.00');
+  });
+
+  it('should_scope_the_read_on_an_owner_the_caller_never_receives', async () => {
+    const builder = createService();
+    const availability = await boundAvailabilityOf(builder);
+
+    await availability.depositFor('4000.00');
+
+    expect(builder.findPaymentReadinessForPublic).toHaveBeenCalledWith('owner-1');
+    // The resolution carries no field that could have named the owner.
+    expect(JSON.stringify(await builder.service.resolveBySlug('barberia-don-juan'))).not.toContain(
+      'owner-1'
+    );
+  });
+
+  it('should_report_null_when_no_deposit_policy_is_configured', async () => {
+    const builder = createService();
+    builder.findPaymentReadinessForPublic.mockResolvedValue({
+      hasMercadoPagoCredentials: true,
+      transfer: { cbuCvu: null, alias: null, holderName: null },
+      depositType: 'PERCENT',
+      depositValue: null,
+    });
+
+    const availability = await boundAvailabilityOf(builder);
+
+    await expect(availability.depositFor('4000.00')).resolves.toBeNull();
+  });
+
+  it('should_report_null_when_no_payment_method_is_configured', async () => {
+    const builder = createService();
+    builder.findPaymentReadinessForPublic.mockResolvedValue({
+      hasMercadoPagoCredentials: false,
+      transfer: { cbuCvu: null, alias: null, holderName: null },
+      depositType: 'PERCENT',
+      depositValue: '25',
+    });
+
+    const availability = await boundAvailabilityOf(builder);
+
+    await expect(availability.depositFor('4000.00')).resolves.toBeNull();
+  });
+
+  it('should_report_null_when_no_configuration_row_exists', async () => {
+    const builder = createService();
+    builder.findPaymentReadinessForPublic.mockResolvedValue(null);
+
+    const availability = await boundAvailabilityOf(builder);
+
+    await expect(availability.depositFor('4000.00')).resolves.toBeNull();
+  });
+
+  it('should_accept_a_transfer_destination_as_a_payment_method', async () => {
+    const builder = createService();
+    builder.findPaymentReadinessForPublic.mockResolvedValue({
+      hasMercadoPagoCredentials: false,
+      transfer: { cbuCvu: '2850590940090418135201', alias: null, holderName: 'Franco' },
+      depositType: 'FIXED',
+      depositValue: '1500.00',
+    });
+
+    const availability = await boundAvailabilityOf(builder);
+
+    await expect(availability.depositFor('4000.00')).resolves.toBe('1500.00');
+  });
+
+  it('should_report_null_when_the_service_was_built_with_no_payment_repository', async () => {
+    // The public profile page builds it this way for its bookability gate. It
+    // must not be able to reach a payment row at all — the optionality is the
+    // guarantee, not an oversight.
+    const builder = createService();
+    const resolution = await builder.serviceWithoutPayments.resolveBySlug('barberia-don-juan');
+    if (resolution.type !== 'render') throw new Error('expected a render resolution');
+
+    await expect(resolution.availability.depositFor('4000.00')).resolves.toBeNull();
+    expect(builder.findPaymentReadinessForPublic).not.toHaveBeenCalled();
   });
 });

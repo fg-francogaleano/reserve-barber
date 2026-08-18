@@ -1,11 +1,13 @@
 /**
- * The booking states, and the one question availability asks about a booking.
+ * The booking states, the one question availability asks about a booking, and
+ * the hold-deadline rule B4 needed once it became the table's writer.
  *
- * This change creates the `Booking` table and reads it; it writes nothing. The
- * entity as a whole belongs to B4 — what lives here is the part slot generation
- * needs, defined where B4 will find it rather than inside the availability rule
- * that happens to be its first consumer.
+ * B3 created this table and read it, writing nothing. What lived here then was
+ * only the part slot generation needed; `holdExpiresAtFor` is the first piece
+ * that belongs to a writer.
  */
+
+import { HOLD_DURATION_MINUTES } from './bookingHorizon';
 
 export const BOOKING_STATUSES = [
   'PENDING_PAYMENT',
@@ -66,4 +68,21 @@ export function blocksAvailability(booking: BlockingCandidate, now: Date): boole
     case 'EXPIRED':
       return false;
   }
+}
+
+/**
+ * When a new provisional hold lapses: the creation instant plus
+ * `HOLD_DURATION_MINUTES`, **clamped so it never exceeds `startTime`**.
+ *
+ * The clamp is correctness, not a preference. An unclamped hold on a
+ * near-term appointment would lapse *after* the appointment has already
+ * begun, and B7 — once it exists — would expire a booking whose time has
+ * passed. `MIN_BOOKING_LEAD_MINUTES` makes that case unreachable today only
+ * because it is itself a guess a real shop is likely to have lowered before
+ * this clamp is ever exercised, which is exactly why it is written into the
+ * rule rather than relied on as a side effect of another constant.
+ */
+export function holdExpiresAtFor(input: { createdAt: Date; startTime: Date }): Date {
+  const unclamped = new Date(input.createdAt.getTime() + HOLD_DURATION_MINUTES * 60_000);
+  return unclamped.getTime() > input.startTime.getTime() ? input.startTime : unclamped;
 }

@@ -9,6 +9,7 @@ import { ServiceStep } from '@/components/booking/ServiceStep';
 import { BarberStep } from '@/components/booking/BarberStep';
 import { DateStep } from '@/components/booking/DateStep';
 import { SlotStep } from '@/components/booking/SlotStep';
+import { ClientDetailsStep } from '@/components/booking/ClientDetailsStep';
 import {
   bookingStepHref,
   hasBranchChoice,
@@ -23,7 +24,20 @@ import {
   resolveDateSelection,
   resolveSlotSelection,
 } from '@/server/application/booking/bookingScheduleParams';
-import { formatLocalDate, type LocalDate } from '@/server/domain/models/bookingCalendar';
+import {
+  formatLocalDate,
+  formatSlotTime,
+  type LocalDate,
+} from '@/server/domain/models/bookingCalendar';
+import {
+  BOOKING_ECHO_COOKIE,
+  BOOKING_OUTCOME_PARAM,
+  parseEcho,
+  parseOutcomeCode,
+  type BookingOutcomeCode,
+} from '@/server/application/booking/bookingOutcome';
+import type { BookingFieldErrors } from '@/server/application/booking/bookingRequestSchema';
+import { cookies } from 'next/headers';
 import type { Weekday } from '@/server/domain/models/weekday';
 import type { BoundAvailability } from '@/server/application/services/PublicBookingCatalogService';
 import { resolveOrigin } from '@/server/application/businessProfile/resolveOrigin';
@@ -153,6 +167,7 @@ export default async function BookingPage({ params, searchParams }: PageProps) {
   const { selection } = catalogSelection;
   const step = schedule.step;
   const discarded = [...catalogSelection.discarded, ...schedule.discarded];
+  const outcome = await resolveOutcome(raw[BOOKING_OUTCOME_PARAM]);
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
@@ -173,6 +188,19 @@ export default async function BookingPage({ params, searchParams }: PageProps) {
           {STALE_NOTICE[what]}
         </p>
       ))}
+
+      {/* What the write reported, if anything. Announced rather than focused:
+          the client's cursor belongs where they left it. `datos` is absent
+          from this map on purpose — a field-level rejection is rendered
+          against its own input, not as a banner over the form. */}
+      {outcome.code !== null && OUTCOME_NOTICE[outcome.code] !== undefined && (
+        <p
+          role="status"
+          className="border-border bg-muted/50 text-muted-foreground rounded-md border p-3 text-sm"
+        >
+          {OUTCOME_NOTICE[outcome.code]}
+        </p>
+      )}
 
       <BookingSelectionSummary
         slug={slug}
@@ -228,18 +256,43 @@ export default async function BookingPage({ params, searchParams }: PageProps) {
           />
         )}
 
-      {/* B4 creates the booking. Until it ships the flow says so plainly rather
-          than ending on a control that goes nowhere — the same disclosure P1
-          made for an unresolvable link and B1 made for the "Reservar" button.
-          The second line exists because the client has just picked a time and
-          would otherwise reasonably assume it is now theirs: nothing is held
-          until B4's transaction, and two clients can be on this screen. */}
-      {step === 'complete' && (
-        <div className="flex flex-col items-center gap-1 text-center">
-          <p className="text-muted-foreground text-sm">{COPY.booking.continueUnavailable}</p>
-          <p className="text-muted-foreground text-sm">{COPY.booking.slotNotHeld}</p>
-        </div>
-      )}
+      {/* The last step, and the only one that writes. The inert control B1
+          shipped and B2 and B3 inherited is retired: the route it would have
+          pointed at now exists. Its disclosure moved to the confirmation page,
+          where "your slot is held and payment is not available yet" is finally
+          a true statement rather than a placeholder.
+
+          A shop that cannot charge a deposit renders its own state here rather
+          than a form — this is the wall B2 named when it left the
+          payment-readiness gate to B4. It never says which half of the owner's
+          configuration is missing. */}
+      {step === 'datos' &&
+        selection.location !== undefined &&
+        selection.service !== undefined &&
+        selection.barber !== undefined &&
+        schedule.date !== undefined &&
+        schedule.slot !== undefined &&
+        // `undefined` is unreachable on this step — the resolver always sets it
+        // — and is folded into the refusal anyway, because failing closed is
+        // the only safe direction for a gate about charging money.
+        (schedule.deposit === null || schedule.deposit === undefined ? (
+          <div className="flex flex-col items-center gap-1 text-center">
+            <p className="text-muted-foreground text-sm">{COPY.booking.notTakingBookings}</p>
+            <p className="text-muted-foreground text-sm">{COPY.booking.notTakingBookingsHelp}</p>
+          </div>
+        ) : (
+          <ClientDetailsStep
+            slug={slug}
+            locationId={selection.location.location.id}
+            serviceId={selection.service.service.id}
+            barberId={selection.barber.id}
+            date={schedule.date}
+            time={formatSlotTime(schedule.slot)}
+            depositAmount={schedule.deposit}
+            fieldErrors={outcome.fieldErrors}
+            submitted={outcome.submitted}
+          />
+        ))}
 
       {step !== 'location' && branchChoice && (
         <StepLink href={bookingStepHref(slug)} className="text-primary text-sm underline">
@@ -255,6 +308,39 @@ function firstValue(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
+interface ResolvedOutcome {
+  readonly code: BookingOutcomeCode | null;
+  readonly fieldErrors?: BookingFieldErrors | undefined;
+  readonly submitted?: { name?: string; email?: string; phone?: string } | undefined;
+}
+
+/**
+ * What the write reported, read back from the URL and the echo cookie.
+ *
+ * The **codes** live in the query string, where a server render can read them
+ * without JavaScript. The **values** the client typed live in an httpOnly
+ * cookie instead, because a query string carrying a name, an email and a phone
+ * number lands in browser history, in access logs and in the next request's
+ * `Referer` — and this flow's rule is that contact details never reach a log.
+ */
+async function resolveOutcome(rawCode: string | string[] | undefined): Promise<ResolvedOutcome> {
+  const code = parseOutcomeCode(rawCode);
+  if (code === null) return { code: null };
+
+  const echo = parseEcho((await cookies()).get(BOOKING_ECHO_COOKIE)?.value);
+  if (echo === null) return { code };
+
+  return { code, fieldErrors: echo.fieldErrors, submitted: echo.submitted };
+}
+
+/** The Spanish notice for every outcome that is not a field-level rejection. */
+const OUTCOME_NOTICE: Partial<Record<BookingOutcomeCode, string>> = {
+  horario: COPY.booking.staleSlot,
+  'sin-pagos': COPY.booking.notTakingBookings,
+  demasiados: COPY.booking.tooManyRequests,
+  error: COPY.booking.bookingFailed,
+};
+
 interface ScheduleResolution {
   readonly step: BookingStep;
   readonly discarded: readonly DiscardedSelection[];
@@ -263,6 +349,15 @@ interface ScheduleResolution {
   readonly date?: LocalDate;
   readonly slots?: readonly Date[];
   readonly slot?: Date;
+  /**
+   * The deposit for this service, or `null` when the shop cannot take
+   * bookings at all.
+   *
+   * Present only on the details step — the read that produces it is the one
+   * B2's spec forbade everywhere else, and it stays confined to the single
+   * step that enforces the gate.
+   */
+  readonly deposit?: string | null;
 }
 
 /**
@@ -319,12 +414,15 @@ async function resolveSchedule(
     return { step: 'slot', discarded, today, date: requestedDate.date, slots };
   }
 
+  // The details step, and the only place a payment row is read. Earlier steps
+  // issue no payment query at all — the narrowing B2's spec anticipated.
   return {
-    step: 'complete',
+    step: 'datos',
     discarded,
     today,
     date: requestedDate.date,
     slots,
     slot: requestedSlot.slot,
+    deposit: await availability.depositFor(service.service.price),
   };
 }

@@ -13,15 +13,16 @@ const LABELS = {
   barber: COPY.booking.steps.barber,
   date: COPY.booking.steps.date,
   slot: COPY.booking.steps.slot,
+  datos: COPY.booking.steps.datos,
 } as const;
 
 /**
  * The flow in order, in one place.
  *
  * The count is derived from this rather than written as a number anywhere: B3
- * took the flow from three steps to five, and every literal "3" would have been
- * a separate thing to remember. The single-branch skip then removes one member
- * instead of needing a second rule.
+ * took the flow from three steps to five and B4 to six, and every literal
+ * would have been a separate thing to remember. The single-branch skip then
+ * removes one member instead of needing a second rule.
  */
 const FLOW = [
   'location',
@@ -29,6 +30,7 @@ const FLOW = [
   'barber',
   'date',
   'slot',
+  'datos',
 ] as const satisfies readonly (keyof typeof LABELS)[];
 
 /**
@@ -47,9 +49,9 @@ export function BookingStepIndicator({ current, hasBranchChoice }: BookingStepIn
     ? [...FLOW]
     : FLOW.filter((step) => step !== 'location');
 
-  // `complete` sits past the last step; the final step stays marked so the
-  // indicator never reads as being nowhere.
-  const activeIndex = current === 'complete' ? steps.length - 1 : steps.indexOf(current);
+  // Every step is now a member of FLOW — B3's `complete`, which sat past the
+  // last one and needed a special case here, became the real `datos` step.
+  const activeIndex = steps.indexOf(current);
 
   return (
     <nav aria-label={COPY.booking.heading} className="w-full">
