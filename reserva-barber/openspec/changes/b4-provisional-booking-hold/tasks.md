@@ -177,7 +177,7 @@ Shorthand used below (`{BASE}` is `http://localhost:8787` in preview, the deploy
 
 - [x] 11.26 `npx tsx scripts/b4-gate.ts` against the live database → `GATE PASSED`. Its probe B confirms `hashtextextended` exists; if that fails, every concurrency result below it is measuring an unlocked transaction — *verified 2026-08-18: **GATE PASSED**, 18 probes, including the constructed date-boundary case (see 11.20)*
 - [x] 11.27 Clean up the bookings created by hand during 11c–11g (the gate cleans up after itself; manual runs do not)
-- [ ] 11.28 `npm run deploy`, then repeat **11.3, 11.4, 11.14 and 11.16** against the deployed origin — the guard and the header are configuration, and configuration is exactly what differs between preview and production
+- [x] 11.28 `npm run deploy`, then repeat **11.3, 11.4, 11.14 and 11.16** against the deployed origin — the guard and the header are configuration, and configuration is exactly what differs between preview and production — *deployed 2026-08-18 20:5x, version `a93bbb11-09d6-4bba-89eb-9b9d45c7aa36`; all four re-checks pass against the deployed origin*
 - [ ] 11.29 **Franco's sign-off:** record the result here before archiving, including which checks ran after 21:00 local
 
 ### 11i. Result of the assistant's verification pass — **2026-08-18, 14:33–15:05 local**
@@ -237,10 +237,39 @@ alreadyHeld 7, slotTaken 0`.
   — probes **Q** and **R** book at 22:00 business local, whose UTC date is already the next day, and
   **A2** asserts the same rule as a pure function with no clock read at all. Strictly better than
   waiting: deterministic, repeatable, and free of the hour it is run.
-- [ ] 11.28 — **deploy.** Outward-facing and not a verification step; left for Franco to authorize.
+- [x] 11.28 — **deploy.** Outward-facing and not a verification step; left for Franco to authorize. — *deployed 2026-08-18 20:5x, version `a93bbb11-09d6-4bba-89eb-9b9d45c7aa36`; all four re-checks pass against the deployed origin*
 - [ ] 11.29 — **Franco's sign-off.**
 
 One honest note on the suite: a single `test:coverage` run reported one failing test, and it did not
 reproduce across three subsequent full runs (2118 passing each time, coverage 97.37 % statements /
 94.84 % branches). It appears to be load-related flakiness rather than a real failure, and it is
 recorded here rather than omitted.
+
+### 11j. Deploy and production re-verification — **2026-08-18, ~20:55 local**
+
+Deployed to `https://reserva-barber.franco-galeano.workers.dev`, version
+`a93bbb11-09d6-4bba-89eb-9b9d45c7aa36`. Bundle **2745.66 KiB gzip**, ~326 KiB under the 3 MiB free-plan
+ceiling — consistent with the pre-deploy measurement, so nothing about the deploy changed the number
+T51 tracks.
+
+The four re-checks exist because the guard and the response headers are **configuration**, and
+configuration is precisely what can differ between a local preview and the deployed Worker. All four
+behave identically in production:
+
+- `POST /api/bookings` with no slug → **400** (the route exists and is reachable)
+- anonymous `POST /api/bookings` with a slug → **303 into the flow**, never `307` to `/login`
+- `/api`, `/api/bookings/anything` and `/servicios` → **307 to `/login`** (the entry is an exact
+  match, and the API root did not open with it)
+- a full booking created **with no JavaScript**, whose confirmation page carries
+  `Referrer-Policy: no-referrer`, shows the appointment, `$ 2.000,00` and a 15-minute countdown, and
+  renders **neither the email nor the phone**
+
+Test data created during this pass was removed. One `PENDING_PAYMENT` booking remains in the database
+and was **left untouched deliberately**: it is Franco's own, made at 22:07 from the preview with his
+real address, for 2026-08-22. The cleanup queries were filtered by the throwaway addresses this pass
+used, so they could not have reached it.
+
+**Still open: 11.29, Franco's sign-off.** Everything a machine can check has been checked; what has
+not been exercised is a real browser — hydration, the pending state on the submit button, focus order
+and the six-step indicator at 360 px were verified by reading server-rendered HTML, not by using the
+page.
