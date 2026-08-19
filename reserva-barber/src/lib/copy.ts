@@ -474,12 +474,54 @@ export const COPY = {
       minutes === 1 ? 'Vence en 1 minuto.' : `Vence en ${minutes} minutos.`,
     holdExpired: 'La reserva venció y el horario volvió a estar disponible.',
     holdExpiredHelp: 'Podés elegir otro horario cuando quieras.',
-    // B5 and B6 own the two ways to pay. Until they ship the page says so
-    // plainly rather than ending on a control that goes nowhere — the same
-    // disclosure B1 made for the "Reservar" button.
-    paymentUnavailable: 'El pago de la seña se habilita muy pronto.',
-    paymentUnavailableHelp: 'Guardá este link: acá vas a poder pagar la seña.',
     holdBookingFor: 'Turno de',
+
+    // ---- B5: paying the deposit with Mercado Pago ----
+    payDeposit: 'Pagar seña con Mercado Pago',
+    payDepositSubmitting: 'Te llevamos a Mercado Pago…',
+    payDepositHelp: 'Vas a completar el pago en el sitio de Mercado Pago.',
+
+    /** A checkout is already open. The same control, named for what it does. */
+    resumePayment: 'Seguir con el pago',
+    resumePaymentHelp: 'Ya empezaste a pagar esta seña. Podés retomarlo desde acá.',
+
+    /**
+     * Returned from Mercado Pago, notification not processed yet. No spinner
+     * and no promise of automatic refresh: the page does not poll, and implying
+     * otherwise would leave someone staring at it.
+     */
+    paymentConfirming: 'Estamos confirmando tu pago',
+    paymentConfirmingHelp:
+      'Puede tardar un momento. Actualizá esta página en unos segundos para ver el estado.',
+
+    paymentConfirmed: '¡Listo! Tu turno está confirmado',
+    paymentConfirmedHelp: 'Te esperamos. Guardá este link por si necesitás cancelar.',
+
+    paymentRejected: 'El pago fue rechazado',
+    paymentRejectedHelp: 'Podés intentar de nuevo con otro medio de pago.',
+    /** How long is left, because that decides whether retrying is worth it. */
+    paymentRejectedTimeLeft: (minutes: number) =>
+      minutes === 1
+        ? 'Te queda 1 minuto para completar el pago.'
+        : `Te quedan ${minutes} minutos para completar el pago.`,
+
+    /**
+     * Paid, and the slot was gone. The one state on this page that owes an
+     * explanation instead of an instruction — and it never pretends the money
+     * did not move.
+     */
+    paymentPaidSlotLost: 'Recibimos tu pago, pero el horario ya no estaba disponible',
+    paymentPaidSlotLostHelp:
+      'Tu pago se acreditó y el turno no pudo confirmarse. La barbería se va a comunicar con vos para devolverte la seña o reprogramar.',
+
+    /**
+     * The shop cannot charge. Never phrased as the client's payment failing:
+     * this is the owner's configuration, and blaming the person who tried to
+     * pay for it would be both wrong and unhelpful.
+     */
+    paymentsUnavailable: 'No podemos procesar pagos en este momento',
+    paymentsUnavailableHelp:
+      'Es un problema de la barbería, no tuyo. Escribiles para coordinar la seña y no pierdas tu turno.',
   },
   transfer: {
     nav: 'Transferencia',

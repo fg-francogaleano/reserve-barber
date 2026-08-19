@@ -9,6 +9,7 @@ import type {
 import type { Interval } from '@/server/domain/models/availability';
 import { overlaps } from '@/server/domain/models/availability';
 import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
+import type { PaymentStatus } from '@/server/domain/models/Payment';
 import { workingIntervalsFor } from '@/server/domain/models/bookingCalendar';
 import { MAX_DURATION_MINUTES } from '@/server/domain/models/slotGranularity';
 import { MAX_TIME_OFF_DAYS } from '@/server/application/timeOff/timeOffSchema';
@@ -335,10 +336,20 @@ export class PrismaBookingRepository implements IBookingRepository {
         client: { select: { name: true } },
         service: { select: { name: true } },
         barber: { select: { displayName: true, location: { select: { name: true } } } },
+        // The booking's live payment, in the same query. A second read would be
+        // a second round trip on the page a paying client is staring at, and
+        // the partial unique index guarantees there is at most one.
+        payments: {
+          where: { status: { not: 'REJECTED' } },
+          select: { status: true, mpInitPoint: true },
+          take: 1,
+        },
       },
     });
 
     if (row === null) return null;
+
+    const payment = row.payments[0] ?? null;
 
     return {
       id: row.id,
@@ -351,6 +362,10 @@ export class PrismaBookingRepository implements IBookingRepository {
       barberDisplayName: row.barber.displayName,
       serviceName: row.service.name,
       locationName: row.barber.location.name,
+      paymentStatus: payment === null ? null : (payment.status as PaymentStatus),
+      // A boolean, never the URL: resuming goes back through the idempotent
+      // initiation endpoint rather than through a second path rendered here.
+      hasCheckout: payment?.mpInitPoint != null,
     };
   }
 

@@ -1,6 +1,7 @@
 import type { Interval } from '@/server/domain/models/availability';
 import type { LocalDate } from '@/server/domain/models/bookingCalendar';
 import type { WorkingWindowMinutes } from './IBarberAvailabilityRepository';
+import type { PaymentStatus } from '../models/Payment';
 
 /**
  * The booking a successful hold produces, as the flow needs it.
@@ -84,6 +85,26 @@ export interface BookingByToken {
   readonly barberDisplayName: string;
   readonly serviceName: string;
   readonly locationName: string;
+  /**
+   * The status of this booking's live payment, or `null` if it has none (B5).
+   *
+   * Enough to tell "nothing paid" from "a checkout is open" from "the money
+   * moved", which is what the page's states turn on.
+   */
+  readonly paymentStatus: PaymentStatus | null;
+  /**
+   * Whether that payment has a checkout the client can return to.
+   *
+   * **A boolean, deliberately, and not the URL.** The page never renders the
+   * checkout address: resuming goes back through the initiation endpoint, which
+   * is already idempotent and answers with the existing checkout. Putting the
+   * URL in the page would be a second path to the same place, and the one that
+   * cannot be re-decided if the payment turns out to be stale.
+   *
+   * `false` with a `PENDING` payment means a preference creation that never
+   * finished — the client gets the ordinary button and the initiation retries.
+   */
+  readonly hasCheckout: boolean;
 }
 
 /**

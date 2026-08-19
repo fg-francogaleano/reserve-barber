@@ -368,3 +368,34 @@ describe('the payment endpoints are named exactly', () => {
     });
   });
 });
+
+/**
+ * The `no-referrer` header on the confirmation route, guarded by test.
+ *
+ * B4 added the header for a redirect that did not exist yet: "B5's redirect to
+ * Mercado Pago would carry the token to a third party in the `Referer`
+ * header". B5 is that redirect, so the header is now load-bearing — and
+ * removing it would break **nothing visible**. The payment would still work,
+ * the tests would still pass, and a live cancellation credential would start
+ * arriving at Mercado Pago in a header nobody reads.
+ *
+ * `middleware.ts` applies it to exactly the paths this predicate matches, so
+ * the predicate is what the regression is asserted against.
+ */
+describe('the confirmation route is still the one that suppresses the referrer', () => {
+  it.each([
+    '/b/barberia-don-juan/reserva/tok-1',
+    '/b/barberia-don-juan/reserva/tok-1/',
+    '/b/x/reserva/aVeryLongCancellationTokenValue',
+  ])('matches %s', (pathname) => {
+    expect(isBookingConfirmationRoute(pathname)).toBe(true);
+  });
+
+  it('still matches after the payment routes were added beside it', () => {
+    // The payment landing route sits under the same slug. It must NOT be
+    // treated as the confirmation route — it carries no credential — but its
+    // existence must not stop the confirmation route from being recognised.
+    expect(isBookingConfirmationRoute('/b/barberia-don-juan/pago/retorno')).toBe(false);
+    expect(isBookingConfirmationRoute('/b/barberia-don-juan/reserva/tok-1')).toBe(true);
+  });
+});

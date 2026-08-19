@@ -85,22 +85,22 @@
 - [x] 8.1 Failing tests first: anonymous `POST` to each new path continues; `/api/payments`, `/api/webhooks`, `/api`, a deeper segment, and an unrelated `/api/*` each redirect to `/login`.
 - [x] 8.2 Add `PUBLIC_PAYMENT_API` and `PUBLIC_MP_WEBHOOK` to `routeGuard.ts` as `===` comparisons, with the comment explaining why neither is a prefix and why the token is in the body.
 - [x] 8.3 Update the `decideGuardAction` doc comment: the public set now holds five entries, not three.
-- [ ] 8.4 Failing test asserting `Referrer-Policy: no-referrer` on the confirmation route — the regression guard B4's header now needs, since removing it would break nothing visible.
+- [x] 8.4 Failing test asserting `Referrer-Policy: no-referrer` on the confirmation route — the regression guard B4's header now needs, since removing it would break nothing visible.
 
 ## 9. Confirmation page and copy
 
-- [ ] 9.1 Extend `bookingConfirmationService.ts`'s projection with payment status and approval instant. Still no client email or phone.
-- [ ] 9.2 Failing tests for the page's eight states: hold live unpaid · payment in flight · awaiting confirmation · confirmed · rejected with time left · hold lapsed · paid but slot lost · payments impossible.
-- [ ] 9.2b **Closes B4's T59.** The confirmed state is reached from *two* directions and only one is obvious. Assert it for a client returning from a successful checkout **and** for a repeat submission of an already-`CONFIRMED` booking, which `findLiveHoldsForClientOnDay` answers as `alreadyHeld` because a confirmed appointment does hold its slot. Today that path renders "Te guardamos el turno" and "el pago de la seña se habilita muy pronto" over an appointment already paid for. The lookup is right; the page is what needs the state. Nothing in the product could reach `CONFIRMED` until this change, which is why it was unreachable and is not any more.
-- [ ] 9.3 Add every new string to `src/lib/copy.ts` in es-AR. Nothing inline.
-- [ ] 9.4 Add the new outcome codes to `bookingOutcome.ts`.
-- [ ] 9.5 Implement `PayDepositButton.tsx` as a native `<form method="post">` submit, following `BookingSubmitButton`'s disable-on-submit pattern.
-- [ ] 9.6 Replace the "payment is not available yet" block with the state machine. Failing test asserting that copy no longer renders for a live hold at a configured shop.
-- [ ] 9.7 Failing test asserting the control is **absent from the document** — not disabled — when the hold has lapsed.
-- [ ] 9.8 Failing test asserting a forged `?estado=` success code renders no confirmed state (D10).
-- [ ] 9.9 Failing test asserting the awaiting-confirmation state renders no progress indicator implying polling.
-- [ ] 9.10 Failing test asserting owner-side failures never phrase the error as the client's payment having failed.
-- [ ] 9.11 Confirm the countdown stays server-rendered minutes and no client-side timer is introduced.
+- [x] 9.1 Extend `bookingConfirmationService.ts`'s projection with payment status and approval instant. Still no client email or phone.
+- [x] 9.2 Failing tests for the page's eight states: hold live unpaid · payment in flight · awaiting confirmation · confirmed · rejected with time left · hold lapsed · paid but slot lost · payments impossible.
+- [x] 9.2b **Closes B4's T59.** The confirmed state is reached from *two* directions and only one is obvious. Assert it for a client returning from a successful checkout **and** for a repeat submission of an already-`CONFIRMED` booking, which `findLiveHoldsForClientOnDay` answers as `alreadyHeld` because a confirmed appointment does hold its slot. Today that path renders "Te guardamos el turno" and "el pago de la seña se habilita muy pronto" over an appointment already paid for. The lookup is right; the page is what needs the state. Nothing in the product could reach `CONFIRMED` until this change, which is why it was unreachable and is not any more.
+- [x] 9.3 Add every new string to `src/lib/copy.ts` in es-AR. Nothing inline.
+- [x] 9.4 Add the new outcome codes to `bookingOutcome.ts`.
+- [x] 9.5 Implement `PayDepositButton.tsx` as a native `<form method="post">` submit, following `BookingSubmitButton`'s disable-on-submit pattern.
+- [x] 9.6 Replace the "payment is not available yet" block with the state machine. Failing test asserting that copy no longer renders for a live hold at a configured shop.
+- [x] 9.7 Failing test asserting the control is **absent from the document** — not disabled — when the hold has lapsed.
+- [x] 9.8 Failing test asserting a forged `?estado=` success code renders no confirmed state (D10).
+- [x] 9.9 Failing test asserting the awaiting-confirmation state renders no progress indicator implying polling.
+- [x] 9.10 Failing test asserting owner-side failures never phrase the error as the client's payment having failed.
+- [x] 9.11 Confirm the countdown stays server-rendered minutes and no client-side timer is introduced.
 
 ## 10. Cross-cutting checks
 
