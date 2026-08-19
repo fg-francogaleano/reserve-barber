@@ -66,19 +66,19 @@
 
 ## 7. Webhook confirmation
 
-- [ ] 7.1 Zod schema for the notification body in `mercadoPagoWebhookSchema.ts`, with failing tests for garbage, missing `data.id`, and unknown topics.
-- [ ] 7.2 Failing tests for `PaymentConfirmationService` covering: `ref` unresolved, payment not found at MP, amount mismatch, reference mismatch, currency mismatch, approved within hold, approved after hold with slot free, approved after hold with slot resold, duplicate delivery, out-of-order `pending` after `approved`, post-confirmation reversal.
-- [ ] 7.3 Implement the resolution order: parse → resolve `ref` to a `Payment` (one indexed read) → **only then** call Mercado Pago. Assert by test that an unresolvable `ref` spends no outbound call.
-- [ ] 7.4 Implement the three verification comparisons from 3.4 before any transition.
-- [ ] 7.5 Implement the in-hold confirmation path through the conditional transaction from 4.3.
-- [ ] 7.6 Implement the lapsed-hold path: transaction takes **the same per-barber `pg_advisory_xact_lock`** the booking write takes, calls `blocksAvailability` — imported, not reimplemented — and confirms when the slot is free.
-- [ ] 7.7 Implement the slot-lost path: no confirmation, `Payment` recorded `APPROVED`, outcome logged and made renderable.
-- [ ] 7.8 Implement the post-confirmation reversal rule: no row changes, `200`, one `warn` with booking id, payment id and reported status (D8).
-- [ ] 7.9 Implement the response policy: `200` for handled/ignored/refused/unresolvable, `503` only for transient, `400` only for an unparseable body.
-- [ ] 7.10 Failing test asserting responses are byte-identical across ref-not-found, already-processed and verification-refused (no enumeration oracle).
-- [ ] 7.11 Implement `app/api/webhooks/mercadopago/route.ts` with `force-dynamic`.
-- [ ] 7.12 Failing test asserting no log line on any webhook path carries client contact details, the cancellation token or credential material.
-- [ ] 7.13 Failing test asserting each of the seven outcomes logs a distinguishable cause.
+- [x] 7.1 Zod schema for the notification body in `mercadoPagoWebhookSchema.ts`, with failing tests for garbage, missing `data.id`, and unknown topics.
+- [x] 7.2 Failing tests for `PaymentConfirmationService` covering: `ref` unresolved, payment not found at MP, amount mismatch, reference mismatch, currency mismatch, approved within hold, approved after hold with slot free, approved after hold with slot resold, duplicate delivery, out-of-order `pending` after `approved`, post-confirmation reversal.
+- [x] 7.3 Implement the resolution order: parse → resolve `ref` to a `Payment` (one indexed read) → **only then** call Mercado Pago. Assert by test that an unresolvable `ref` spends no outbound call.
+- [x] 7.4 Implement the three verification comparisons from 3.4 before any transition.
+- [x] 7.5 Implement the in-hold confirmation path through the conditional transaction from 4.3.
+- [x] 7.6 Implement the lapsed-hold path: transaction takes **the same per-barber `pg_advisory_xact_lock`** the booking write takes, calls `blocksAvailability` — imported, not reimplemented — and confirms when the slot is free.
+- [x] 7.7 Implement the slot-lost path: no confirmation, `Payment` recorded `APPROVED`, outcome logged and made renderable.
+- [x] 7.8 Implement the post-confirmation reversal rule: no row changes, `200`, one `warn` with booking id, payment id and reported status (D8).
+- [x] 7.9 Implement the response policy: `200` for handled/ignored/refused/unresolvable, `503` only for transient, `400` only for an unparseable body.
+- [x] 7.10 Failing test asserting responses are byte-identical across ref-not-found, already-processed and verification-refused (no enumeration oracle).
+- [x] 7.11 Implement `app/api/webhooks/mercadopago/route.ts` with `force-dynamic`.
+- [x] 7.12 Failing test asserting no log line on any webhook path carries client contact details, the cancellation token or credential material.
+- [x] 7.13 Failing test asserting each of the seven outcomes logs a distinguishable cause.
 
 ## 8. Route guard
 

@@ -1,13 +1,26 @@
 import type {
   ConfirmPaymentResult,
+  LateConfirmResult,
   CreatePaymentResult,
   IPaymentRepository,
   PaymentForNotification,
   PaymentRecord,
 } from '@/server/domain/repositories/IPaymentRepository';
 import type { PaymentStatus } from '@/server/domain/models/Payment';
+// The blocking rule has one home, and the late-payment re-check calls it rather
+// than expressing the statuses again in SQL (booking-availability spec).
+import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
+import { overlaps } from '@/server/domain/models/availability';
+import { MAX_DURATION_MINUTES } from '@/server/domain/models/slotGranularity';
 import { toCanonicalDecimal } from './canonicalDecimal';
 import type { PrismaClient } from '@/generated/prisma/client';
+
+/**
+ * Statuses that can matter, as a READ filter — wider than the blocking rule on
+ * purpose. `blocksAvailability` decides; encoding the expired-hold clause as SQL
+ * here would be the second copy that drifts.
+ */
+const POSSIBLY_BLOCKING: BookingStatus[] = ['PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED'];
 
 const UNIQUE_CONSTRAINT_VIOLATION = 'P2002';
 
@@ -106,9 +119,10 @@ function toRecord(row: PaymentRow): PaymentRecord {
  * How long the confirming transaction may wait for a connection and hold one.
  *
  * Explicit for the same reason the booking write's is: the transaction pins a
- * pooled connection and the pool is shared with the owner's dashboard. This one
- * is smaller than the booking write's because it does strictly less — two
- * updates, no reads, no lock — and because its caller is a third party that
+ * pooled connection and the pool is shared with the owner's dashboard. Smaller
+ * than the booking write's because even the heavier path here — the
+ * late-payment re-check, which does take the lock and does read — has one query
+ * against that write's four, and because its caller is a third party that
  * retries, so failing fast is cheaper than queueing.
  */
 const TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 10_000 } as const;
@@ -298,23 +312,81 @@ export class PrismaPaymentRepository implements IPaymentRepository {
   }
 
   /**
-   * The slot-lost branch: the charge happened, the appointment did not.
+   * The late-payment branch, under the same lock the booking write takes.
    *
-   * The payment is `APPROVED` because the money moved. Recording it `REJECTED`
-   * would hide from the owner's own accounting a sum they have received and now
-   * owe back — the opposite of what they need to see, on the one path where a
-   * human has to act.
+   * The five steps are the rule, in this order:
    *
-   * The booking is deliberately untouched. It keeps whatever status it had, and
-   * the sweeper will expire it like any other lapsed hold.
+   * 1. **The advisory lock is the first statement**, scoped to the barber and
+   *    taken before any read — so this confirmation and a concurrent booking
+   *    write serialize instead of both seeing a free slot. B4 warned that "an
+   *    advisory lock binds only code that takes it"; this is the third caller,
+   *    and the first that confirms rather than creates.
+   * 2. **Re-read the barber's overlapping bookings** under the lock, excluding
+   *    this one. Reading before the lock would be reading the state the lock
+   *    exists to freeze.
+   * 3. **`blocksAvailability` decides**, the same function the availability
+   *    read and the booking write call. Never re-expressed in SQL: the rule
+   *    reads a deadline, and a copy would drift the first time B7 refines it.
+   * 4. **The booking is confirmed only if nothing blocks**, and the update is
+   *    still guarded on `PENDING_PAYMENT` so a duplicate delivery matches zero
+   *    rows.
+   * 5. **The payment is approved either way**, because the charge is real. The
+   *    slot-lost case leaves the booking alone for the sweeper, and hands the
+   *    caller a value it can log and render rather than an error.
    */
-  async approveWithoutConfirming(input: {
+  async confirmIfSlotFree(input: {
     paymentId: string;
+    bookingId: string;
+    barberId: string;
+    startTime: Date;
+    endTime: Date;
     gatewayPaymentId: string;
     approvedAt: Date;
-  }): Promise<ConfirmPaymentResult> {
+    now: Date;
+  }): Promise<LateConfirmResult> {
     try {
       return await this.db.$transaction(async (tx) => {
+        // `$executeRaw`, never `$queryRaw`: `pg_advisory_xact_lock` returns
+        // void, and the pg driver adapter cannot deserialize a void column —
+        // which is how this call failed silently for B4's entire first
+        // implementation. It runs for its effect and reads nothing back.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.barberId}, 0))`;
+
+        const candidates = await tx.booking.findMany({
+          where: {
+            barberId: input.barberId,
+            id: { not: input.bookingId },
+            status: { in: POSSIBLY_BLOCKING },
+            // Bounded at both ends, for the reason the availability read
+            // measured: without a lower bound `endTime` lands in Filter and
+            // the scan walks every earlier row of that barber.
+            startTime: {
+              gte: new Date(input.startTime.getTime() - MAX_DURATION_MINUTES * 60_000),
+              lt: input.endTime,
+            },
+          },
+          select: { startTime: true, endTime: true, status: true, holdExpiresAt: true },
+        });
+
+        const taken = candidates.some(
+          (candidate) =>
+            overlaps(
+              { start: input.startTime, end: input.endTime },
+              { start: candidate.startTime, end: candidate.endTime }
+            ) &&
+            blocksAvailability(
+              {
+                startTime: candidate.startTime,
+                endTime: candidate.endTime,
+                status: candidate.status as BookingStatus,
+                holdExpiresAt: candidate.holdExpiresAt,
+              },
+              input.now
+            )
+        );
+
+        // The charge happened. Recorded before the branch so both endings
+        // leave the same truth about the money.
         await tx.payment.update({
           where: { id: input.paymentId },
           data: {
@@ -323,7 +395,19 @@ export class PrismaPaymentRepository implements IPaymentRepository {
             approvedAt: input.approvedAt,
           },
         });
-        return { outcome: 'confirmed' as const };
+
+        if (taken) {
+          return { outcome: 'slotLost' as const };
+        }
+
+        const confirmed = await tx.booking.updateMany({
+          where: { id: input.bookingId, status: 'PENDING_PAYMENT' },
+          data: { status: 'CONFIRMED', holdExpiresAt: null },
+        });
+
+        return confirmed.count === 0
+          ? { outcome: 'notPending' as const }
+          : { outcome: 'confirmed' as const };
       }, TRANSACTION_OPTIONS);
     } catch (error) {
       if (violates(error, GATEWAY_ID_CONSTRAINT)) {

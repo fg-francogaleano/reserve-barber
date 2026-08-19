@@ -51,7 +51,12 @@ function createTx() {
   return {
     $executeRaw: vi.fn().mockResolvedValue(1),
     payment: { update: vi.fn().mockResolvedValue(paymentRow({ status: 'APPROVED' })) },
-    booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    booking: {
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      // Only the late-payment path reads under the lock; it defaults to a free
+      // slot so that a test which does not care about contention gets one.
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   };
 }
 
@@ -266,43 +271,6 @@ describe('confirmWithPayment', () => {
   });
 });
 
-describe('approveWithoutConfirming', () => {
-  /**
-   * The slot-lost branch. The charge is real, so the payment is APPROVED; the
-   * booking is deliberately untouched. Recording it REJECTED would hide money
-   * the owner has received and now owes back.
-   */
-  it('approves the payment and leaves the booking alone', async () => {
-    const { db, tx } = createDb();
-
-    const result = await new PrismaPaymentRepository(db).approveWithoutConfirming({
-      paymentId: PAYMENT,
-      gatewayPaymentId: 'mp-1',
-      approvedAt: NOW,
-    });
-
-    expect(result).toEqual({ outcome: 'confirmed' });
-    expect(tx.payment.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) })
-    );
-    expect(tx.booking.updateMany).not.toHaveBeenCalled();
-  });
-
-  it('translates a duplicate gateway id into alreadyProcessed', async () => {
-    const tx = createTx();
-    tx.payment.update.mockRejectedValue(uniqueViolation('mpPaymentId'));
-    const { db } = createDb(tx);
-
-    const result = await new PrismaPaymentRepository(db).approveWithoutConfirming({
-      paymentId: PAYMENT,
-      gatewayPaymentId: 'mp-1',
-      approvedAt: NOW,
-    });
-
-    expect(result).toEqual({ outcome: 'alreadyProcessed' });
-  });
-});
-
 describe('attachPreference', () => {
   it('stores the preference id and its checkout URL', async () => {
     const { db, raw } = createDb();
@@ -388,5 +356,170 @@ describe('findForNotification', () => {
     const { db } = createDb();
 
     expect(await new PrismaPaymentRepository(db).findForNotification('nope')).toBeNull();
+  });
+});
+
+describe('confirmIfSlotFree', () => {
+  const LATE = {
+    paymentId: PAYMENT,
+    bookingId: BOOKING,
+    barberId: 'barber-1',
+    startTime: new Date('2026-08-19T14:00:00.000Z'),
+    endTime: new Date('2026-08-19T14:30:00.000Z'),
+    gatewayPaymentId: 'mp-1',
+    approvedAt: NOW,
+    now: NOW,
+  };
+
+  function blockingBooking(overrides: Record<string, unknown> = {}) {
+    return {
+      startTime: new Date('2026-08-19T14:00:00.000Z'),
+      endTime: new Date('2026-08-19T14:30:00.000Z'),
+      status: 'CONFIRMED',
+      holdExpiresAt: null,
+      ...overrides,
+    };
+  }
+
+  /**
+   * B4 warned that "an advisory lock binds only code that takes it" and named
+   * the sweeper and the transfer approval as the callers that must. This is a
+   * third, and the first that confirms rather than creates — so the lock is
+   * asserted, and asserted as `$executeRaw`.
+   *
+   * `pg_advisory_xact_lock` returns void and the pg driver adapter cannot
+   * deserialize a void column, so `$queryRaw` fails against the real database.
+   * B4's own test mocked the wrong one and thereby certified a call that could
+   * not work, which is why the transaction double exposes only `$executeRaw`.
+   */
+  it('takes the per-barber advisory lock before reading', async () => {
+    const { db, tx } = createDb();
+
+    await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE);
+
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    const invocationOrder =
+      tx.$executeRaw.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER;
+    const readOrder = tx.booking.findMany.mock.invocationCallOrder[0] ?? 0;
+    expect(invocationOrder).toBeLessThan(readOrder);
+  });
+
+  it('excludes the booking being confirmed from the overlap read', async () => {
+    const { db, tx } = createDb();
+
+    await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE);
+
+    expect(tx.booking.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          barberId: 'barber-1',
+          id: { not: BOOKING },
+        }),
+      })
+    );
+  });
+
+  /**
+   * The branch that is easy to lose by omission. A client who paid and whose
+   * slot nobody took must not lose their appointment to a clock — B7 does not
+   * exist yet, so the booking is still sitting there unexpired.
+   */
+  it('confirms when the slot is still free, despite the lapsed hold', async () => {
+    const { db, tx } = createDb();
+
+    const result = await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE);
+
+    expect(result).toEqual({ outcome: 'confirmed' });
+    expect(tx.booking.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: BOOKING, status: 'PENDING_PAYMENT' },
+        data: expect.objectContaining({ status: 'CONFIRMED' }),
+      })
+    );
+  });
+
+  it('approves the payment and confirms nothing when the slot was resold', async () => {
+    const tx = createTx();
+    tx.booking.findMany.mockResolvedValue([blockingBooking()]);
+    const { db } = createDb(tx);
+
+    const result = await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE);
+
+    expect(result).toEqual({ outcome: 'slotLost' });
+    expect(tx.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) })
+    );
+    expect(tx.booking.updateMany).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The shared predicate, not a status list. Another lapsed hold does not block
+   * — if it did, two abandoned checkouts would deadlock a slot for each other.
+   */
+  it('does not treat another lapsed hold as blocking', async () => {
+    const tx = createTx();
+    tx.booking.findMany.mockResolvedValue([
+      blockingBooking({
+        status: 'PENDING_PAYMENT',
+        holdExpiresAt: new Date('2026-08-19T11:00:00.000Z'),
+      }),
+    ]);
+    const { db } = createDb(tx);
+
+    expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
+      outcome: 'confirmed',
+    });
+  });
+
+  it('treats another live hold as blocking', async () => {
+    const tx = createTx();
+    tx.booking.findMany.mockResolvedValue([
+      blockingBooking({
+        status: 'PENDING_PAYMENT',
+        holdExpiresAt: new Date('2026-08-19T12:30:00.000Z'),
+      }),
+    ]);
+    const { db } = createDb(tx);
+
+    expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
+      outcome: 'slotLost',
+    });
+  });
+
+  // Half-open intervals, like every other boundary in this codebase: a booking
+  // that starts exactly when this one ends does not overlap it.
+  it('does not treat an adjacent booking as blocking', async () => {
+    const tx = createTx();
+    tx.booking.findMany.mockResolvedValue([
+      blockingBooking({
+        startTime: new Date('2026-08-19T14:30:00.000Z'),
+        endTime: new Date('2026-08-19T15:00:00.000Z'),
+      }),
+    ]);
+    const { db } = createDb(tx);
+
+    expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
+      outcome: 'confirmed',
+    });
+  });
+
+  it('reports a zero-row booking update as notPending', async () => {
+    const tx = createTx();
+    tx.booking.updateMany.mockResolvedValue({ count: 0 });
+    const { db } = createDb(tx);
+
+    expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
+      outcome: 'notPending',
+    });
+  });
+
+  it('translates a duplicate gateway id into alreadyProcessed', async () => {
+    const tx = createTx();
+    tx.payment.update.mockRejectedValue(uniqueViolation('mpPaymentId'));
+    const { db } = createDb(tx);
+
+    expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
+      outcome: 'alreadyProcessed',
+    });
   });
 });

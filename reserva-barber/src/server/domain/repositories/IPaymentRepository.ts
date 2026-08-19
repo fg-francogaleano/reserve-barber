@@ -148,17 +148,51 @@ export interface IPaymentRepository {
   }): Promise<ConfirmPaymentResult>;
 
   /**
-   * Records an approved payment whose booking did NOT get confirmed — the
-   * slot-lost branch of the late-payment rule.
+   * The late-payment branch: approve the payment, and confirm the booking
+   * **only if its slot is still free**.
    *
-   * The payment is `APPROVED` because the charge is real. Recording it as
-   * `REJECTED` would hide money the owner has actually received and now owes
-   * back, which is the opposite of what the owner needs to see. The booking is
-   * deliberately left alone.
+   * Reached when an approved notification arrives after `holdExpiresAt` has
+   * passed. The booking has stopped blocking availability by then, so the slot
+   * may have been sold to somebody else while the client was at the checkout.
+   *
+   * **The implementation MUST be one transaction whose first statement takes
+   * the same per-barber advisory lock the booking write takes**, then re-read
+   * that barber's overlapping bookings and apply `blocksAvailability` — the
+   * same function, never a SQL copy. B4 recorded that "an advisory lock binds
+   * only code that takes it" and named the sweeper and the transfer approval as
+   * the callers that must; this is a third, and the first that *confirms* an
+   * existing booking rather than creating one. Skipping the lock here would
+   * place a booking into a slot a concurrent write is in the middle of taking.
+   *
+   * `confirmWithPayment` deliberately takes **no** lock, and the asymmetry is
+   * the point: a booking still inside its hold is still blocking availability,
+   * so nobody else could have been offered its slot. There is nothing to race.
+   *
+   * The payment is recorded `APPROVED` on **both** branches, because the charge
+   * happened either way. Recording the slot-lost case as `REJECTED` would hide
+   * from the owner's accounting a sum they have received and now owe back.
    */
-  approveWithoutConfirming(input: {
+  confirmIfSlotFree(input: {
     paymentId: string;
+    bookingId: string;
+    barberId: string;
+    startTime: Date;
+    endTime: Date;
     gatewayPaymentId: string;
     approvedAt: Date;
-  }): Promise<ConfirmPaymentResult>;
+    now: Date;
+  }): Promise<LateConfirmResult>;
 }
+
+/**
+ * What the late-payment transaction decided.
+ *
+ * `slotLost` is the honest ending, not an error: the client paid, the slot is
+ * gone, and a human owes them a refund. It reaches the caller as a value so it
+ * can be logged as its own cause and rendered as its own state.
+ */
+export type LateConfirmResult =
+  | { readonly outcome: 'confirmed' }
+  | { readonly outcome: 'slotLost' }
+  | { readonly outcome: 'notPending' }
+  | { readonly outcome: 'alreadyProcessed' };
