@@ -44,11 +44,11 @@
 
 ## 5. Mercado Pago gateway
 
-- [ ] 5.1 Failing tests for `MercadoPagoGateway` with an injected transport: preference created, payment fetched, 401 rejection, timeout, unparseable body.
-- [ ] 5.2 Implement `MercadoPagoGateway` over raw `fetch` following `MercadoPagoCredentialVerifier`'s shape. **No `mercadopago` SDK dependency** (T51).
-- [ ] 5.3 Bearer token in a header only; `AbortSignal.timeout` on both calls (8 s preference, 5 s re-fetch).
-- [ ] 5.4 Failing test asserting no thrown error, log line or returned value from a failed call contains the token, the `Authorization` header, or the response body.
-- [ ] 5.5 Assert in test that no gateway call happens inside a database transaction.
+- [x] 5.1 Failing tests for `MercadoPagoGateway` with an injected transport: preference created, payment fetched, 401 rejection, timeout, unparseable body.
+- [x] 5.2 Implement `MercadoPagoGateway` over raw `fetch` following `MercadoPagoCredentialVerifier`'s shape. **No `mercadopago` SDK dependency** (T51).
+- [x] 5.3 Bearer token in a header only; `AbortSignal.timeout` on both calls (8 s preference, 5 s re-fetch).
+- [x] 5.4 Failing test asserting no thrown error, log line or returned value from a failed call contains the token, the `Authorization` header, or the response body.
+- [x] 5.5 Assert in test that no gateway call happens inside a database transaction.
 
 ## 6. Payment initiation
 
@@ -129,6 +129,7 @@
 - [ ] 11.13 Complete one real test-credential payment end to end and see the booking confirmed without intervention.
 - [ ] 11.14 Confirm no preview log line contains the access token, a client contact detail, or a cancellation token.
 - [ ] 11.15 **Run at least one pass after 21:00 local**, when the runtime's UTC calendar has already rolled to the next day, and confirm the confirmation page names the day and time chosen.
+- [ ] 11.20 Gate probe: **whether Mercado Pago accepts `date_of_expiration` with a `Z` offset.** The gateway sends `toISOString()` (`2026-08-19T12:15:00.000Z`), which is valid ISO 8601, but Mercado Pago's own examples all use a numeric offset (`...-03:00`) and their validators have historically been stricter than the standard. A rejection here surfaces as `invalid` on every preference — the whole story dead — and no unit test can tell the difference, because the transport is a double. Create one real preference and confirm it is accepted and that the expiry is the instant intended; if it is refused, switch to a numeric offset built from the business timezone.
 - [ ] 11.19 Gate probe: **what the driver reports for a PARTIAL unique index violation.** `PrismaPaymentRepository` discriminates two constraints by `meta.driverAdapterError.cause.constraint.fields`, a shape `p1-gate-db.ts` measured for ordinary unique indexes only. A partial index was never measured, and no mock can tell us what arrives. If the shape differs, both translations collapse into the fallback and the two outcomes swap meanings — a double-tap becomes an error and a duplicate notification becomes a `5xx`. Trip `Payment_one_live_per_booking` and `Payment_mpPaymentId_key` against the live database, print the raw error, and confirm the field lists this code compares against.
 - [ ] 11.18 Gate probe for **T45**: create preferences at `1.00`, `0.50` and `0.01` ARS with test credentials, record which are refused and the exact error, and write the measured minimum back into task 1.2. Then complete 1.5 and 1.6, which are blocked on this number.
 - [ ] 11.16 **Franco:** `npm run deploy`, then repeat 11.9, 11.10 and 11.11 against the deployed origin — the guard and the header are configuration, and configuration is what differs between preview and production.
