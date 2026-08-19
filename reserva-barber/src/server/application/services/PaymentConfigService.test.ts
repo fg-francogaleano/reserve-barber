@@ -44,6 +44,7 @@ function makeRepository(): IPaymentConfigRepository {
     findMercadoPagoAccessToken: vi.fn().mockResolvedValue(null),
     upsertDepositPolicy: vi.fn().mockResolvedValue(undefined),
     findDepositPolicyForPublic: vi.fn().mockResolvedValue(null),
+    findPaymentReadinessForPublic: vi.fn().mockResolvedValue(null),
   };
 }
 

@@ -4,6 +4,7 @@ import type {
   MercadoPagoCredentials,
   DepositPolicySettings,
   DepositPolicyInput,
+  PublicPaymentReadiness,
 } from '@/server/domain/models/PaymentConfig';
 
 /**
@@ -114,4 +115,26 @@ export interface IPaymentConfigRepository {
    * client gets charged an amount the owner never chose.
    */
   findDepositPolicyForPublic(ownerId: string): Promise<DepositPolicySettings | null>;
+
+  /**
+   * Whether the owner can take a booking at all, and what the deposit policy
+   * is — in one read, for the booking write (B4).
+   *
+   * Deliberately **not** `findTransferDetailsForPublic` plus
+   * `findDepositPolicyForPublic` plus a third call for Mercado Pago. Those
+   * would be three round trips against a transaction-mode pooler shared with
+   * the owner's dashboard, on the route that earns the business money, to
+   * answer one question.
+   *
+   * Implementations MUST select only the columns `PublicPaymentReadiness` can
+   * represent, and MUST reduce Mercado Pago to a boolean rather than returning
+   * the credential — the return type has no field the access token fits into,
+   * and that is the guarantee, not a convention the caller has to honour.
+   *
+   * Returns `null` when no row exists, which is a distinct state from a row
+   * with nothing configured. Callers must treat both as "cannot take
+   * bookings", never substitute a default policy: inventing one is how a
+   * client gets charged an amount the owner never chose.
+   */
+  findPaymentReadinessForPublic(ownerId: string): Promise<PublicPaymentReadiness | null>;
 }

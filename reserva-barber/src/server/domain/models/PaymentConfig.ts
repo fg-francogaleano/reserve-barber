@@ -61,6 +61,32 @@ export type PaymentReadiness = {
 };
 
 /**
+ * Everything the public booking write may know about the owner's payment
+ * configuration — and the ONLY payment shape allowed to cross into that flow
+ * (B4 design D5).
+ *
+ * B1, B2 and B3 guaranteed the encrypted access token could not leak from the
+ * public flow by handing it no `PaymentConfig` repository at all. B4 has to
+ * ask whether a deposit can be charged, so the guarantee changes shape rather
+ * than weakening: **this type has no field capable of holding
+ * `mpAccessToken`**, and a projection that does not select it cannot leak it.
+ *
+ * Mercado Pago is reduced to a boolean deliberately. The gate needs to know
+ * *whether* a charge could be authorized, never *with what* — and a `string |
+ * null` here would be a field the token fits into.
+ *
+ * It carries the deposit policy as well as the payment methods so that one
+ * read answers both the readiness gate and the deposit computation. Two reads
+ * would be two round trips on the route that earns the business money.
+ */
+export type PublicPaymentReadiness = {
+  hasMercadoPagoCredentials: boolean;
+  transfer: TransferDetails;
+  depositType: DepositType;
+  depositValue: string | null;
+};
+
+/**
  * The full configuration, for the dashboard only.
  *
  * `depositValue` is nullable because the row is created by whichever payment

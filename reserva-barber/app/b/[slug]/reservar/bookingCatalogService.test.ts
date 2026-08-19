@@ -73,15 +73,15 @@ describe('bookingCatalogService - the timezone assertion', () => {
 });
 
 describe('bookingCatalogService - what must stay absent', () => {
-  it('should_import_no_supabase_client_no_cipher_and_no_payment_config_repository', async () => {
-    // B1 wrote this list down and B2 inherited it. The row behind
-    // `PaymentConfig` holds the encrypted Mercado Pago access token, and this
-    // route is opened by anonymous strangers holding a link.
+  it('should_import_no_supabase_client_and_no_cipher', async () => {
+    // B1 wrote this list down and B2 inherited it. It is now two items rather
+    // than three: B4 wires the payment repository (see below), and the token it
+    // was protecting is protected by a projection instead.
     //
     // The assertion is over the **import lines**, not the file text: the file
-    // names all three in prose to explain why they are absent, and a text scan
-    // would fail on the very comments that document the decision. What decides
-    // whether something is constructed is whether it is imported.
+    // names both in prose to explain why they are absent, and a text scan would
+    // fail on the very comments that document the decision. What decides whether
+    // something is constructed is whether it is imported.
     const source = await import('node:fs').then((fs) =>
       fs.readFileSync(new URL('./bookingCatalogService.ts', import.meta.url), 'utf8')
     );
@@ -92,8 +92,24 @@ describe('bookingCatalogService - what must stay absent', () => {
 
     expect(imports).not.toMatch(/supabase|createClient/i);
     expect(imports).not.toMatch(/Cipher/i);
-    expect(imports).not.toMatch(/PaymentConfig/i);
     // And the list is not empty for a trivial reason — the file does import.
     expect(imports).toMatch(/PublicBookingCatalogService/);
+  });
+
+  it('should_wire_the_payment_repository_so_the_details_step_can_price_a_deposit', async () => {
+    // **This is the test that would have caught B4's runtime defect.** The
+    // service takes the payment repository as an OPTIONAL fifth argument, so
+    // omitting it compiles, every unit test passes, and the details step then
+    // renders "esta barbería no está tomando reservas online" for a shop whose
+    // deposit is perfectly well configured. Found by the group 11 runtime
+    // verification, not by the suite; pinned here so it stays found.
+    const source = await import('node:fs').then((fs) =>
+      fs.readFileSync(new URL('./bookingCatalogService.ts', import.meta.url), 'utf8')
+    );
+
+    expect(source).toMatch(/new PrismaPaymentConfigRepository\(db\)/);
+    // With no second argument: no cipher, so a method that decrypts would throw
+    // here rather than quietly returning a token in the clear.
+    expect(source).not.toMatch(/new PrismaPaymentConfigRepository\(db,/);
   });
 });

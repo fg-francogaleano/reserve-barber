@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blocksAvailability, type BlockingCandidate } from './Booking';
+import { blocksAvailability, holdExpiresAtFor, type BlockingCandidate } from './Booking';
 
 const NOW = new Date('2026-08-17T15:00:00.000Z');
 const AN_HOUR_AGO = new Date('2026-08-17T14:00:00.000Z');
@@ -67,5 +67,29 @@ describe('Booking - which bookings remove a time from sale', () => {
     expect(
       blocksAvailability(booking({ status: 'PENDING_PAYMENT', holdExpiresAt: NOW }), NOW)
     ).toBe(false);
+  });
+});
+
+describe('Booking - the hold deadline', () => {
+  it('should_be_the_creation_instant_plus_the_hold_duration_for_an_ordinary_appointment', () => {
+    const createdAt = new Date('2026-08-17T15:00:00.000Z');
+    const startTime = new Date('2026-08-18T13:00:00.000Z'); // far beyond the hold duration
+    expect(holdExpiresAtFor({ createdAt, startTime })).toEqual(
+      new Date('2026-08-17T15:15:00.000Z')
+    );
+  });
+
+  it('should_clamp_to_startTime_for_a_near_term_appointment', () => {
+    const createdAt = new Date('2026-08-17T15:00:00.000Z');
+    const startTime = new Date('2026-08-17T15:05:00.000Z'); // 5 minutes out, sooner than the 15-minute hold
+    expect(holdExpiresAtFor({ createdAt, startTime })).toEqual(startTime);
+  });
+
+  it('should_never_exceed_startTime_even_at_the_exact_boundary', () => {
+    const createdAt = new Date('2026-08-17T15:00:00.000Z');
+    const startTime = new Date('2026-08-17T15:15:00.000Z'); // exactly the hold duration out
+    const result = holdExpiresAtFor({ createdAt, startTime });
+    expect(result.getTime()).toBeLessThanOrEqual(startTime.getTime());
+    expect(result).toEqual(startTime);
   });
 });

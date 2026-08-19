@@ -79,6 +79,8 @@ function renders(
   availabilityOverrides: {
     workingWeekdays?: ReadonlySet<number>;
     slots?: readonly Date[];
+    /** `null` means the shop cannot charge a deposit and must not take bookings. */
+    deposit?: string | null;
   } = {}
 ) {
   const slotsFor = vi.fn().mockResolvedValue(availabilityOverrides.slots ?? SLOTS);
@@ -86,13 +88,21 @@ function renders(
     .fn()
     .mockResolvedValue(availabilityOverrides.workingWeekdays ?? EVERY_WEEKDAY);
 
+  // B4: the details step reads a deposit. A shop that can take bookings
+  // returns an amount; `null` is the not-taking-bookings state.
+  const depositFor = vi
+    .fn()
+    .mockResolvedValue(
+      availabilityOverrides.deposit === undefined ? '500.00' : availabilityOverrides.deposit
+    );
+
   resolveBySlug.mockResolvedValue({
     type: 'render',
     catalog,
-    availability: { today: () => TODAY, workingWeekdays, slotsFor },
+    availability: { today: () => TODAY, workingWeekdays, slotsFor, depositFor },
   });
 
-  return { slotsFor, workingWeekdays };
+  return { slotsFor, workingWeekdays, depositFor };
 }
 
 beforeEach(() => {
@@ -181,10 +191,12 @@ describe('BookingPage - the steps', () => {
     );
 
     expect(screen.getByRole('heading', { name: COPY.booking.dateHeading })).toBeInTheDocument();
-    expect(screen.queryByText(COPY.booking.continueUnavailable)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: COPY.booking.datosHeading })).not.toBeInTheDocument();
   });
 
-  it('should_disclose_that_booking_is_not_available_yet_once_a_time_is_chosen', async () => {
+  it('should_render_the_client_details_form_once_a_time_is_chosen', async () => {
+    // B3 ended here with an inert disclosure because the route it would have
+    // posted to did not exist. B4 built it.
     renders();
 
     render(
@@ -199,13 +211,52 @@ describe('BookingPage - the steps', () => {
       )
     );
 
-    expect(screen.getByText(COPY.booking.continueUnavailable)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: COPY.booking.datosHeading })).toBeInTheDocument();
+    expect(screen.getByLabelText(COPY.booking.nameLabel)).toBeInTheDocument();
+    expect(screen.getByLabelText(COPY.booking.emailLabel)).toBeInTheDocument();
+    expect(screen.getByLabelText(COPY.booking.phoneLabel)).toBeInTheDocument();
   });
 
-  it('should_not_imply_that_the_chosen_time_is_held', async () => {
-    // Nothing is reserved until B4's transaction, and two clients can be on
-    // this screen looking at the same start.
+  it('should_carry_the_whole_selection_as_hidden_inputs_for_the_write_to_re_verify', async () => {
     renders();
+
+    const { container } = render(
+      await BookingPage(
+        props({
+          local: 'loc-centro',
+          servicio: 'svc-corte',
+          barbero: 'bar-ana',
+          fecha: '2026-08-17',
+          hora: '09:00',
+        })
+      )
+    );
+
+    const form = container.querySelector('form[action="/api/bookings"]');
+    expect(form).not.toBeNull();
+    expect(form?.getAttribute('method')).toBe('post');
+
+    const hidden = Object.fromEntries(
+      Array.from(form?.querySelectorAll('input[type="hidden"]') ?? []).map((input) => [
+        input.getAttribute('name'),
+        input.getAttribute('value'),
+      ])
+    );
+
+    expect(hidden).toMatchObject({
+      slug: 'barberia-don-juan',
+      locationId: 'loc-centro',
+      serviceId: 'svc-corte',
+      barberId: 'bar-ana',
+      fecha: '2026-08-17',
+      hora: '09:00',
+    });
+  });
+
+  it('should_refuse_to_render_the_form_when_the_shop_cannot_charge_a_deposit', async () => {
+    // The wall B2 named when it left the payment-readiness gate to B4. It
+    // never says which half of the owner's configuration is missing.
+    renders(TWO_BRANCHES, { deposit: null });
 
     render(
       await BookingPage(
@@ -219,7 +270,42 @@ describe('BookingPage - the steps', () => {
       )
     );
 
-    expect(screen.getByText(COPY.booking.slotNotHeld)).toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.notTakingBookings)).toBeInTheDocument();
+    expect(screen.queryByLabelText(COPY.booking.emailLabel)).not.toBeInTheDocument();
+  });
+
+  it('should_read_no_payment_configuration_before_the_details_step', async () => {
+    // Every earlier step issues no payment query at all — the narrowing B2's
+    // spec anticipated, kept as narrow as it was written.
+    const { depositFor } = renders();
+
+    render(
+      await BookingPage(props({ local: 'loc-centro', servicio: 'svc-corte', barbero: 'bar-ana' }))
+    );
+
+    expect(depositFor).not.toHaveBeenCalled();
+  });
+
+  it('should_carry_no_form_control_that_delegates_validation_to_the_browser_locale', async () => {
+    // `pattern`, `min`, `max` and `step` each let the browser block the
+    // submission with a message from a string that exists in no copy module.
+    renders();
+
+    const { container } = render(
+      await BookingPage(
+        props({
+          local: 'loc-centro',
+          servicio: 'svc-corte',
+          barbero: 'bar-ana',
+          fecha: '2026-08-17',
+          hora: '09:00',
+        })
+      )
+    );
+
+    for (const attribute of ['pattern', 'min', 'max', 'step', 'minlength', 'maxlength']) {
+      expect(container.querySelector(`form [${attribute}]`)).toBeNull();
+    }
   });
 
   it('should_format_the_price_in_es_AR_with_two_decimals', async () => {

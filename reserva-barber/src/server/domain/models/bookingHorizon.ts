@@ -39,3 +39,24 @@ export const MAX_BOOKING_HORIZON_DAYS = 60;
  * this version does not model.
  */
 export const MIN_BOOKING_LEAD_MINUTES = 60;
+
+/**
+ * How long a provisional hold lasts before it is eligible to be swept.
+ *
+ * Another judgement, not a measurement — comfortable for a Mercado Pago
+ * checkout, tight but workable for locating a bank transfer destination.
+ *
+ * B7, which sweeps expired holds, has not shipped yet, so nothing enforces
+ * this deadline by itself. Its only present-day effect is what
+ * `blocksAvailability` (`Booking.ts`) reads it against: an expired
+ * `PENDING_PAYMENT` hold stops blocking a slot, which is the mechanism that
+ * makes an abandoned checkout's time sellable again before B7 exists.
+ *
+ * `Booking.holdExpiresAtFor()` clamps this against the appointment's own
+ * `startTime` — a hold must never be scheduled to lapse after the
+ * appointment it holds has already begun. `MIN_BOOKING_LEAD_MINUTES` makes
+ * that clamp unreachable today only because it is itself a guess likely to be
+ * lowered, so the clamp is written into the rule rather than relied upon as
+ * an emergent property of another constant.
+ */
+export const HOLD_DURATION_MINUTES = 15;

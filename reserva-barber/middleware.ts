@@ -1,7 +1,10 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { logger } from '@/server/infrastructure/logger';
-import { decideGuardAction } from '@/server/application/auth/routeGuard';
+import {
+  decideGuardAction,
+  isBookingConfirmationRoute,
+} from '@/server/application/auth/routeGuard';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -72,17 +75,30 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return new NextResponse(null, { status: 404 });
   }
 
+  // The hold-confirmation URL carries the booking's cancellation token (B4
+  // design D10). Set here rather than in the page because it must cover every
+  // response under that path — including the ones the page never renders — and
+  // because B5 will redirect away from it to an external payment provider,
+  // which is the navigation that would otherwise leak the token in `Referer`.
+  if (isBookingConfirmationRoute(request.nextUrl.pathname)) {
+    response.headers.set('Referrer-Policy', 'no-referrer');
+  }
+
   return response;
 }
 
-// Verified to reach `/b`, `/b/{slug}` and `/b/{slug}/reservar`, so the public
-// namespace opened in `decideGuardAction` is actually evaluated here.
+// Verified to reach `/b`, `/b/{slug}`, `/b/{slug}/reservar` and, as of B4,
+// `/api/bookings` — none of them match the image-extension or `_next`
+// exclusions below, so the public paths opened in `decideGuardAction`
+// (`PUBLIC_PROFILE_ROOT`, `PUBLIC_BOOKING_API`) are actually evaluated here
+// rather than bypassing the middleware entirely.
 //
 // The image-extension exclusion does skip a path like `/b/foto.webp`, and that
 // is harmless twice over: a valid slug can never contain a dot (it matches
 // `^[a-z0-9]+(-[a-z0-9]+)*$`), so such a path is never a profile; and since
 // `/b/**` is public, a request that bypasses this middleware reaches the route
-// tree and gets the same 404 it would have got anyway.
+// tree and gets the same 404 it would have got anyway. `/api/bookings` carries
+// no extension and is unaffected by that exclusion.
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };
