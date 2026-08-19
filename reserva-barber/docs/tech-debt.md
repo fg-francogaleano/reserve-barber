@@ -1542,5 +1542,12 @@ page needs to distinguish "held, awaiting payment" from "confirmed", which B5 ha
 the client returning from a successful checkout. Doing it as part of B5 costs nothing extra; doing it
 after costs a bug report from someone who paid.
 
-- **Trigger:** **B5**, before it merges. It is the story that both creates the state and needs the
-  screen for it.
+**B5 already has the task that closes this, which is why the entry is short.** Its task **9.2** covers
+"the page's eight states: hold live unpaid · payment in flight · awaiting confirmation · **confirmed**
+· rejected with time left · hold lapsed · paid but slot lost · payments impossible". The fourth is
+exactly what is missing today. So this needs no new work in B5 — it needs whoever writes 9.2 to know
+that the `alreadyHeld` path reaches that state too, not only a client returning from checkout.
+
+- **Trigger:** **B5 task 9.2**, before it merges. Verify the confirmed state is reached by a *repeat
+  submission* as well as by a successful return from Mercado Pago; the two paths arrive at the same
+  page from opposite directions, and only the second is obvious.
