@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 /**
- * The composition-root review, applied to the one root in the public flow that
- * **does** construct a cipher.
+ * The composition-root review, applied to the public flow's payment roots — the
+ * ones that **do** construct a cipher.
  *
  * B4 added this shape of test after its runtime found a repository wired into
  * one composer and not the other — a defect invisible to 2061 passing tests,
@@ -54,17 +54,61 @@ describe('paymentInitiationService - every dependency is wired', () => {
   });
 });
 
-describe('the cipher stays confined to this one root', () => {
-  it('should_be_the_only_public_flow_composer_that_builds_one', () => {
-    // The guarantee B1-B4 held by absence, now held by confinement. If a second
-    // public-flow composer ever constructs a cipher, this is where it shows.
+describe('the cipher stays confined to a known set of roots', () => {
+  /**
+   * **The complete set, enumerated from the repository rather than spot-checked.**
+   *
+   * The guarantee B1–B4 held by absence is now held by confinement, and
+   * confinement is only worth anything if it is enumerable. Checking two files
+   * by hand would pass while a third constructor appeared somewhere neither was
+   * looking — which is precisely how a guarantee decays into a comment.
+   *
+   * Three entries, and each earns its place: the dashboard's credential editor
+   * (PC2, which writes the token), and B5's two public roots, which must
+   * decrypt it to charge and to authenticate a notification. Adding a fourth is
+   * a deliberate act, and this test is where it has to be argued for.
+   */
+  it('should_be_constructed_in_exactly_the_three_expected_roots', () => {
+    const root = new URL('../../../../', import.meta.url);
+
+    // A plain recursive walk rather than a glob helper: this repository's
+    // `@types/node` does not declare `fs.globSync`, and a test that reaches for
+    // an untyped API to prove a security property is the wrong trade.
+    function walk(dir: string): string[] {
+      return readdirSync(new URL(dir, root), { withFileTypes: true }).flatMap((entry) => {
+        const path = `${dir}${entry.name}`;
+        if (entry.isDirectory()) return walk(`${path}/`);
+        return path.endsWith('.ts') ? [path] : [];
+      });
+    }
+
+    const constructors = [...walk('app/'), ...walk('src/')]
+      // Tests and the runtime probe construct one to exercise it, which is not
+      // a production surface that can decrypt a stored credential.
+      .filter((file) => !file.endsWith('.test.ts') && !file.endsWith('.probe.ts'))
+      .filter((file) =>
+        readFileSync(new URL(file, root), 'utf8').includes('new WebCryptoCipher()')
+      )
+      .sort();
+
+    expect(constructors).toEqual([
+      'app/(dashboard)/mercado-pago/paymentConfigService.ts',
+      'app/api/payments/mercadopago/paymentInitiationService.ts',
+      'app/api/webhooks/mercadopago/webhookService.ts',
+    ]);
+  });
+
+  it('should_keep_the_read_side_of_the_public_flow_cipherless', () => {
+    // The two public-flow composers that must never gain one: the booking write
+    // and the confirmation page. Both mention the cipher only in prose, which
+    // is why this asserts on construction rather than on the name appearing.
     const bookingWrite = sourceOf('../../bookings/bookingCreationService.ts');
     const confirmation = sourceOf(
       '../../../b/[slug]/reserva/[token]/bookingConfirmationService.ts'
     );
 
-    expect(bookingWrite).not.toMatch(/WebCryptoCipher/);
-    expect(confirmation).not.toMatch(/WebCryptoCipher/);
+    expect(bookingWrite).not.toMatch(/new WebCryptoCipher\(\)/);
+    expect(confirmation).not.toMatch(/new WebCryptoCipher\(\)/);
   });
 
   it('should_leave_the_booking_write_composer_cipherless', () => {

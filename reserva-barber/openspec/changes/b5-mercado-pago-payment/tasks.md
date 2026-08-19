@@ -104,20 +104,20 @@
 
 ## 10. Cross-cutting checks
 
-- [ ] 10.1 `npm run typecheck` and lint clean.
-- [ ] 10.2 Full suite green.
-- [ ] 10.3 Grep the diff for `mercadopago` in `package.json` — it must not appear (T51).
-- [ ] 10.4 Grep the diff for `DepositPolicy` imports under the payment paths — none (D5).
-- [ ] 10.5 List the callers of `ICredentialCipher`; exactly one belongs to the public booking flow (D4).
-- [ ] 10.6 Build and check the Worker bundle size. **Baseline measured by B4's final deploy: 2752.88 KiB gzip, ~319 KiB under the ceiling T51 tracks.** Record this change's number and the delta here. Two `fetch` calls should cost single-digit KiB; anything larger means a dependency crept in (10.3).
+- [x] 10.1 `npm run typecheck` and lint clean.
+- [x] 10.2 Full suite green.
+- [x] 10.3 Grep the diff for `mercadopago` in `package.json` — it must not appear (T51).
+- [x] 10.4 Grep the diff for `DepositPolicy` imports under the payment paths — none (D5).
+- [x] 10.5 List the callers of `ICredentialCipher`. **Result, and it corrected a claim in the code:** three files construct one — `app/(dashboard)/mercado-pago/paymentConfigService.ts` (PC2, which writes the token) and B5's two public roots, the payment initiation and the notification handler. `paymentInitiationService.ts` claimed to be "the only one in the public flow"; that was true when written and stopped being true when the webhook composer landed. Both the comment and the test were corrected, and the test now **enumerates the complete set from the repository** rather than spot-checking two files — a guarantee whose whole value is being enumerable cannot be asserted by checking the places you already thought of. The booking write and the confirmation page mention the cipher only in prose, so the assertion is on `new WebCryptoCipher()`, not on the name appearing.
+- [x] 10.6 Worker bundle size, via `npx wrangler deploy --dry-run` (measures the upload without deploying). **B5: 11637.98 KiB raw / 2782.56 KiB gzip.** Against B4's final deploy of 2752.88 KiB gzip that is **+29.68 KiB**, leaving roughly **289 KiB** under the ceiling T51 tracks. The delta is larger than the "single-digit KiB" this task predicted, and the prediction was wrong rather than the result: B5 adds two routes, a landing route, four services, two repositories' worth of code and a gateway — not merely two `fetch` calls. No dependency crept in (10.3 confirms `mercadopago` is absent from `package.json`). Worth recording plainly: **at this rate T51's ceiling is about ten stories away, not one**, but B6 adds file upload to Supabase Storage and is the next one likely to cost real weight.
 
 ## 11. Runtime verification
 
 > B4 found two defects in the first ten minutes of this group against 2061 green tests.
 > Both were invisible to the suite by construction. This group is not optional.
 
-- [ ] 11.1 `scripts/b5-gate.ts`: probe that `Payment`, both enums, the unique `mpPaymentId` and the partial index exist in the live database.
-- [ ] 11.2 Gate probe: a second non-rejected payment for one booking is refused by the database.
+- [x] 11.1 `scripts/b5-gate.ts`: probe that `Payment`, both enums, the unique `mpPaymentId` and the partial index exist in the live database.
+- [x] 11.2 Gate probe: a second non-rejected payment for one booking is refused by the database.
 - [ ] 11.3 Gate probe: preference created for a real booking, with the amount matching the snapshot.
 - [ ] 11.4 Gate probe: notification round-trip confirms the booking.
 - [ ] 11.5 Gate probe: same notification replayed three times → one `CONFIRMED`, one `APPROVED`, three `200`s.

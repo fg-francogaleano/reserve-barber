@@ -24,9 +24,15 @@ import { logger } from '@/server/infrastructure/logger';
  * B5 has to actually charge, so it needs the plaintext. The guarantee changes
  * shape a third time instead of being deleted:
  *
- * - **This file is the only one in the public flow that constructs a cipher.**
- *   Listing the callers of `WebCryptoCipher` answers "what can decrypt a stored
- *   credential?" in one search, permanently.
+ * - **This file is one of exactly two in the public flow that construct a
+ *   cipher**, the other being the notification handler's composer — which needs
+ *   one for the same reason, since authenticating a notification means asking
+ *   Mercado Pago about the payment with that owner's own token. Both are named
+ *   in `paymentInitiationService.test.ts`, which asserts the **complete set** of
+ *   constructors in the repository rather than checking a couple of files by
+ *   hand. Listing the callers of `WebCryptoCipher` therefore keeps answering
+ *   "what can decrypt a stored credential?" in one search, and a third
+ *   constructor appearing anywhere fails that test rather than passing quietly.
  * - `app/api/bookings/bookingCreationService.ts` is untouched and still builds
  *   its payment repository with no cipher argument, asserted by its own test.
  * - `PublicPaymentReadiness` gains no field. The readiness gate still cannot
