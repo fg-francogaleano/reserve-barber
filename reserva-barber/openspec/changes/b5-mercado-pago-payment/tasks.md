@@ -35,12 +35,12 @@
 
 ## 4. Persistence
 
-- [ ] 4.1 Failing tests for `PrismaPaymentRepository`: create-pending, find-by-booking, find-by-id, find-by-external-id, and the conditional confirm.
-- [ ] 4.2 Implement `PrismaPaymentRepository`, converting the amount to a canonical string at the boundary in both directions.
-- [ ] 4.3 Implement the conditional confirm as one transaction: `updateMany` on the booking guarded by `status: 'PENDING_PAYMENT'`, plus the payment update. Zero rows updated is a normal outcome, not an error.
-- [ ] 4.4 Failing test then implementation for translating the `mpPaymentId` unique violation as already-processed, **qualified on the violated constraint** (T15).
-- [ ] 4.5 Failing test then implementation for translating the partial-index violation as an existing live payment.
-- [ ] 4.6 Repository test doubles expose only methods the real client provides, so calling a wrong one fails as "not a function" (T58).
+- [x] 4.1 Failing tests for `PrismaPaymentRepository`: create-pending, find-by-booking, find-by-id, find-by-external-id, and the conditional confirm.
+- [x] 4.2 Implement `PrismaPaymentRepository`, converting the amount to a canonical string at the boundary in both directions.
+- [x] 4.3 Implement the conditional confirm as one transaction: `updateMany` on the booking guarded by `status: 'PENDING_PAYMENT'`, plus the payment update. Zero rows updated is a normal outcome, not an error.
+- [x] 4.4 Failing test then implementation for translating the `mpPaymentId` unique violation as already-processed, **qualified on the violated constraint** (T15).
+- [x] 4.5 Failing test then implementation for translating the partial-index violation as an existing live payment.
+- [x] 4.6 Repository test doubles expose only methods the real client provides, so calling a wrong one fails as "not a function" (T58).
 
 ## 5. Mercado Pago gateway
 
@@ -129,6 +129,7 @@
 - [ ] 11.13 Complete one real test-credential payment end to end and see the booking confirmed without intervention.
 - [ ] 11.14 Confirm no preview log line contains the access token, a client contact detail, or a cancellation token.
 - [ ] 11.15 **Run at least one pass after 21:00 local**, when the runtime's UTC calendar has already rolled to the next day, and confirm the confirmation page names the day and time chosen.
+- [ ] 11.19 Gate probe: **what the driver reports for a PARTIAL unique index violation.** `PrismaPaymentRepository` discriminates two constraints by `meta.driverAdapterError.cause.constraint.fields`, a shape `p1-gate-db.ts` measured for ordinary unique indexes only. A partial index was never measured, and no mock can tell us what arrives. If the shape differs, both translations collapse into the fallback and the two outcomes swap meanings — a double-tap becomes an error and a duplicate notification becomes a `5xx`. Trip `Payment_one_live_per_booking` and `Payment_mpPaymentId_key` against the live database, print the raw error, and confirm the field lists this code compares against.
 - [ ] 11.18 Gate probe for **T45**: create preferences at `1.00`, `0.50` and `0.01` ARS with test credentials, record which are refused and the exact error, and write the measured minimum back into task 1.2. Then complete 1.5 and 1.6, which are blocked on this number.
 - [ ] 11.16 **Franco:** `npm run deploy`, then repeat 11.9, 11.10 and 11.11 against the deployed origin — the guard and the header are configuration, and configuration is what differs between preview and production.
 - [ ] 11.17 **Franco:** sign-off recorded here before archiving, including which checks ran after 21:00 local.

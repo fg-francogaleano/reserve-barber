@@ -1,0 +1,392 @@
+import { describe, it, expect, vi } from 'vitest';
+import { PrismaPaymentRepository } from './PrismaPaymentRepository';
+import type { PrismaClient } from '@/generated/prisma/client';
+
+const BOOKING = 'bkg-1';
+const PAYMENT = 'pay-1';
+const NOW = new Date('2026-08-19T12:00:00.000Z');
+
+/**
+ * A unique violation shaped the way this stack actually produces one.
+ *
+ * **Not `meta.target`.** `scripts/p1-gate-db.ts` measured that Prisma 7 with
+ * `@prisma/adapter-pg` populates
+ * `meta.driverAdapterError.cause.constraint.fields`, with column names arriving
+ * **already quoted**. A test that mocked `meta.target` would certify a
+ * translation that matches nothing against the real database — the T58 failure,
+ * in the exact place T15 already burned this codebase once.
+ */
+function uniqueViolation(...fields: string[]) {
+  return Object.assign(new Error('Unique constraint failed'), {
+    code: 'P2002',
+    meta: {
+      driverAdapterError: { cause: { constraint: { fields: fields.map((f) => `"${f}"`) } } },
+    },
+  });
+}
+
+function paymentRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: PAYMENT,
+    bookingId: BOOKING,
+    status: 'PENDING',
+    amount: '5000.50',
+    mpPreferenceId: null,
+    mpInitPoint: null,
+    approvedAt: null,
+    ...overrides,
+  };
+}
+
+/**
+ * A transaction client exposing **only** the methods the real one provides for
+ * this path.
+ *
+ * B4's lesson, stated as code: its repository test mocked `$queryRaw` and
+ * asserted it was called, so the mock certified the exact call that could not
+ * work against the pg driver adapter. Anything this repository reaches for that
+ * is not here fails as "not a function" rather than silently passing.
+ */
+function createTx() {
+  return {
+    $executeRaw: vi.fn().mockResolvedValue(1),
+    payment: { update: vi.fn().mockResolvedValue(paymentRow({ status: 'APPROVED' })) },
+    booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+  };
+}
+
+function createDb(tx = createTx()) {
+  const db = {
+    payment: {
+      create: vi.fn().mockResolvedValue(paymentRow()),
+      update: vi.fn().mockResolvedValue(paymentRow()),
+      findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    $transaction: vi.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
+  };
+  return { db: db as unknown as PrismaClient, raw: db, tx };
+}
+
+describe('createPendingMercadoPago', () => {
+  it('creates a pending payment and returns it', async () => {
+    const { db, raw } = createDb();
+
+    const result = await new PrismaPaymentRepository(db).createPendingMercadoPago({
+      bookingId: BOOKING,
+      amount: '5000.50',
+    });
+
+    expect(result.outcome).toBe('created');
+    expect(raw.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          bookingId: BOOKING,
+          method: 'MERCADO_PAGO',
+          status: 'PENDING',
+          amount: '5000.50',
+        }),
+      })
+    );
+  });
+
+  // The measured hazard: the driver returns a stored 5000.50 as 5000.5, and
+  // integer-cent arithmetic then reads the lone 5 as five centavos.
+  it('returns the amount as a canonical two-decimal string', async () => {
+    const { db, raw } = createDb();
+    raw.payment.create.mockResolvedValue(paymentRow({ amount: '5000.5' }));
+
+    const result = await new PrismaPaymentRepository(db).createPendingMercadoPago({
+      bookingId: BOOKING,
+      amount: '5000.50',
+    });
+
+    expect(result.payment.amount).toBe('5000.50');
+  });
+
+  /**
+   * Two concurrent taps both read no existing payment, so only the partial
+   * unique index can decide between them. The loser must be handed the winner's
+   * payment, not an error — B4 established that a repeat submission is
+   * invisible to the person who made it.
+   */
+  it('translates the live-payment index violation into the existing payment', async () => {
+    const { db, raw } = createDb();
+    raw.payment.create.mockRejectedValue(uniqueViolation('bookingId'));
+    raw.payment.findFirst.mockResolvedValue(paymentRow({ id: 'pay-winner' }));
+
+    const result = await new PrismaPaymentRepository(db).createPendingMercadoPago({
+      bookingId: BOOKING,
+      amount: '5000.50',
+    });
+
+    expect(result).toEqual({
+      outcome: 'alreadyLive',
+      payment: expect.objectContaining({ id: 'pay-winner' }),
+    });
+  });
+
+  /**
+   * T15 is exactly this defect on another table: an unqualified handler
+   * reporting every violation as one business meaning. A violation this method
+   * did not cause must surface, not be dressed up as a concurrent tap.
+   */
+  it('does not swallow a violation on a different constraint', async () => {
+    const { db, raw } = createDb();
+    raw.payment.create.mockRejectedValue(uniqueViolation('mpPaymentId'));
+
+    await expect(
+      new PrismaPaymentRepository(db).createPendingMercadoPago({
+        bookingId: BOOKING,
+        amount: '5000.50',
+      })
+    ).rejects.toThrow();
+  });
+
+  it('does not swallow a non-unique failure', async () => {
+    const { db, raw } = createDb();
+    raw.payment.create.mockRejectedValue(new Error('connection reset'));
+
+    await expect(
+      new PrismaPaymentRepository(db).createPendingMercadoPago({
+        bookingId: BOOKING,
+        amount: '5000.50',
+      })
+    ).rejects.toThrow('connection reset');
+  });
+});
+
+describe('findLiveByBookingId', () => {
+  it('asks only for payments that are not rejected', async () => {
+    const { db, raw } = createDb();
+
+    await new PrismaPaymentRepository(db).findLiveByBookingId(BOOKING);
+
+    expect(raw.payment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          bookingId: BOOKING,
+          status: { not: 'REJECTED' },
+        }),
+      })
+    );
+  });
+
+  it('returns null when the booking has no live payment', async () => {
+    const { db } = createDb();
+
+    expect(await new PrismaPaymentRepository(db).findLiveByBookingId(BOOKING)).toBeNull();
+  });
+});
+
+describe('confirmWithPayment', () => {
+  it('guards the booking update on the status still being PENDING_PAYMENT', async () => {
+    const { db, tx } = createDb();
+
+    const result = await new PrismaPaymentRepository(db).confirmWithPayment({
+      paymentId: PAYMENT,
+      bookingId: BOOKING,
+      gatewayPaymentId: 'mp-1',
+      approvedAt: NOW,
+    });
+
+    expect(result).toEqual({ outcome: 'confirmed' });
+    expect(tx.booking.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: BOOKING, status: 'PENDING_PAYMENT' },
+        data: expect.objectContaining({ status: 'CONFIRMED' }),
+      })
+    );
+  });
+
+  /**
+   * A duplicate delivery matches zero rows, and that is the mechanism working.
+   * Throwing here would answer Mercado Pago `5xx` and ask for a third delivery.
+   */
+  it('reports a zero-row update as notPending rather than failing', async () => {
+    const tx = createTx();
+    tx.booking.updateMany.mockResolvedValue({ count: 0 });
+    const { db } = createDb(tx);
+
+    const result = await new PrismaPaymentRepository(db).confirmWithPayment({
+      paymentId: PAYMENT,
+      bookingId: BOOKING,
+      gatewayPaymentId: 'mp-1',
+      approvedAt: NOW,
+    });
+
+    expect(result).toEqual({ outcome: 'notPending' });
+  });
+
+  it('does not touch the payment when the booking was not pending', async () => {
+    const tx = createTx();
+    tx.booking.updateMany.mockResolvedValue({ count: 0 });
+    const { db } = createDb(tx);
+
+    await new PrismaPaymentRepository(db).confirmWithPayment({
+      paymentId: PAYMENT,
+      bookingId: BOOKING,
+      gatewayPaymentId: 'mp-1',
+      approvedAt: NOW,
+    });
+
+    expect(tx.payment.update).not.toHaveBeenCalled();
+  });
+
+  // The unique mpPaymentId IS the idempotency guarantee, so tripping it is the
+  // mechanism working. It must not reach the caller as an infrastructure error.
+  it('translates the gateway-id violation into alreadyProcessed', async () => {
+    const tx = createTx();
+    tx.payment.update.mockRejectedValue(uniqueViolation('mpPaymentId'));
+    const { db } = createDb(tx);
+
+    const result = await new PrismaPaymentRepository(db).confirmWithPayment({
+      paymentId: PAYMENT,
+      bookingId: BOOKING,
+      gatewayPaymentId: 'mp-1',
+      approvedAt: NOW,
+    });
+
+    expect(result).toEqual({ outcome: 'alreadyProcessed' });
+  });
+
+  it('does not translate a violation on a different constraint', async () => {
+    const tx = createTx();
+    tx.payment.update.mockRejectedValue(uniqueViolation('bookingId'));
+    const { db } = createDb(tx);
+
+    await expect(
+      new PrismaPaymentRepository(db).confirmWithPayment({
+        paymentId: PAYMENT,
+        bookingId: BOOKING,
+        gatewayPaymentId: 'mp-1',
+        approvedAt: NOW,
+      })
+    ).rejects.toThrow();
+  });
+});
+
+describe('approveWithoutConfirming', () => {
+  /**
+   * The slot-lost branch. The charge is real, so the payment is APPROVED; the
+   * booking is deliberately untouched. Recording it REJECTED would hide money
+   * the owner has received and now owes back.
+   */
+  it('approves the payment and leaves the booking alone', async () => {
+    const { db, tx } = createDb();
+
+    const result = await new PrismaPaymentRepository(db).approveWithoutConfirming({
+      paymentId: PAYMENT,
+      gatewayPaymentId: 'mp-1',
+      approvedAt: NOW,
+    });
+
+    expect(result).toEqual({ outcome: 'confirmed' });
+    expect(tx.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) })
+    );
+    expect(tx.booking.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('translates a duplicate gateway id into alreadyProcessed', async () => {
+    const tx = createTx();
+    tx.payment.update.mockRejectedValue(uniqueViolation('mpPaymentId'));
+    const { db } = createDb(tx);
+
+    const result = await new PrismaPaymentRepository(db).approveWithoutConfirming({
+      paymentId: PAYMENT,
+      gatewayPaymentId: 'mp-1',
+      approvedAt: NOW,
+    });
+
+    expect(result).toEqual({ outcome: 'alreadyProcessed' });
+  });
+});
+
+describe('attachPreference', () => {
+  it('stores the preference id and its checkout URL', async () => {
+    const { db, raw } = createDb();
+
+    await new PrismaPaymentRepository(db).attachPreference({
+      paymentId: PAYMENT,
+      preferenceId: 'pref-1',
+      initPoint: 'https://mp.example/checkout?pref_id=pref-1',
+    });
+
+    expect(raw.payment.update).toHaveBeenCalledWith({
+      where: { id: PAYMENT },
+      data: {
+        mpPreferenceId: 'pref-1',
+        mpInitPoint: 'https://mp.example/checkout?pref_id=pref-1',
+      },
+    });
+  });
+});
+
+describe('findForNotification', () => {
+  function notificationRow() {
+    return {
+      id: PAYMENT,
+      status: 'PENDING',
+      amount: '5000.5',
+      mpPaymentId: null,
+      booking: {
+        id: BOOKING,
+        status: 'PENDING_PAYMENT',
+        holdExpiresAt: new Date('2026-08-19T12:15:00.000Z'),
+        startTime: new Date('2026-08-19T14:00:00.000Z'),
+        endTime: new Date('2026-08-19T14:30:00.000Z'),
+        barberId: 'barber-1',
+        barber: { location: { ownerId: 'owner-root' } },
+      },
+    };
+  }
+
+  it('resolves the owner, the booking and the barber in one read', async () => {
+    const { db, raw } = createDb();
+    raw.payment.findUnique.mockResolvedValue(notificationRow());
+
+    const result = await new PrismaPaymentRepository(db).findForNotification(PAYMENT);
+
+    expect(result).toEqual({
+      paymentId: PAYMENT,
+      paymentStatus: 'PENDING',
+      amount: '5000.50',
+      mpPaymentId: null,
+      bookingId: BOOKING,
+      bookingStatus: 'PENDING_PAYMENT',
+      holdExpiresAt: new Date('2026-08-19T12:15:00.000Z'),
+      startTime: new Date('2026-08-19T14:00:00.000Z'),
+      endTime: new Date('2026-08-19T14:30:00.000Z'),
+      barberId: 'barber-1',
+      ownerId: 'owner-root',
+    });
+    expect(raw.payment.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The projection is the guarantee, not a convention anyone has to remember.
+   * Nothing on this path renders a person, so the columns it never selects are
+   * the ones that cannot reach a log line.
+   */
+  it('selects no client contact detail and no cancellation token', async () => {
+    const { db, raw } = createDb();
+    raw.payment.findUnique.mockResolvedValue(notificationRow());
+
+    await new PrismaPaymentRepository(db).findForNotification(PAYMENT);
+
+    const select = JSON.stringify(raw.payment.findUnique.mock.calls[0]?.[0]);
+    expect(select).not.toContain('cancellationToken');
+    expect(select).not.toContain('client');
+    expect(select).not.toContain('email');
+    expect(select).not.toContain('phone');
+  });
+
+  // A ref that resolves nothing must cost one indexed read and nothing more —
+  // it is what keeps an unauthenticated endpoint from being an amplifier.
+  it('returns null for a ref that matches no payment', async () => {
+    const { db } = createDb();
+
+    expect(await new PrismaPaymentRepository(db).findForNotification('nope')).toBeNull();
+  });
+});
