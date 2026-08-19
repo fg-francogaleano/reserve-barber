@@ -689,6 +689,14 @@ loop and does not defeat a distributed one. That limitation is tracked separatel
   rate-limiting rule added for T47/T55 — at which point covering the action endpoints costs almost
   nothing extra, because the rule is already there.
 
+**Re-costed by B5 (2026-08-19).** The unmetered surface is now larger in a way this entry's title no
+longer describes. B5 adds **two** unauthenticated public endpoints — the payment initiation write and
+the Mercado Pago notification handler — and the second is the first endpoint in this project that a
+**third party** calls on a schedule we do not control. Neither is a Server Action, so neither is
+covered by the wording here, but both share the exposure: no metering, no attribution, no per-owner
+accounting. The notification handler additionally triggers an **outbound** call, which is why B5
+orders its cheap `ref` lookup first (see T60) — an unresolvable notification must never spend one.
+
 ### T48 — The public profile has no loading state, because a skeleton costs its HTTP statuses
 **Status:** accepted — measured trade-off, statuses chosen over the skeleton · **Effort:** unknown; needs a way to stream a shell without committing the status early · **Added:** B1 (2026-08-15)
 
@@ -793,6 +801,14 @@ The bet itself is unchanged: still no real traffic, still deliberate. What chang
   story, printed cards), any measured growth in requests to `/b/**`, any Supavisor pool saturation,
   **any crawler observed sweeping the `reservar` parameter space**, or any observed burst on
   `POST /api/bookings`. Do this together with **T55** — it is one rule.
+
+**Re-costed by B5 (2026-08-19), and one clause is now wrong.** This entry is written about a surface
+whose worst case is cost. B5 adds a public endpoint that a third party calls, and one whose handler
+performs an **outbound HTTPS request** to Mercado Pago per accepted notification. The amplification
+shape is therefore no longer "our database per request" but "our database *and* the owner's Mercado
+Pago rate limit per request". A Cloudflare rate-limiting rule — still the mitigation this entry and
+T55 both defer to, still ~15 min and no code — now covers three surfaces rather than two, which makes
+it cheaper per unit of risk than at any previous costing.
 
 ### T49 — The public 404 page renders an empty body without JavaScript
 **Status:** accepted · **Effort:** unknown — see the cause · **Added:** B2 (2026-08-15, runtime verification) · **Origin:** B1
@@ -1052,6 +1068,15 @@ test account, and a decision about what the panel says when the marker is merely
 
 - **Trigger:** unchanged in substance — the first story or session that can check the nickname marker
   against several real test accounts. The place it belongs is now built and waiting for it.
+
+**Re-costed by B5 (2026-08-19) — the consequence arrived.** Every previous costing of this entry could
+only describe a configuration curiosity, because nothing in the product charged anything. B5 confirms
+appointments automatically on an approved payment. **An owner who saved `TEST-` credentials now has
+real clients completing a checkout that moves no money, against bookings the system marks `CONFIRMED`
+and the barber will hold time for.** The blast radius moved from "a label in the dashboard is unhelpful"
+to "the agenda fills with appointments nobody paid for", and the owner has no surface that would say so.
+The fix is unchanged and still ~2 h; what changed is that deferring it now costs bookings rather than
+clarity.
 
 ### T38 — No key-rotation or re-encryption tooling
 **Status:** accepted · **Effort:** ~3 h · **Added:** PC2 (2026-08-13)
@@ -1427,6 +1452,19 @@ rule**, which is edge-side, shared across isolates, and covers the read surface 
 - **Trigger:** any observed request spike on the public surface, or the first Cloudflare
   rate-limiting rule added for T47 — the two are the same work and should be done together.
 
+**Re-costed by B5 (2026-08-19), with a measurement that changes how this is verified.** B5's payment
+initiation endpoint reuses `BookingThrottle`, so the per-isolate limitation described here applies to
+it unchanged. Two additions:
+
+- **The notification endpoint is deliberately NOT throttled.** Throttling a gateway's retries would
+  convert a transient failure into a permanent one, because a dropped notification is not re-sent
+  forever. Its protection is the cheap `ref` rejection and idempotency, not a rate limit.
+- **This throttle cannot be verified end-to-end in production, and B4 measured why.** `cf-connecting-ip`
+  **cannot be spoofed against real Cloudflare** — Cloudflare sets and overwrites the header — so a
+  multi-origin test from one machine trips Cloudflare's own edge protection with a `403` before the
+  application throttle is ever consulted. Route tests and the preview run are where this is provable.
+  Anyone re-attempting the production check will otherwise record a false failure, as B4's first pass did.
+
 ### T56 — Guest personal data accumulates with no deletion path
 **Status:** accepted · **Effort:** unknown (a policy decision before an implementation) · **Added:**
 B4 (2026-08-17)
@@ -1551,3 +1589,41 @@ that the `alreadyHeld` path reaches that state too, not only a client returning 
 - **Trigger:** **B5 task 9.2**, before it merges. Verify the confirmed state is reached by a *repeat
   submission* as well as by a successful return from Mercado Pago; the two paths arrive at the same
   page from opposite directions, and only the second is obvious.
+
+### T60 — The Mercado Pago webhook is authenticated by re-fetch, not by signature
+**Status:** accepted — **deliberate, and the alternative is worse than the gap** · **Effort:** ~half a
+day (column, cipher purpose, PC2 field, handler branch) · **Added:** B5 (2026-08-19)
+
+`/api/webhooks/mercadopago` performs **no signature validation**. Mercado Pago's `x-signature` is an
+HMAC keyed by a **per-integration webhook secret** issued in their dashboard, and this product is
+multi-tenant against Mercado Pago: every owner brings their own account. Choosing *which* owner's
+secret to validate with requires resolving the notification first, and no such secret is stored.
+
+**What authenticates a notification instead.** The `notification_url` carries `?ref={payment.id}` —
+not a secret, authorizing nothing — which resolves the owner and therefore their access token. The
+handler then re-fetches the payment from `GET /v1/payments/{id}` with **that owner's own token**, and
+verifies `external_reference`, `transaction_amount` and `currency_id` against the stored row before
+any transition.
+
+**This is the stronger of the two checks, which is why the gap is narrow.** A valid signature proves
+only that Mercado Pago sent the bytes. The re-fetch proves the payment exists, is approved, is for the
+right amount, and is bound to our booking — every property the transition actually depends on. An
+attacker cannot forge a payment that the owner's own account will confirm.
+
+**What is actually missing** is cheap rejection of forged traffic. Without a signature, a fabricated
+notification costs one indexed `ref` lookup before it is dropped. That lookup is deliberately ordered
+first, so no outbound Mercado Pago call is ever spent on an unresolvable notification — but the
+endpoint remains unauthenticated and unmetered, in the same family as T47 and T55.
+
+Doing it properly is not a handler change: it needs an encrypted `PaymentConfig.mpWebhookSecret`
+column, a fourth `CredentialPurpose`, a field on PC2's editor with its own verified and unreadable
+states, and a manual dashboard step walked through with every owner. That is a PC2 amendment wearing
+a B5 costume, and `base-standards.md` §1 says one thing at a time.
+
+**A `validateSignature()` that returns `true` when no secret is configured must never be introduced.**
+It reads as protection in every later review while protecting nothing, and it is strictly worse than
+the honest absence recorded here.
+
+- **Trigger:** the first owner who asks for it, **or** forged notification traffic appearing in the
+  logs. B5 logs the ref-unresolved and payment-not-found-at-Mercado-Pago outcomes as distinct causes
+  precisely so that this trigger is observable rather than hypothetical.

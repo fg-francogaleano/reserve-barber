@@ -367,17 +367,25 @@ A payment attempt/record associated with a booking's deposit. Supports both Merc
 - `id`: Unique identifier (PK, cuid)
 - `bookingId`: Foreign key → Booking (required)
 - `method`: Payment method — enum `PaymentMethod` (`MERCADO_PAGO`, `BANK_TRANSFER`) (required)
-- `amount`: Amount of the payment (Decimal, required — normally the deposit)
+- `amount`: Amount of the payment (**`Decimal(12,2)`, explicit precision and scale — never Prisma's default `Decimal(65,30)`**, per the convention `Service.price` established and `Booking` follows). Copied from `Booking.depositAmount` at creation; the webhook compares Mercado Pago's reported `transaction_amount` against **this** column
 - `status`: Payment state — enum `PaymentStatus` (`PENDING`, `APPROVED`, `REJECTED`) (required, default: `PENDING`)
-- `mpPaymentId`: External Mercado Pago payment id (optional, for MP method)
+- `mpPaymentId`: External Mercado Pago payment id (optional, for MP method — **`@unique`**, see below)
 - `mpPreferenceId`: External Mercado Pago preference id (optional, for MP method)
-- `approvedAt`: When the payment was approved (DateTime, optional)
+- `approvedAt`: When the payment was approved (**`Timestamptz(3)`**, optional — zone-aware, never the zone-less default)
 - `createdAt` / `updatedAt`: Timestamps
+
+> **`TransferReceipt` is not created alongside this table.** B5 creates `Payment` and the two enums only; the receipt entity and `ReceiptStatus` belong to B6. The `BANK_TRANSFER` method value exists from the start because an enum is cheaper to declare whole than to alter later, not because anything writes it yet.
 
 **Validation Rules:**
 - `amount`: required, > 0
 - For `MERCADO_PAGO`: status transitions are driven by the MP webhook, keyed by `mpPaymentId`
 - For `BANK_TRANSFER`: status transitions to `APPROVED`/`REJECTED` are driven by the owner reviewing the TransferReceipt
+- **`mpPaymentId` is unique, and that constraint IS the webhook's idempotency guarantee.** Duplicate delivery is normal operation for this gateway — it retries, sends several topics per payment, and can deliver out of order. Idempotency therefore rests on the database refusing the second insert, never on a prior read, which two concurrent deliveries can both pass. The unique violation is translated as already-processed and that translation is **qualified on the violated constraint**: this codebase already carries a defect (T15) where an unqualified violation is reported as a duplicate name
+- **At most one non-rejected payment per booking**, enforced by a partial unique index Prisma cannot declare:
+  `CREATE UNIQUE INDEX "Payment_one_live_per_booking" ON "Payment" ("bookingId") WHERE status <> 'REJECTED';`
+  Without it, two concurrent taps on the payment control each observe no existing payment and create two preferences for one slot. A `REJECTED` payment deliberately does not block a retry
+- **The confirming transition is conditional, never assigned.** The update to `CONFIRMED` is guarded on the booking still being `PENDING_PAYMENT`, so a second delivery updates zero rows — which is a normal outcome, not an error. A handler that writes the last-seen status would let an out-of-order `pending` un-confirm a paid booking
+- **A payment may be `APPROVED` while its booking is not `CONFIRMED`.** This is the late-payment case: the hold lapsed, the slot was resold, and the charge nonetheless happened. Recording it as `REJECTED` would hide real money from the owner's own accounting. Statistics and income counters must therefore join through the booking's status rather than counting approved payments alone
 
 **Relationships:**
 - `booking`: Many-to-one → Booking
