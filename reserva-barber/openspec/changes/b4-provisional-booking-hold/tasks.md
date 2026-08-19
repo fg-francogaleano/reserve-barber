@@ -312,3 +312,30 @@ violation. The rule "contact details never reach a log" does not depend on anyon
 
 **Verdict after fixes: PASS WITH GAPS.** The two Majors are closed; one Minor is deferred with a
 trigger. 131 test files, 2124 tests, lint clean.
+
+### 12a. Redeploy after the review fixes — **2026-08-18, ~21:10 local**
+
+Version `d14c812b-bbb8-41a6-b8b2-2501a652e1f6`, bundle **2752.88 KiB gzip** (+7 KiB over the previous
+deploy; ~319 KiB under the ceiling T51 tracks).
+
+Verified against the deployed origin: the guard's four answers unchanged; a booking created
+end-to-end with no JavaScript; `Referrer-Policy: no-referrer`, `$ 2.000,00`, a 15-minute countdown,
+and neither email nor phone on the confirmation page; **all five outcome notices render distinctly**,
+and a forged `?estado=` code renders none.
+
+**Two things went wrong in the first production pass, and both were mine, not the code's:**
+
+- The throttle check answered **403**, not the expected redirect. Cause: `cf-connecting-ip` **cannot
+  be spoofed against real Cloudflare** — Cloudflare sets that header itself and overwrites whatever
+  the client sends. So the twelve "different origins" were one real IP, and Cloudflare's own edge
+  protection answered before the application throttle was ever consulted. The application behaviour
+  is correct and is covered by the route tests and by the preview run; **the per-origin throttle
+  cannot be exercised end-to-end in production without tripping Cloudflare first**, which is worth
+  knowing before anyone tries again.
+- The end-to-end booking in that same pass produced **no token**, and would have been recorded as a
+  pass by a less specific check. It was collateral from the 403 above. Re-run cleanly, it passes.
+
+One earlier "failure" was also a false alarm worth recording: a forged `?estado=` appeared to render a
+notice, because the test URL named a slot **this pass had just booked**, so the page correctly showed
+the *discarded-selection* notice. The grep did not distinguish the two notice sources. Re-tested
+against a free slot: control 0, forged 0, valid 1.
