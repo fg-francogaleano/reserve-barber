@@ -1,0 +1,371 @@
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { PaymentInitiationService } from './PaymentInitiationService';
+import {
+  CredentialDecryptionError,
+  CredentialKeyMissingError,
+} from '@/server/domain/errors/PaymentConfigErrors';
+
+const NOW = new Date('2026-08-19T12:00:00.000Z');
+const TOKEN = 'tok-1';
+const ACCESS_TOKEN = 'APP_USR-secret-token-value';
+const ORIGIN = 'https://shop.example';
+
+const INIT_POINT = 'https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=pref-1';
+
+function booking(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'bkg-1',
+    status: 'PENDING_PAYMENT',
+    startTime: new Date('2026-08-19T14:00:00.000Z'),
+    endTime: new Date('2026-08-19T14:30:00.000Z'),
+    holdExpiresAt: new Date('2026-08-19T12:15:00.000Z'),
+    depositAmount: '5000.50',
+    serviceName: 'Corte de pelo',
+    ownerId: 'owner-root',
+    publicSlug: 'barberia-don-juan',
+    ...overrides,
+  };
+}
+
+function payment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'pay-1',
+    bookingId: 'bkg-1',
+    status: 'PENDING',
+    amount: '5000.50',
+    mpPreferenceId: null,
+    mpInitPoint: null,
+    approvedAt: null,
+    ...overrides,
+  };
+}
+
+function build(overrides: Record<string, unknown> = {}) {
+  const bookings = {
+    findForPaymentInitiation: vi.fn().mockResolvedValue(booking()),
+  };
+  const payments = {
+    findLiveByBookingId: vi.fn().mockResolvedValue(null),
+    createPendingMercadoPago: vi
+      .fn()
+      .mockResolvedValue({ outcome: 'created', payment: payment() }),
+    attachPreference: vi.fn().mockResolvedValue(undefined),
+  };
+  const config = {
+    findMercadoPagoAccessToken: vi.fn().mockResolvedValue(ACCESS_TOKEN),
+  };
+  const gateway = {
+    createPreference: vi.fn().mockResolvedValue({
+      status: 'created',
+      preferenceId: 'pref-1',
+      initPoint: INIT_POINT,
+    }),
+  };
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+  Object.assign({ bookings, payments, config, gateway }, overrides);
+
+  const service = new PaymentInitiationService(
+    bookings as never,
+    payments as never,
+    config as never,
+    gateway as never,
+    { now: () => NOW.getTime(), sleep: async () => {} },
+    logger as never
+  );
+
+  return { service, bookings, payments, config, gateway, logger };
+}
+
+const REQUEST = { cancellationToken: TOKEN, origin: ORIGIN };
+
+describe('the happy path', () => {
+  it('redirects to the checkout Mercado Pago created', async () => {
+    const { service } = build();
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome: 'redirect',
+      initPoint: INIT_POINT,
+      slug: 'barberia-don-juan',
+    });
+  });
+
+  it('charges the amount snapshotted on the booking', async () => {
+    const { service, gateway } = build();
+
+    await service.initiate(REQUEST);
+
+    expect(gateway.createPreference).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: '5000.50' }),
+      ACCESS_TOKEN
+    );
+  });
+
+  it('references the booking id and expires with the hold', async () => {
+    const { service, gateway } = build();
+
+    await service.initiate(REQUEST);
+
+    expect(gateway.createPreference).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalReference: 'bkg-1',
+        expiresAt: new Date('2026-08-19T12:15:00.000Z'),
+      }),
+      ACCESS_TOKEN
+    );
+  });
+
+  it('addresses the notification to this payment row', async () => {
+    const { service, gateway } = build();
+
+    await service.initiate(REQUEST);
+
+    const [input] = gateway.createPreference.mock.calls[0] as [{ notificationUrl: string }];
+    expect(input.notificationUrl).toBe(`${ORIGIN}/api/webhooks/mercadopago?ref=pay-1`);
+  });
+
+  it('stores the checkout URL so a repeat submission can reuse it', async () => {
+    const { service, payments } = build();
+
+    await service.initiate(REQUEST);
+
+    expect(payments.attachPreference).toHaveBeenCalledWith({
+      paymentId: 'pay-1',
+      preferenceId: 'pref-1',
+      initPoint: INIT_POINT,
+    });
+  });
+
+  /**
+   * The token is the client's cancellation credential. `external_reference` is
+   * stored by Mercado Pago, shown in their dashboard and echoed in every
+   * notification — and the token is unique, so it cannot be rotated without
+   * invalidating the link the client holds.
+   */
+  it('puts the cancellation token in no field of the preference', async () => {
+    const { service, gateway } = build();
+
+    await service.initiate(REQUEST);
+
+    const [input] = gateway.createPreference.mock.calls as unknown[][];
+    expect(JSON.stringify(input)).not.toContain(TOKEN);
+  });
+
+  /**
+   * A landing route, not the confirmation page — because the confirmation page
+   * is addressed by the cancellation token, and naming it here would store a
+   * live credential in Mercado Pago's preference. The slug comes from the
+   * booking's own shop, so a submitted slug cannot steer where a payment
+   * returns to.
+   */
+  it('returns the client to a landing route that names no credential', async () => {
+    const { service, gateway } = build();
+
+    await service.initiate(REQUEST);
+
+    const [input] = gateway.createPreference.mock.calls[0] as [{ backUrl: string }];
+    expect(input.backUrl).toBe(`${ORIGIN}/b/barberia-don-juan/pago/retorno`);
+  });
+});
+
+describe('what cannot be paid', () => {
+  it('reports an unknown token as not found', async () => {
+    const { service, bookings } = build();
+    bookings.findForPaymentInitiation.mockResolvedValue(null);
+
+    expect(await service.initiate(REQUEST)).toEqual({ outcome: 'notFound' });
+  });
+
+  it.each(['CONFIRMED', 'CANCELLED', 'EXPIRED', 'PENDING_APPROVAL'])(
+    'refuses a booking in status %s',
+    async (status) => {
+      const { service, bookings } = build();
+      bookings.findForPaymentInitiation.mockResolvedValue(booking({ status }));
+
+      expect(await service.initiate(REQUEST)).toEqual({
+        outcome: 'notPayable',
+        slug: 'barberia-don-juan',
+      });
+    }
+  );
+
+  it('refuses a hold that has already lapsed', async () => {
+    const { service, bookings } = build();
+    bookings.findForPaymentInitiation.mockResolvedValue(
+      booking({ holdExpiresAt: new Date('2026-08-19T11:59:00.000Z') })
+    );
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome: 'holdExpired',
+      slug: 'barberia-don-juan',
+    });
+  });
+
+  // No credential, no charge — and no orphan payment row left behind either.
+  it('reports a shop with no Mercado Pago credentials without creating a payment', async () => {
+    const { service, config, payments } = build();
+    config.findMercadoPagoAccessToken.mockResolvedValue(null);
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome: 'notConfigured',
+      slug: 'barberia-don-juan',
+    });
+    expect(payments.createPendingMercadoPago).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The readiness gate asks the database whether a token is present, and a
+   * present-but-undecryptable envelope answers yes. So the client reaches this
+   * button and only here does the truth surface — as the shop's problem, never
+   * as the client's failed payment.
+   */
+  it.each([
+    ['undecryptable', new CredentialDecryptionError()],
+    ['a missing key', new CredentialKeyMissingError('absent')],
+  ])('reports %s credentials as unreadable', async (_label, error) => {
+    const { service, config, payments } = build();
+    config.findMercadoPagoAccessToken.mockRejectedValue(error);
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome: 'credentialUnreadable',
+      slug: 'barberia-don-juan',
+    });
+    expect(payments.createPendingMercadoPago).not.toHaveBeenCalled();
+  });
+
+  it('never lets the access token reach a log line', async () => {
+    const { service, config, logger } = build();
+    config.findMercadoPagoAccessToken.mockRejectedValue(
+      // The reason is the one field these errors carry, so it is the one that
+      // could smuggle a credential into a log line.
+      new CredentialKeyMissingError(`unusable near ${ACCESS_TOKEN}`)
+    );
+
+    await service.initiate(REQUEST);
+
+    const logged = JSON.stringify([
+      logger.info.mock.calls,
+      logger.warn.mock.calls,
+      logger.error.mock.calls,
+    ]);
+    expect(logged).not.toContain(ACCESS_TOKEN);
+    expect(logged).not.toContain(TOKEN);
+  });
+});
+
+describe('a repeat submission', () => {
+  /**
+   * B4 established that a double-tap is invisible to the person who made it.
+   * The second tap must reach the same checkout, not a second charge and not an
+   * error telling a client who succeeded that something went wrong.
+   */
+  it('reuses the existing checkout without calling Mercado Pago again', async () => {
+    const { service, payments, gateway } = build();
+    payments.findLiveByBookingId.mockResolvedValue(payment({ mpInitPoint: INIT_POINT }));
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome: 'redirect',
+      initPoint: INIT_POINT,
+      slug: 'barberia-don-juan',
+    });
+    expect(gateway.createPreference).not.toHaveBeenCalled();
+    expect(payments.createPendingMercadoPago).not.toHaveBeenCalled();
+  });
+
+  it('reuses the payment the database awarded to the other tap', async () => {
+    const { service, payments, gateway } = build();
+    payments.createPendingMercadoPago.mockResolvedValue({
+      outcome: 'alreadyLive',
+      payment: payment({ id: 'pay-winner', mpInitPoint: INIT_POINT }),
+    });
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome: 'redirect',
+      initPoint: INIT_POINT,
+      slug: 'barberia-don-juan',
+    });
+    expect(gateway.createPreference).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A gateway timeout leaves a live payment with no checkout URL. Treating that
+   * as "a payment is already in progress" would leave a client unable to pay
+   * for a slot they are still holding — the worst possible dead end.
+   */
+  it('retries a preference creation that never finished', async () => {
+    const { service, payments, gateway } = build();
+    payments.findLiveByBookingId.mockResolvedValue(payment({ mpInitPoint: null }));
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome: 'redirect',
+      initPoint: INIT_POINT,
+      slug: 'barberia-don-juan',
+    });
+    expect(gateway.createPreference).toHaveBeenCalledTimes(1);
+    expect(payments.createPendingMercadoPago).not.toHaveBeenCalled();
+  });
+});
+
+describe('when Mercado Pago refuses', () => {
+  it.each([
+    ['invalid', 'amountRefused'],
+    ['rejected', 'credentialRejected'],
+    ['unavailable', 'gatewayUnavailable'],
+  ])('maps a %s preference to %s', async (gatewayStatus, outcome) => {
+    const { service, gateway } = build();
+    gateway.createPreference.mockResolvedValue({ status: gatewayStatus });
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome,
+      slug: 'barberia-don-juan',
+    });
+  });
+
+  it('leaves the payment row reusable so the client can try again', async () => {
+    const { service, gateway, payments } = build();
+    gateway.createPreference.mockResolvedValue({ status: 'unavailable' });
+
+    await service.initiate(REQUEST);
+
+    expect(payments.attachPreference).not.toHaveBeenCalled();
+  });
+});
+
+describe('what this service is allowed to touch', () => {
+  const source = readFileSync(
+    new URL('./PaymentInitiationService.ts', import.meta.url),
+    'utf8'
+  );
+
+  /**
+   * The amount is a snapshot (`data-model.md` §11). Recomputing it would reject
+   * a client paying a checkout created moments before the owner edited their
+   * policy — the payment correct, the system calling it wrong. The natural
+   * implementation of an amount is to compute one, which is why this is
+   * asserted rather than assumed.
+   */
+  // Scoped to the import lines, not the whole file: the prose above explains
+  // why the policy is absent, and a test that failed on its own explanation
+  // would push the reasoning out of the code to satisfy itself.
+  const imports = source
+    .split('\n')
+    .filter((line) => line.startsWith('import'))
+    .join('\n');
+
+  it('never imports the deposit policy', () => {
+    expect(imports).not.toContain('depositPolicy');
+    expect(imports).not.toContain('computeDepositAmount');
+    expect(imports).not.toContain('DepositPolicy');
+  });
+
+  it('never calls the deposit computation', () => {
+    expect(source).not.toContain('computeDepositAmount(');
+    expect(source).not.toContain('describeDeposit(');
+  });
+
+  it('never imports Prisma or the cipher directly', () => {
+    expect(imports).not.toContain('@/generated/prisma');
+    expect(imports).not.toContain('WebCryptoCipher');
+  });
+});

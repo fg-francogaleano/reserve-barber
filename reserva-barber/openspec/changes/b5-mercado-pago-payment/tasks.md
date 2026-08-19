@@ -52,15 +52,17 @@
 
 ## 6. Payment initiation
 
-- [ ] 6.1 Failing tests for `PaymentInitiationService`: booking not found, wrong status, hold lapsed, no MP credentials, undecryptable credential, existing live payment returned, happy path.
-- [ ] 6.2 Implement `PaymentInitiationService`. The amount comes from `booking.depositAmount`; `DepositPolicy` is not imported (D5) — assert that by test.
-- [ ] 6.3 Build the preference payload server-side only: `external_reference = booking.id`, `date_of_expiration = booking.holdExpiresAt`, ARS, `notification_url` with `?ref={payment.id}`, `back_urls` to the confirmation page.
-- [ ] 6.4 Failing test asserting the cancellation token appears in no field of the preference payload (D3).
+- [x] 6.1 Failing tests for `PaymentInitiationService`: booking not found, wrong status, hold lapsed, no MP credentials, undecryptable credential, existing live payment returned, happy path.
+- [x] 6.2 Implement `PaymentInitiationService`. The amount comes from `booking.depositAmount`; `DepositPolicy` is not imported (D5) — assert that by test.
+- [x] 6.3 Build the preference payload server-side only: `external_reference = booking.id`, `date_of_expiration = booking.holdExpiresAt`, ARS, `notification_url` with `?ref={payment.id}`, `back_urls` to the confirmation page.
+- [x] 6.4 Failing test asserting the cancellation token appears in no field of the preference payload (D3).
 - [ ] 6.5 Create `app/api/payments/mercadopago/paymentInitiationService.ts` — the one composition root in the public flow that constructs `ICredentialCipher`. **No optional constructor arguments on this path** (T57).
 - [ ] 6.6 Test over the composer's *source* asserting every dependency is wired, in the shape B4 added after its runtime defect.
 - [ ] 6.7 Failing tests then implementation for `app/api/payments/mercadopago/route.ts`: reads `cancellationToken` from the body, `303` to `init_point`, `303` back with an outcome code on every refusal, `force-dynamic`.
 - [ ] 6.8 Reuse `BookingThrottle` keyed on `CF-Connecting-IP`, following the shape `POST /api/bookings` settled on **after** its adversarial review: read the body *before* consulting the throttle, because the only thing that says where to send a throttled browser back to is the slug inside the submission, and answer a browser with a rendered outcome redirect rather than a raw JSON body. **Do not attempt to verify this end-to-end in production:** B4 measured that `cf-connecting-ip` cannot be spoofed against real Cloudflare — Cloudflare sets and overwrites it — so a multi-origin test from one machine trips Cloudflare's edge protection with a `403` before the application throttle is ever consulted. Route tests and the preview run are where this is provable.
 - [ ] 6.9 Failing test asserting `bookingCreationService()` still constructs no cipher and `PublicPaymentReadiness` still has no field able to hold a token (D4).
+- [ ] 6.10 **New, from D11.** The initiation route sets the return cookie: the cancellation token, httpOnly, `secure`, `SameSite=Lax`, path `/b`, lifetime a little past the hold. `Lax` is required and sufficient — the return from Mercado Pago is a top-level cross-site **GET** navigation, which `Lax` permits and `Strict` would not.
+- [ ] 6.11 **New, from D11.** `app/b/[slug]/pago/retorno/route.ts` — reads the cookie, `303`s to the confirmation page with an outcome code derived from Mercado Pago's `status` parameter, and clears the cookie. With no cookie, `303` to `/b/{slug}` with a message about using their own link. Failing test asserting it **never** resolves a booking from the `external_reference` Mercado Pago appends to the return URL — doing so would recreate the escalation D11 rejected the payment-id alternative for.
 
 ## 7. Webhook confirmation
 

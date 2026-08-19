@@ -221,6 +221,38 @@ re-fetch. No Mercado Pago call inside a transaction.
 bundle T51 says is one story from the ceiling, and the verifier already proves the pattern
 works here.
 
+### D11 — The gateway is never told the confirmation page's address
+
+Found while writing the initiation service: D3 says the cancellation token appears in **no**
+field of the preference, and the obvious `back_urls` value is the confirmation page —
+which is addressed by that token. The spec and the implementation collided, and the spec
+was right.
+
+**Decision.** `back_urls` points at `/b/{slug}/pago/retorno`, a landing route naming no
+credential. The token travels in an httpOnly, `SameSite=Lax`, `/b`-scoped cookie set when
+the payment is initiated, and the landing route reads it back and `303`s to the
+confirmation page with an outcome code. This is B4's own mechanism — the rejected-form
+echo cookie — reused for the same reason and with the same cross-site-navigation
+properties.
+
+**Alternatives considered.**
+- *Put the payment id in `back_urls` and resolve the booking from it.* Rejected, and this
+  one is a trap worth naming: the id is already in `notification_url`, so it looks free.
+  But a route that turns a payment id into a cancellation token makes `ref` **authorize
+  something**, and `ref`'s entire safety argument in D1 is that it authorizes nothing.
+- *Mint a return-only secret.* Rejected: two secrets for one holder, which B4 refused when
+  it chose to address the confirmation page by the token the client already had.
+- *Accept the token in `back_urls`.* Rejected: it stores a live cancellation credential in
+  Mercado Pago's preference data and dashboard. B4 added `Referrer-Policy: no-referrer` to
+  this exact route to stop the token reaching a third party through a header; handing it
+  over in a field would undo that for a saving of thirty lines.
+
+**Accepted cost.** A client returning in a different browser, or with a cleared cookie
+jar, lands on the shop's public page with a message rather than on their confirmation.
+The return URL does carry Mercado Pago's own `external_reference` — the booking id — and
+the route deliberately **does not** use it, because resolving a token from it would
+recreate the escalation the first alternative was rejected for.
+
 ### D10 — The return from Mercado Pago decides nothing
 
 `back_urls` carry only an outcome code; the page reads live booking and payment state. A

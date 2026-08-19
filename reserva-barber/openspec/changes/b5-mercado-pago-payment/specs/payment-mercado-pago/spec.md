@@ -76,9 +76,27 @@ B4 established that a repeated submission is not a conflict and must be invisibl
 
 ### Requirement: The client's return from Mercado Pago decides nothing
 
-The `back_urls` return SHALL bring the client to the confirmation page carrying only an outcome code. The page SHALL determine what to display by reading live booking and payment state, and SHALL NOT treat the outcome code as evidence of anything.
+The `back_urls` return SHALL bring the client to a **landing route that names no credential**, which then sends them on to their confirmation page carrying only an outcome code. The page SHALL determine what to display by reading live booking and payment state, and SHALL NOT treat the outcome code as evidence of anything.
 
 A return URL is a browser navigation that anyone can type. Only the webhook, authenticated per the requirement below, changes a booking's status.
+
+**The confirmation page's address SHALL NOT be given to the gateway.** That page is addressed by the cancellation token, so naming it in `back_urls` would store a live credential in the gateway's preference, visible in their dashboard — the same exposure that keeps the token out of `external_reference`, and that the confirmation route's `no-referrer` header prevents through the other channel. The token SHALL instead travel in an httpOnly, `SameSite=Lax`, `/b`-scoped cookie set when the payment is initiated, which the landing route reads back.
+
+Two alternatives are **rejected** and SHALL NOT be adopted: putting the payment id in `back_urls` and resolving the booking from it would make the notification reference authorize something, when its entire safety argument is that it authorizes nothing; and minting a return-only secret would be two secrets for one holder, which the confirmation page's addressing scheme already refused.
+
+When the cookie is absent — a different browser, a cleared jar, an expired lifetime — the landing route SHALL send the client to the shop's public page with a message directing them to their own link, and SHALL NOT resolve the booking by any identifier present in the return URL.
+
+#### Scenario: The gateway is never told the confirmation address
+- **WHEN** a preference is created
+- **THEN** no field of it contains the cancellation token, `back_urls` included
+
+#### Scenario: The landing route completes the round trip
+- **WHEN** the client returns from the gateway with the initiation cookie present
+- **THEN** they are redirected to their confirmation page with an outcome code
+
+#### Scenario: A return without the cookie resolves nothing
+- **WHEN** the client returns from the gateway with no initiation cookie, and the return URL carries the gateway's own reference parameters
+- **THEN** no booking is looked up from those parameters and the client is sent to the shop's public page with a message about using their own link
 
 #### Scenario: A forged success return
 - **WHEN** a client opens the confirmation page with the success outcome code and no payment has been confirmed
