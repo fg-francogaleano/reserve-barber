@@ -81,11 +81,11 @@ Every interval in availability — a working window, an absence, a booking, and 
 
 A booking SHALL block a slot when its status is `PENDING_APPROVAL` or `CONFIRMED`, or when its status is `PENDING_PAYMENT` **and** its `holdExpiresAt` has not passed. A `PENDING_PAYMENT` booking whose `holdExpiresAt` is in the past SHALL NOT block. `CANCELLED` and `EXPIRED` bookings SHALL NOT block.
 
-B7 — the scheduled job that expires abandoned holds — ships four stories later. A status-only filter would let every abandoned checkout remove a slot from sale permanently, with no surface anywhere in the product that would show the owner why.
+B7 — the scheduled job that expires abandoned holds — ships three stories later. A status-only filter would let every abandoned checkout remove a slot from sale permanently, with no surface anywhere in the product that would show the owner why.
 
 `PENDING_APPROVAL` is never treated as expired: a receipt has been uploaded and a human owes an answer.
 
-This predicate SHALL be defined in one place and documented as shared with B4's transactional check. A disagreement between the two would offer a client a slot and then reject them while they pay.
+This predicate SHALL be defined in one place, and **the booking write SHALL apply that same definition**. It is no longer documented as a rule a future story must share — the second caller now exists, and a disagreement between the two would offer a client a slot and then reject them while they pay.
 
 #### Scenario: An abandoned checkout releases its slot
 - **WHEN** a booking at 15:00 is `PENDING_PAYMENT` with a `holdExpiresAt` one hour in the past and no job has expired it
@@ -104,8 +104,12 @@ This predicate SHALL be defined in one place and documented as shared with B4's 
 - **THEN** 15:00 is offered
 
 #### Scenario: The predicate has one home
-- **WHEN** the availability code is reviewed
-- **THEN** the blocking rule is expressed once and is documented as the rule B4's transaction must apply
+- **WHEN** the availability code and the booking write are reviewed
+- **THEN** the blocking rule is expressed once and both the read and the write call it
+
+#### Scenario: The read and the write agree
+- **WHEN** a slot is offered by the availability read and submitted immediately
+- **THEN** the write does not refuse it on blocking grounds
 
 ### Requirement: How soon and how far ahead a client may book is bounded
 
@@ -326,17 +330,23 @@ Every link the new steps render SHALL disable router prefetch, through the exist
 
 ### Requirement: Choosing a time reserves nothing
 
-The flow SHALL present the slot list as a snapshot. No copy SHALL state or imply that the chosen time is held, reserved, or guaranteed. Nothing in this change SHALL write a `Booking` or `Client` row from a route or an action.
+The flow SHALL present the slot list as a snapshot. No copy on the date step or the time step SHALL state or imply that the chosen time is held, reserved, or guaranteed. Selecting a time SHALL write nothing: the selection lives in the query string, and a query string is not a claim.
 
-Two clients can be looking at the same start. The truth is B4's transaction, which re-validates availability rather than trusting the selection carried in the URL.
+Two clients can be looking at the same start. The truth is the booking transaction, which re-validates availability rather than trusting the selection carried in the URL — and which may legitimately refuse a time this list offered a moment earlier.
+
+**A time becomes held only when the client submits their details and the transaction accepts the write.** The prohibition on writing a `Booking` or `Client` row from any route or action applied to B3, whose scope was the read side; it does not extend to the booking write, which is the one writer this capability's blocking rule was designed around. Nothing on the date or time step, however, SHALL create or reserve anything.
 
 #### Scenario: The copy makes no promise
 - **WHEN** a time is selected
-- **THEN** no Spanish string states that the time is reserved or held
+- **THEN** no Spanish string on the date or time step states that the time is reserved or held
 
-#### Scenario: Nothing is written
-- **WHEN** the change is reviewed
-- **THEN** no route and no action inserts a booking or a client row
+#### Scenario: Selecting writes nothing
+- **WHEN** a client moves through the date and time steps, including selecting a time
+- **THEN** no `Booking` and no `Client` row is created
+
+#### Scenario: The offered list is not a guarantee
+- **WHEN** a client submits a time that this list offered and another booking took it in between
+- **THEN** the write is refused, confirming that the list was a snapshot rather than a hold
 
 ### Requirement: The new copy is Spanish and lives with the flow's copy
 

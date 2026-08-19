@@ -211,21 +211,6 @@ Four sequential round trips is the shape T47 warns about on the busiest public r
 - **WHEN** a service priced at `10000.00` renders
 - **THEN** it displays with two decimal places in es-AR formatting
 
-### Requirement: The route reads no payment configuration
-No request to `/b/{slug}/reservar` SHALL read `PaymentConfig`, call the payment-readiness rule, construct a credential cipher or construct a Supabase client. The composition root SHALL hand over no `PaymentConfig` repository.
-
-That row holds the encrypted Mercado Pago access token. PC3 established that a surface with no need for a cipher must not build one, and B1's composer records the absence deliberately rather than incidentally.
-
-**The accepted consequence is stated rather than discovered:** a client can complete all three steps at a shop whose owner never configured a deposit, and meet the wall at B4. That is the correct trade — moving the payment gate here would put the encrypted token one query away from an anonymous, unauthenticated, unrate-limited route, to save three taps in a state that exists only between the payment stories and the owner's first configuration.
-
-#### Scenario: A shop with a complete catalogue and no deposit policy
-- **WHEN** the owner has bookable services but has configured neither a payment method nor a deposit
-- **THEN** all three steps render normally and no `PaymentConfig` row is read
-
-#### Scenario: Composition review
-- **WHEN** the change is complete
-- **THEN** the public composition root constructs no Supabase client, no cipher and no `PaymentConfig` repository
-
 ### Requirement: The route declares no loading boundary
 This route SHALL NOT define a `loading.tsx` and SHALL NOT introduce any Suspense boundary above the slug resolution.
 
@@ -403,36 +388,43 @@ Each step SHALL be a semantic list of controls with full keyboard navigation and
 - **WHEN** the step indicator renders
 - **THEN** the current step is exposed to assistive technology rather than indicated by styling alone
 
-### Requirement: The flow is five steps and its progress is computed, never counted by hand
+### Requirement: The flow is six steps and its progress is computed, never counted by hand
 
-The flow SHALL be branch, service, barber, date, time. The step indicator and the selection summary SHALL derive the total and the current position from the flow definition rather than from a literal, so that B2's single-offerable-branch skip continues to produce a correct indicator without a second rule.
+The flow SHALL be branch, service, barber, date, time, details. The step indicator and the selection summary SHALL derive the total and the current position from the flow definition rather than from a literal, so that B2's single-offerable-branch skip continues to produce a correct indicator without a second rule.
 
 Every step SHALL keep the explicit back control and the persistent summary of what is already selected, and the summary SHALL name the chosen date and time once they exist.
 
-#### Scenario: Five steps with a branch choice
+#### Scenario: Six steps with a branch choice
 - **WHEN** a shop with two offerable branches renders any step
-- **THEN** the indicator reports five steps and marks the current one programmatically
+- **THEN** the indicator reports six steps and marks the current one programmatically
 
-#### Scenario: Four steps when the branch is implied
+#### Scenario: Five steps when the branch is implied
 - **WHEN** a shop with exactly one offerable branch renders any step
-- **THEN** the indicator reports four steps, and the branch is named in the summary and remains changeable
+- **THEN** the indicator reports five steps, and the branch is named in the summary and remains changeable
 
 #### Scenario: The summary carries the whole selection
-- **WHEN** the slot step renders with a branch, service, barber and date chosen
-- **THEN** all four appear in the summary in es-AR
+- **WHEN** the details step renders with a branch, service, barber, date and time chosen
+- **THEN** all five appear in the summary in es-AR
 
-### Requirement: A completed selection ends in a disclosed, inert confirmation
+### Requirement: The route reads no payment credential
 
-When a valid time is selected the flow SHALL render a summary of the complete selection with a **non-actionable** call to action and a Spanish disclosure that booking cannot be completed yet. It MUST NOT link to a route that does not exist, and MUST NOT link to any dashboard route.
+No request to `/b/{slug}/reservar` SHALL read `PaymentConfig.mpAccessToken`, construct a credential cipher, or construct a Supabase client. The composition root SHALL hand over no repository method capable of returning a stored credential.
 
-B1 shipped "Reservar" inert with a disclosure when `/b/{slug}` did not exist, and B2 inherited that answer. Linking a client into a route that redirects to `/login` is worse than saying so on the page they are already on.
+The route MAY read the **payment-readiness projection** — the presence of Mercado Pago credentials, the transfer destination fields and the deposit value — and only on the details step, which is where the readiness gate is enforced. That projection's type SHALL have no field able to hold the access token.
 
-The step SHALL NOT read `PaymentConfig`, so the accepted consequence B2 named stands unchanged: a client can complete every step at a shop whose owner never configured a deposit.
+This is the narrowing B2 anticipated. Its requirement forbade reading `PaymentConfig` at all, and the reason it gave was the encrypted token, not the row: *"moving the payment gate here would put the encrypted token one query away from an anonymous, unauthenticated, unrate-limited route."* B4 is the story that must ask whether a deposit can be charged, so the guarantee moves from an absent dependency to a type that cannot express the leak.
 
-#### Scenario: The selection is complete
-- **WHEN** a client selects a valid start time
-- **THEN** the complete selection renders with a Spanish disclosure and no operable control that leads anywhere
+The earlier steps SHALL still read nothing. A client on the branch, service, barber, date or time step SHALL issue no payment-configuration query at all.
 
-#### Scenario: No payment configuration is read
-- **WHEN** the completed step renders
-- **THEN** no `PaymentConfig` row is read and no credential cipher is constructed
+#### Scenario: The gate reads only what it needs
+- **WHEN** the details step renders
+- **THEN** the executed query selects no credential column and the readiness type cannot represent one
+
+#### Scenario: Earlier steps read nothing
+- **WHEN** a client is on the branch, service, barber, date or time step
+- **THEN** no `PaymentConfig` row is read
+
+#### Scenario: Composition review
+- **WHEN** the change is complete
+- **THEN** the public composition root constructs no Supabase client and no credential cipher, and a missing encryption key does not affect this route
+
