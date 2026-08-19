@@ -47,3 +47,20 @@ export const CancelledBy = {
 } as const
 
 export type CancelledBy = (typeof CancelledBy)[keyof typeof CancelledBy]
+
+
+export const PaymentMethod = {
+  MERCADO_PAGO: 'MERCADO_PAGO',
+  BANK_TRANSFER: 'BANK_TRANSFER'
+} as const
+
+export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod]
+
+
+export const PaymentStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED'
+} as const
+
+export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus]

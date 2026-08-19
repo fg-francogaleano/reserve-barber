@@ -371,6 +371,7 @@ A payment attempt/record associated with a booking's deposit. Supports both Merc
 - `status`: Payment state — enum `PaymentStatus` (`PENDING`, `APPROVED`, `REJECTED`) (required, default: `PENDING`)
 - `mpPaymentId`: External Mercado Pago payment id (optional, for MP method — **`@unique`**, see below)
 - `mpPreferenceId`: External Mercado Pago preference id (optional, for MP method)
+- `mpInitPoint`: Where the client is sent to pay — Mercado Pago's `init_point` (optional). **Stored rather than reconstructed**, because a repeat submission must answer with the *same* checkout instead of creating a second preference: rebuilding the URL from `mpPreferenceId` relies on a redirect shape Mercado Pago does not document, and re-fetching the preference spends a round trip on an owner-facing path that can fail. It is null between the row's creation and the preference's, because the `notification_url` must carry this row's own id — so the payment is written first and the URL attached after. **A live payment with a null `mpInitPoint` is an unfinished preference creation and is retried, never treated as a block**
 - `approvedAt`: When the payment was approved (**`Timestamptz(3)`**, optional — zone-aware, never the zone-less default)
 - `createdAt` / `updatedAt`: Timestamps
 

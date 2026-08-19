@@ -56,6 +56,8 @@ For the same reason, `external_reference` SHALL be `booking.id` and never the ca
 
 A second payment initiation for a booking that already has a non-rejected `Payment` SHALL return that existing payment's checkout URL rather than creating a second preference.
 
+The checkout URL SHALL therefore be **stored on the payment**, not reconstructed from the preference id and not re-fetched from the gateway. The payment row is written before the preference exists — the notification address has to carry that row's own id — so the URL is attached afterwards, and a live payment that has none is an unfinished preference creation. That state SHALL be retried rather than treated as a block: a gateway timeout must not leave a client unable to pay for a slot they are still holding.
+
 This SHALL be guaranteed at the database by a partial unique index over `bookingId` where the status is not `REJECTED`, not by handler logic alone, because two concurrent submissions can each observe no existing payment.
 
 B4 established that a repeated submission is not a conflict and must be invisible to the client. A double-tap here SHALL be answered identically to the first tap.
@@ -67,6 +69,10 @@ B4 established that a repeated submission is not a conflict and must be invisibl
 #### Scenario: Returning to an unfinished payment
 - **WHEN** a client who abandoned the checkout submits the payment control again while their hold is live
 - **THEN** they are redirected to the checkout URL of the existing pending payment
+
+#### Scenario: A preference creation that never finished is retried
+- **WHEN** the payment control is submitted for a booking whose live payment has no stored checkout URL, because the previous attempt timed out at the gateway
+- **THEN** a preference is created for that same payment row and its URL is attached, rather than the client being told a payment is already in progress
 
 ### Requirement: The client's return from Mercado Pago decides nothing
 

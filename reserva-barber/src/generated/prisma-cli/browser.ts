@@ -157,3 +157,8 @@ export type Client = Prisma.ClientModel
  * availability never has to reconcile two meanings of a boundary.
  */
 export type Booking = Prisma.BookingModel
+/**
+ * Model Payment
+ * 
+ */
+export type Payment = Prisma.PaymentModel

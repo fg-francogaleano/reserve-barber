@@ -17,20 +17,21 @@
 
 ## 2. Schema and migration
 
-- [ ] 2.1 Add `PaymentMethod` and `PaymentStatus` enums and the `Payment` model to `prisma/schema.prisma`, with `Decimal(12,2)`, `Timestamptz(3)`, `onDelete: Restrict`, `@@index([bookingId])` and `mpPaymentId @unique`.
-- [ ] 2.2 Add the `payments` back-relation to `Booking`.
-- [ ] 2.3 Generate the migration and hand-add `CREATE UNIQUE INDEX "Payment_one_live_per_booking" ON "Payment" ("bookingId") WHERE status <> 'REJECTED';`
-- [ ] 2.4 Add the schema comment recording that partial index and naming its migration, in the style `Booking` uses for its hold constraint.
-- [ ] 2.5 Apply the migration and regenerate the Prisma client. Confirm `Payment` appears in `src/generated/prisma/models/`.
+- [x] 2.1 Add `PaymentMethod` and `PaymentStatus` enums and the `Payment` model to `prisma/schema.prisma`, with `Decimal(12,2)`, `Timestamptz(3)`, `onDelete: Restrict`, `@@index([bookingId])` and `mpPaymentId @unique`.
+- [x] 2.2 Add the `payments` back-relation to `Booking`.
+- [x] 2.3 Generate the migration and hand-add `CREATE UNIQUE INDEX "Payment_one_live_per_booking" ON "Payment" ("bookingId") WHERE status <> 'REJECTED';`
+- [x] 2.4 Add the schema comment recording that partial index and naming its migration, in the style `Booking` uses for its hold constraint.
+- [x] 2.5a Regenerate the Prisma client. `Payment` confirmed present in `src/generated/prisma/models/`. Schema passes `prisma validate`.
+- [ ] 2.5b **Franco:** apply the migration against the shared database — `npx prisma migrate deploy`. Held back deliberately: it is a write to a database B6, B7 and the dashboard also read, and the memory note about stale branches proposing `migrate reset` makes an unattended apply the wrong default. Everything below this line is written and tested against the generated client and does not need the migration to exist until the gate in group 11.
 - [ ] 2.6 Write the failing test asserting `MIN_DEPOSIT_AMOUNT` equals the value confirmed in 1.2, then update `src/server/domain/models/depositPolicy.ts` and remove its "provisional" comment.
 
 ## 3. Domain layer
 
-- [ ] 3.1 Failing tests for `src/server/domain/models/Payment.ts`: the status set, and a predicate deciding whether a fetched gateway payment may confirm a booking.
-- [ ] 3.2 Implement `Payment.ts`. No Prisma import, no crypto import, no `fetch`.
-- [ ] 3.3 Failing tests for the three verification comparisons (reference, amount as canonical strings via integer cents, currency), including the `2000.50` / `2000.5` case.
-- [ ] 3.4 Implement the verification function in the domain layer so both the route and the tests call one definition.
-- [ ] 3.5 Define `IPaymentRepository` and `IPaymentGateway` (`createPreference`, `getPayment`). No implementation types leak through either.
+- [x] 3.1 Failing tests for `src/server/domain/models/Payment.ts`: the status set, and a predicate deciding whether a fetched gateway payment may confirm a booking.
+- [x] 3.2 Implement `Payment.ts`. No Prisma import, no crypto import, no `fetch`.
+- [x] 3.3 Failing tests for the three verification comparisons (reference, amount as canonical strings via integer cents, currency), including the `2000.50` / `2000.5` case.
+- [x] 3.4 Implement the verification function in the domain layer so both the route and the tests call one definition.
+- [x] 3.5 Define `IPaymentRepository` and `IPaymentGateway` (`createPreference`, `getPayment`). No implementation types leak through either.
 
 ## 4. Persistence
 
