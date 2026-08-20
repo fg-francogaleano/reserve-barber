@@ -124,9 +124,14 @@ export class MercadoPagoGateway implements IPaymentGateway {
 
     if (REJECTION_STATUSES.has(response.status)) return { status: 'rejected' };
 
-    // Mercado Pago refusing this *charge* — an amount under their minimum is
-    // the case B5 exists to discover — not this *credential*.
-    if (response.status === 400 || response.status === 422) return { status: 'invalid' };
+    // Mercado Pago refusing this *request* — a malformed field, an unacceptable
+    // amount — not this *credential*. The machine code comes with it, because
+    // "400" alone is a diagnosis nobody can act on: the preview's first real
+    // payment was refused with `invalid_auto_return` (a `localhost` return URL)
+    // and, with no code to look at, that was reported as the amount.
+    if (response.status === 400 || response.status === 422) {
+      return { status: 'invalid', reason: await readErrorCode(response) };
+    }
 
     if (!response.ok) return { status: 'unavailable' };
 
@@ -242,6 +247,29 @@ export class MercadoPagoGateway implements IPaymentGateway {
  * through the same origin, and an unparseable body says only that this response
  * cannot be reasoned about.
  */
+/** How much of a machine code is worth carrying. Real ones are far shorter. */
+const MAX_ERROR_CODE_LENGTH = 64;
+
+/**
+ * Mercado Pago's `error` field, and nothing else from the body.
+ *
+ * The rule this file otherwise holds is that no response body escapes it,
+ * because rejection payloads routinely echo the credential they rejected. This
+ * is the single, deliberate exception: `error` is a short machine identifier
+ * (`invalid_auto_return`), never a value the caller submitted. The sibling
+ * `message` field is **not** taken — it is prose, it can quote the request, and
+ * a code is enough to tell one refusal from another.
+ *
+ * Bounded, so a surprising payload cannot turn a log line into a payload dump.
+ */
+async function readErrorCode(response: Response): Promise<string | null> {
+  const body = await readJson(response);
+  const code = body?.error;
+  return typeof code === 'string' && code.length > 0 && code.length <= MAX_ERROR_CODE_LENGTH
+    ? code
+    : null;
+}
+
 async function readJson(response: Response): Promise<Record<string, unknown> | null> {
   try {
     const body: unknown = await response.json();

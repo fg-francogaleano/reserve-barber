@@ -52,7 +52,7 @@ export type PaymentInitiationResult =
   | { readonly outcome: 'holdExpired'; readonly slug: string }
   | { readonly outcome: 'notConfigured'; readonly slug: string }
   | { readonly outcome: 'credentialUnreadable'; readonly slug: string }
-  | { readonly outcome: 'amountRefused'; readonly slug: string }
+  | { readonly outcome: 'chargeRefused'; readonly slug: string }
   | { readonly outcome: 'credentialRejected'; readonly slug: string }
   | { readonly outcome: 'gatewayUnavailable'; readonly slug: string };
 
@@ -204,14 +204,29 @@ export class PaymentInitiationService {
         return { outcome: 'redirect', initPoint: preference.initPoint, slug };
 
       case 'invalid':
-        // The charge, not the credential. Almost certainly a deposit under
-        // Mercado Pago's minimum — the case T45 is open about.
-        this.logger.error('Mercado Pago refused the charge', {
+        /**
+         * The request, not the credential — and **not necessarily the amount**.
+         *
+         * An earlier version called this `amountRefused` and told the client
+         * their deposit had been refused. The preview's first real payment
+         * proved that wrong: a $2.000 deposit, far above every published
+         * minimum, refused with `invalid_auto_return` because Mercado Pago will
+         * not accept a `localhost` return URL. The client was told the amount
+         * was the problem and the owner would have been sent to change a
+         * deposit policy that was correct.
+         *
+         * So the cause goes to the log, where it can be acted on, and the
+         * client gets the same message as every other shop-side failure —
+         * because from where they are standing it *is* the same situation.
+         */
+        this.logger.error('Mercado Pago refused the preference request', {
           operation: 'payment.initiate',
           bookingId: booking.id,
           paymentId: payment.id,
+          amount: booking.depositAmount,
+          gatewayError: preference.reason ?? 'unspecified',
         });
-        return { outcome: 'amountRefused', slug };
+        return { outcome: 'chargeRefused', slug };
 
       case 'rejected':
         this.logger.error('Mercado Pago rejected the stored credential', {

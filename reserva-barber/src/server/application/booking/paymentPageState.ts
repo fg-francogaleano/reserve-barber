@@ -50,7 +50,6 @@ export interface PaymentPageInput {
 const SHOP_SIDE_FAILURES: ReadonlySet<PaymentOutcomeCode> = new Set([
   'sin-mercadopago',
   'pagos-no-disponibles',
-  'monto-rechazado',
 ]);
 
 export function resolvePaymentPageState(input: PaymentPageInput): PaymentPageState {

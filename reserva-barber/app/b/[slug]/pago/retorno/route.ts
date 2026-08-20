@@ -72,9 +72,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   );
 
   const response = NextResponse.redirect(url, 303);
-  // Single use. A stale one would forward a later visitor — on a shared
-  // device, a different person — to somebody else's booking.
-  response.cookies.delete(PAYMENT_RETURN_COOKIE);
+  /**
+   * Single use. A stale one would forward a later visitor — on a shared
+   * device, a different person — to somebody else's booking, which shows that
+   * client's name and appointment and offers to pay their deposit.
+   *
+   * **The path is required, and omitting it is a silent no-op.** A cookie is
+   * identified by name *and* path: this one is set with `path=/b`, so a delete
+   * at the default `/` emits a `Set-Cookie` the browser matches against
+   * nothing and the original survives its full hour. Measured against the
+   * preview — the clear went out as `Path=/` while the cookie lived at `/b`.
+   * No unit test would have caught it, because none of them model cookie path
+   * semantics; it took reading the actual response header.
+   */
+  response.cookies.delete({ name: PAYMENT_RETURN_COOKIE, path: '/b' });
   return response;
 }
 

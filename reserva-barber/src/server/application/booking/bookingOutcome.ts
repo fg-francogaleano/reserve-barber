@@ -134,8 +134,6 @@ export const PAYMENT_OUTCOMES = [
    * it would only leak which of the owner's problems it is.
    */
   'pagos-no-disponibles',
-  /** Mercado Pago refused the charge itself, almost certainly the amount (T45). */
-  'monto-rechazado',
   /** Mercado Pago was unreachable. The only code that invites an immediate retry. */
   'reintenta',
   /** The return landed with no cookie, so the booking could not be identified. */

@@ -54,10 +54,9 @@ export interface PreferenceInput {
  *
  * `invalid` is separated from `rejected` because they mean opposite things
  * about the owner's configuration: `invalid` is Mercado Pago refusing *this
- * charge* (an amount below their minimum is the case B5 exists to discover),
- * while `rejected` is Mercado Pago refusing *this credential*. Collapsing them
- * would tell an owner their token is broken when their deposit is simply too
- * small.
+ * request*, while `rejected` is Mercado Pago refusing *this credential*.
+ * Collapsing them would tell an owner their token is broken when the problem is
+ * the request.
  *
  * `unavailable` never blames anyone: unreachable, slow, or failing in a way
  * that says nothing about whether a retry would work.
@@ -69,7 +68,27 @@ export type PreferenceResult =
       /** Where to send the client. Stored on the payment, not reconstructed. */
       readonly initPoint: string;
     }
-  | { readonly status: 'invalid' }
+  | {
+      readonly status: 'invalid';
+      /**
+       * Mercado Pago's own machine-readable error code, when they send one —
+       * `invalid_auto_return`, and whatever else they use.
+       *
+       * **This is the one field lifted out of a rejection body, and the
+       * exception is narrow on purpose.** The rule everywhere else is that no
+       * Mercado Pago response body escapes the adapter, because rejection
+       * payloads routinely echo the credential they rejected. A short
+       * machine code is not the body: it is bounded, it carries no submitted
+       * value, and without it a `400` is indistinguishable from any other
+       * `400` — which is precisely the trap this field was added to close. The
+       * preview's first real payment was refused with `invalid_auto_return`,
+       * because Mercado Pago will not accept a `localhost` return URL, and the
+       * code reported it to the client as the deposit *amount* being refused.
+       *
+       * Bounded and never rendered; it exists to be logged.
+       */
+      readonly reason: string | null;
+    }
   | { readonly status: 'rejected' }
   | { readonly status: 'unavailable' };
 

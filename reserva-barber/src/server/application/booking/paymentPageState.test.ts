@@ -65,7 +65,7 @@ describe('the eight states', () => {
     ).toBe('paidSlotLost');
   });
 
-  it.each(['sin-mercadopago', 'pagos-no-disponibles', 'monto-rechazado'] as const)(
+  it.each(['sin-mercadopago', 'pagos-no-disponibles'] as const)(
     'reports the shop as unable to charge for %s',
     (outcome) => {
       expect(resolvePaymentPageState(input({ outcome }))).toBe('paymentsUnavailable');
@@ -84,7 +84,6 @@ describe('precedence, which is the part that is easy to get wrong', () => {
     'pago-rechazado',
     'sin-mercadopago',
     'pagos-no-disponibles',
-    'monto-rechazado',
     'vencido',
     'reintenta',
   ] as const)('lets a confirmed booking outrank the %s code', (outcome) => {

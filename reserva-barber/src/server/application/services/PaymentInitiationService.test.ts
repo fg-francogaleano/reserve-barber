@@ -309,12 +309,12 @@ describe('a repeat submission', () => {
 
 describe('when Mercado Pago refuses', () => {
   it.each([
-    ['invalid', 'amountRefused'],
+    ['invalid', 'chargeRefused'],
     ['rejected', 'credentialRejected'],
     ['unavailable', 'gatewayUnavailable'],
   ])('maps a %s preference to %s', async (gatewayStatus, outcome) => {
     const { service, gateway } = build();
-    gateway.createPreference.mockResolvedValue({ status: gatewayStatus });
+    gateway.createPreference.mockResolvedValue({ status: gatewayStatus, reason: null });
 
     expect(await service.initiate(REQUEST)).toEqual({
       outcome,
@@ -367,5 +367,50 @@ describe('what this service is allowed to touch', () => {
   it('never imports Prisma or the cipher directly', () => {
     expect(imports).not.toContain('@/generated/prisma');
     expect(imports).not.toContain('WebCryptoCipher');
+  });
+});
+
+describe('a refused request does not become a story about the amount', () => {
+  /**
+   * **Found by the preview, not by a test.** A $2.000 deposit — far above every
+   * published Mercado Pago minimum — was refused with `invalid_auto_return`,
+   * because Mercado Pago will not accept a `localhost` return URL. The code
+   * called that outcome `amountRefused` and told the client their deposit had
+   * been refused, which would have sent the owner to change a deposit policy
+   * that was correct.
+   *
+   * The cause belongs in the log, where it can be acted on. The client gets the
+   * shop-side message, because from where they stand it is the same situation
+   * as any other configuration failure.
+   */
+  it('logs the gateway error code rather than implying the amount was wrong', async () => {
+    const { service, gateway, logger } = build();
+    gateway.createPreference.mockResolvedValue({
+      status: 'invalid',
+      reason: 'invalid_auto_return',
+    });
+
+    expect(await service.initiate(REQUEST)).toEqual({
+      outcome: 'chargeRefused',
+      slug: 'barberia-don-juan',
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('refused the preference request'),
+      expect.objectContaining({ gatewayError: 'invalid_auto_return', amount: '5000.50' })
+    );
+  });
+
+  it('records an unspecified cause rather than omitting the field', async () => {
+    // A missing code is itself information: it says Mercado Pago refused
+    // without naming why, which is a different investigation.
+    const { service, gateway, logger } = build();
+    gateway.createPreference.mockResolvedValue({ status: 'invalid', reason: null });
+
+    await service.initiate(REQUEST);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ gatewayError: 'unspecified' })
+    );
   });
 });

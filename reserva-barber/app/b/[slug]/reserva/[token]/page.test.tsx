@@ -166,7 +166,7 @@ describe('the eight states say the right thing', () => {
    * The shop's configuration, not the client's payment. Blaming the person who
    * tried to pay would be both wrong and unhelpful.
    */
-  it.each(['sin-mercadopago', 'pagos-no-disponibles', 'monto-rechazado'])(
+  it.each(['sin-mercadopago', 'pagos-no-disponibles'])(
     'blames the shop, not the client, for %s',
     async (estado) => {
       await renderPage(booking(), { estado });

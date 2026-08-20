@@ -156,10 +156,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // can act on it.
       case 'credentialUnreadable':
       case 'credentialRejected':
+      // A refused request joins them: whatever Mercado Pago objected to, the
+      // client cannot act on it and the cause is already in the log.
+      case 'chargeRefused':
         return backToBooking(request, result.slug, token, 'pagos-no-disponibles');
-
-      case 'amountRefused':
-        return backToBooking(request, result.slug, token, 'monto-rechazado');
 
       case 'gatewayUnavailable':
         return backToBooking(request, result.slug, token, 'reintenta');

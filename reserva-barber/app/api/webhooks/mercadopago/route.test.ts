@@ -187,3 +187,36 @@ describe('the webhook composer', () => {
     expect(source).not.toMatch(/new PrismaPaymentConfigRepository\(db\)/);
   });
 });
+
+describe('cookies are cleared at the path they were set on', () => {
+  /**
+   * **Found by reading the preview's response headers, not by a test.** Both
+   * of this flow's cookies are set with `path=/b`, and both were being cleared
+   * with the default `path=/` — a `Set-Cookie` the browser matches against
+   * nothing, leaving the original alive for its full lifetime.
+   *
+   * For the payment return cookie that is a privacy defect, not an annoyance:
+   * on a shared device, the next person to land on the return route inside the
+   * hour would be forwarded to the previous client's confirmation page, which
+   * names them and offers to pay their deposit.
+   *
+   * Asserted as source, because a unit test cannot model cookie path matching
+   * and a response-shape assertion would pass on the broken form.
+   */
+  it('deletes the payment return cookie with its own path', () => {
+    const source = readFileSync(
+      new URL('../../../b/[slug]/pago/retorno/route.ts', import.meta.url),
+      'utf8'
+    );
+
+    expect(source).toMatch(/cookies\.delete\(\{\s*name: PAYMENT_RETURN_COOKIE,\s*path: '\/b'/);
+    expect(source).not.toMatch(/cookies\.delete\(PAYMENT_RETURN_COOKIE\)/);
+  });
+
+  it('deletes the booking echo cookie with its own path', () => {
+    const source = readFileSync(new URL('../../bookings/route.ts', import.meta.url), 'utf8');
+
+    expect(source).toMatch(/cookies\.delete\(\{\s*name: BOOKING_ECHO_COOKIE,\s*path: '\/b'/);
+    expect(source).not.toMatch(/cookies\.delete\(BOOKING_ECHO_COOKIE\)/);
+  });
+});

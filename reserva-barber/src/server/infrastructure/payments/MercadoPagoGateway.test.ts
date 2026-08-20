@@ -110,15 +110,22 @@ describe('createPreference', () => {
 
   /**
    * The two mean opposite things about the owner's configuration. `invalid` is
-   * Mercado Pago refusing this charge — an amount below their minimum is the
-   * case B5 exists to discover — while `rejected` is Mercado Pago refusing this
-   * credential. Collapsing them tells an owner their token is broken when their
-   * deposit is simply too small.
+   * Mercado Pago refusing this *request*; `rejected` is Mercado Pago refusing
+   * this *credential*. Collapsing them tells an owner their token is broken
+   * when the problem is the request they sent.
+   *
+   * What `invalid` is **not** is a statement about the amount. The preview
+   * proved that: a valid deposit refused with `invalid_auto_return`. The cause
+   * travels in `reason`, and the block below asserts what may and may not be
+   * lifted out of the body to carry it.
    */
   it('reports a 400 as invalid, not as a rejected credential', async () => {
     const { gateway: gw } = gateway(async () => response(400, { message: 'invalid unit_price' }));
 
-    expect(await gw.createPreference(INPUT, TOKEN)).toEqual({ status: 'invalid' });
+    expect(await gw.createPreference(INPUT, TOKEN)).toEqual({
+      status: 'invalid',
+      reason: null,
+    });
   });
 
   it.each([401, 403])('reports %i as a rejected credential', async (status) => {
@@ -294,5 +301,62 @@ describe('what this module is allowed to touch', () => {
 
     expect(pkg.dependencies ?? {}).not.toHaveProperty('mercadopago');
     expect(pkg.devDependencies ?? {}).not.toHaveProperty('mercadopago');
+  });
+});
+
+describe('a refused request carries its cause, and nothing else', () => {
+  /**
+   * The single, deliberate exception to "no response body escapes this module".
+   * A `400` with no code is a diagnosis nobody can act on — the preview proved
+   * it, refusing a valid $2.000 deposit with `invalid_auto_return` because
+   * Mercado Pago will not accept a `localhost` return URL, which the caller
+   * then reported to the client as the amount being wrong.
+   */
+  it('reports the machine code Mercado Pago sends', async () => {
+    const { gateway: gw } = gateway(async () =>
+      response(400, {
+        message: 'auto_return invalid. back_url.success must be defined',
+        error: 'invalid_auto_return',
+        status: 400,
+      })
+    );
+
+    expect(await gw.createPreference(INPUT, TOKEN)).toEqual({
+      status: 'invalid',
+      reason: 'invalid_auto_return',
+    });
+  });
+
+  /**
+   * `message` is prose and can quote the request; `error` is a short
+   * identifier. Only the identifier is taken, and this asserts the distinction
+   * rather than trusting it.
+   */
+  it('never carries the prose message, which can quote the request', async () => {
+    const { gateway: gw } = gateway(async () =>
+      response(400, {
+        message: `rejected token ${TOKEN}`,
+        error: 'some_code',
+      })
+    );
+
+    const result = await gw.createPreference(INPUT, TOKEN);
+
+    expect(JSON.stringify(result)).not.toContain(TOKEN);
+    expect(JSON.stringify(result)).not.toContain('rejected token');
+  });
+
+  it('bounds the code so a surprising payload cannot become a log dump', async () => {
+    const { gateway: gw } = gateway(async () =>
+      response(400, { error: 'x'.repeat(65) })
+    );
+
+    expect(await gw.createPreference(INPUT, TOKEN)).toEqual({ status: 'invalid', reason: null });
+  });
+
+  it('reports a null cause when Mercado Pago names none', async () => {
+    const { gateway: gw } = gateway(async () => response(422, { message: 'nope' }));
+
+    expect(await gw.createPreference(INPUT, TOKEN)).toEqual({ status: 'invalid', reason: null });
   });
 });
