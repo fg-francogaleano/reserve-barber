@@ -9,7 +9,9 @@ import {
 const NOW = new Date('2026-08-19T12:00:00.000Z');
 const TOKEN = 'tok-1';
 const ACCESS_TOKEN = 'APP_USR-secret-token-value';
-const ORIGIN = 'https://shop.example';
+// A routable host. `.example` is reserved by RFC 2606 and the origin guard
+// refuses it, which is correct — so the fixture uses a name that could exist.
+const ORIGIN = 'https://shop.example.com';
 
 const INIT_POINT = 'https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=pref-1';
 
@@ -412,5 +414,63 @@ describe('a refused request does not become a story about the amount', () => {
       expect.any(String),
       expect.objectContaining({ gatewayError: 'unspecified' })
     );
+  });
+});
+
+describe('a payment is never taken on an origin that cannot be called back', () => {
+  /**
+   * **The defect this closes was found by paying for it.** Mercado Pago
+   * accepted a preference addressed to `https://localhost:8787`, a client paid,
+   * the return died with `ERR_CONNECTION_CLOSED`, and the notification went
+   * somewhere undeliverable — leaving a real approved charge against a booking
+   * that stayed `PENDING_PAYMENT`.
+   *
+   * It was introduced by the fix immediately before it. Forcing the scheme to
+   * `https` made the URL syntactically acceptable to Mercado Pago, which
+   * removed the up-front refusal that had been the only warning.
+   */
+  it.each([
+    'https://localhost:8787',
+    'https://127.0.0.1:3000',
+    'https://192.168.1.20',
+    'https://barberia.local',
+  ])('refuses %s before creating a payment', async (origin) => {
+    const { service, payments, gateway } = build();
+
+    expect(await service.initiate({ cancellationToken: TOKEN, origin })).toEqual({
+      outcome: 'originNotReachable',
+      slug: 'barberia-don-juan',
+    });
+    expect(payments.createPendingMercadoPago).not.toHaveBeenCalled();
+    expect(gateway.createPreference).not.toHaveBeenCalled();
+  });
+
+  it('refuses before decrypting the credential', async () => {
+    // Nothing is worth reaching for a secret over an origin we already know
+    // cannot complete the flow.
+    const { service, config } = build();
+
+    await service.initiate({ cancellationToken: TOKEN, origin: 'https://localhost:8787' });
+
+    expect(config.findMercadoPagoAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('names the origin in the log so the deployment fault is diagnosable', async () => {
+    const { service, logger } = build();
+
+    await service.initiate({ cancellationToken: TOKEN, origin: 'https://localhost:8787' });
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('unreachable origin'),
+      expect.objectContaining({ origin: 'https://localhost:8787' })
+    );
+  });
+
+  it('allows a public origin through', async () => {
+    const { service } = build();
+
+    expect(
+      await service.initiate({ cancellationToken: TOKEN, origin: 'https://shop.example.com' })
+    ).toEqual({ outcome: 'redirect', initPoint: INIT_POINT, slug: 'barberia-don-juan' });
   });
 });

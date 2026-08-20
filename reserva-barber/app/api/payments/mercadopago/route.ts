@@ -185,6 +185,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // A refused request joins them: whatever Mercado Pago objected to, the
       // client cannot act on it and the cause is already in the log.
       case 'chargeRefused':
+      // So does an origin Mercado Pago could not call back — a deployment
+      // fault, invisible to the client and not theirs to fix.
+      case 'originNotReachable':
         return backToBooking(request, result.slug, token, 'pagos-no-disponibles');
 
       case 'gatewayUnavailable':

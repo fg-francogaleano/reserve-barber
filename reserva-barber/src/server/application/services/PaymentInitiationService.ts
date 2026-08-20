@@ -11,6 +11,7 @@ import type { IPaymentGateway } from '@/server/domain/repositories/IPaymentGatew
 import type { IClock } from '@/server/domain/repositories/IClock';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
 import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
+import { isPubliclyRoutableHost } from '@/server/domain/models/publicOrigin';
 import {
   CredentialDecryptionError,
   CredentialKeyMissingError,
@@ -53,6 +54,7 @@ export type PaymentInitiationResult =
   | { readonly outcome: 'notConfigured'; readonly slug: string }
   | { readonly outcome: 'credentialUnreadable'; readonly slug: string }
   | { readonly outcome: 'chargeRefused'; readonly slug: string }
+  | { readonly outcome: 'originNotReachable'; readonly slug: string }
   | { readonly outcome: 'credentialRejected'; readonly slug: string }
   | { readonly outcome: 'gatewayUnavailable'; readonly slug: string };
 
@@ -114,6 +116,30 @@ export class PaymentInitiationService {
     const existing = await this.payments.findLiveByBookingId(booking.id);
     if (existing !== null && existing.mpInitPoint !== null) {
       return { outcome: 'redirect', initPoint: existing.mpInitPoint, slug };
+    }
+
+    /**
+     * **Before anything, because after the charge is too late.**
+     *
+     * Mercado Pago validates that a callback URL is *well formed*, not that it
+     * can be reached — measured, not assumed: a preference addressed to
+     * `https://localhost:8787` was accepted, a client paid it, the return died
+     * on a connection that does not exist, and the notification went to an
+     * address nothing could deliver to. The booking stayed `PENDING_PAYMENT`
+     * with a real approved charge against it.
+     *
+     * Nothing downstream can recover from that, because the only thing that
+     * would tell us the payment happened is the notification we just made
+     * undeliverable. So the refusal belongs here, before the client is sent
+     * anywhere and before a single peso moves.
+     */
+    if (!isPubliclyRoutableHost(new URL(request.origin).host)) {
+      this.logger.error('Refusing to take a payment on an unreachable origin', {
+        operation: 'payment.initiate',
+        bookingId: booking.id,
+        origin: request.origin,
+      });
+      return { outcome: 'originNotReachable', slug };
     }
 
     // **Before creating anything.** A shop with no usable credential must not

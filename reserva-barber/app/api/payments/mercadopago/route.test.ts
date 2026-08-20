@@ -23,7 +23,7 @@ const INIT_POINT = 'https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=
  */
 let caller = 0;
 
-function submit(origin = 'https://shop.example', body = `token=${TOKEN}&slug=${SLUG}`) {
+function submit(origin = 'https://shop.example.com', body = `token=${TOKEN}&slug=${SLUG}`) {
   caller += 1;
   return new NextRequest(new URL('/api/payments/mercadopago', origin), {
     method: 'POST',
@@ -69,10 +69,10 @@ describe('the origin handed to Mercado Pago', () => {
 
   it('does not let the client choose the origin', async () => {
     // Nothing in the body shapes where Mercado Pago calls back to.
-    await POST(submit('https://shop.example', `token=${TOKEN}&origin=https://evil.example`));
+    await POST(submit('https://shop.example.com', `token=${TOKEN}&origin=https://evil.example`));
 
     expect(initiate).toHaveBeenCalledWith(
-      expect.objectContaining({ origin: 'https://shop.example' })
+      expect.objectContaining({ origin: 'https://shop.example.com' })
     );
   });
 });
@@ -121,7 +121,7 @@ describe('refusals land the client back on their own page', () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get('location')).toBe(
-      `https://shop.example/b/${SLUG}/reserva/${TOKEN}?estado=${code}`
+      `https://shop.example.com/b/${SLUG}/reserva/${TOKEN}?estado=${code}`
     );
   });
 
@@ -152,7 +152,7 @@ describe('refusals land the client back on their own page', () => {
 
 describe('what never reaches the service', () => {
   it('refuses a submission with no token', async () => {
-    const response = await POST(submit('https://shop.example', `slug=${SLUG}`));
+    const response = await POST(submit('https://shop.example.com', `slug=${SLUG}`));
 
     expect(response.status).toBe(400);
     expect(initiate).not.toHaveBeenCalled();
@@ -160,7 +160,7 @@ describe('what never reaches the service', () => {
 
   it('refuses an over-long token', async () => {
     const response = await POST(
-      submit('https://shop.example', `token=${'x'.repeat(129)}&slug=${SLUG}`)
+      submit('https://shop.example.com', `token=${'x'.repeat(129)}&slug=${SLUG}`)
     );
 
     expect(response.status).toBe(400);
