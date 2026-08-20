@@ -26,9 +26,23 @@
 // Everything it creates is prefixed `__b5_gate__` and removed at the end, in
 // foreign-key order — every booking FK is `Restrict`, so nothing cascades.
 //
-// Mercado Pago probes run only when MP_GATE_ACCESS_TOKEN is set, and it MUST be
-// a test credential. The script refuses a token that does not announce itself
-// as one rather than risk creating a real charge.
+// Mercado Pago probes run only when MP_GATE_ACCESS_TOKEN is set.
+//
+// **There is no way to tell a test credential from a production one**, and this
+// script does not pretend otherwise. The "Tus integraciones" panel issues
+// `APP_USR-` for both; the legacy `TEST-` prefix is the only marker that ever
+// identified a sandbox credential and Mercado Pago no longer issues it. An
+// earlier version of this file checked for that prefix, which would have
+// refused a real test token while offering no protection against a production
+// one — a check that cannot distinguish is worse than none, because it reads as
+// protection. The same argument this change already made about signature
+// validation in T60.
+//
+// So the operator asserts it instead, by setting MP_GATE_ACK. What is actually
+// at risk is worth stating plainly rather than dramatising: these probes create
+// **preferences**, which are checkout links. No money moves, nothing is
+// charged, and an unused preference expires. The cost of running against a
+// production account is up to six orphan links in it.
 //
 //   npx tsx scripts/b5-gate.ts
 import 'dotenv/config';
@@ -266,15 +280,18 @@ async function main(): Promise<void> {
     const accessToken = process.env.MP_GATE_ACCESS_TOKEN;
     if (!accessToken) {
       console.log(
-        '\nSKIPPED  Mercado Pago probes (11.3, 11.18, 11.20) — set MP_GATE_ACCESS_TOKEN to a TEST credential\n'
+        '\nSKIPPED  Mercado Pago probes (11.3, 11.18, 11.20) — set MP_GATE_ACCESS_TOKEN and MP_GATE_ACK=yes\n'
       );
-    } else if (!accessToken.startsWith('TEST-')) {
-      // Refused rather than risked. A production token here would create real
-      // preferences on the owner's account.
-      report(
-        '11.3. Mercado Pago probes use a test credential',
-        false,
-        'MP_GATE_ACCESS_TOKEN does not start with TEST- — refusing to create preferences with it'
+    } else if (process.env.MP_GATE_ACK !== 'yes') {
+      // The operator's assertion, because nothing here can make it for them.
+      // Not a safety theatre check: it names what will happen and asks for a
+      // deliberate act, which is the only honest form this can take.
+      console.log(
+        '\nSKIPPED  Mercado Pago probes — set MP_GATE_ACK=yes to confirm.\n' +
+          '         These create up to six preferences (checkout links) on the account\n' +
+          '         behind MP_GATE_ACCESS_TOKEN. No money moves and nothing is charged;\n' +
+          '         unused preferences expire. Nothing can tell a test credential from a\n' +
+          '         production one, so this is your call to make, not the script\'s.\n'
       );
     } else {
       const gateway = new MercadoPagoGateway();

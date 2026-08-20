@@ -1075,8 +1075,25 @@ appointments automatically on an approved payment. **An owner who saved `TEST-` 
 real clients completing a checkout that moves no money, against bookings the system marks `CONFIRMED`
 and the barber will hold time for.** The blast radius moved from "a label in the dashboard is unhelpful"
 to "the agenda fills with appointments nobody paid for", and the owner has no surface that would say so.
-The fix is unchanged and still ~2 h; what changed is that deferring it now costs bookings rather than
-clarity.
+
+**And the fix is NOT unchanged — an earlier version of this paragraph said it was, and that was
+wrong.** It leaned on `MercadoPagoView.environment` as though it were a working signal. It is not:
+`credentialEnvironment` only ever returns `'test'` for the legacy `TEST-` prefix, and Mercado Pago
+no longer issues that form — confirmed again while running B5's gate, where a current test credential
+arrives as `APP_USR-` exactly like a production one. So the marker this entry's remedy was going to
+read **can never fire on a credential issued today**, and any banner built on it would be dead code
+that looks like protection.
+
+Whatever closes this has to come from somewhere else. Three candidates, none of them free:
+ask Mercado Pago `/users/me` and compare the account against a known test-user list; have the owner
+declare which environment they configured and store the declaration; or detect it after the fact,
+when a payment approves for an amount and card that could only be sandbox. The first is the only one
+that does not rely on the owner being right, and it is undocumented territory — the same endpoint
+T43 already records as decoration rather than authority.
+
+- **Trigger:** unchanged in substance, but the effort is no longer ~2 h and the approach is undecided.
+  Re-estimate before starting: this is now a research task with a small implementation, not the
+  reverse.
 
 ### T38 — No key-rotation or re-encryption tooling
 **Status:** accepted · **Effort:** ~3 h · **Added:** PC2 (2026-08-13)
