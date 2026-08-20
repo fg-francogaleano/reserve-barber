@@ -9,9 +9,16 @@
 // here because the code makes an assumption that only the real system can
 // confirm, and each one is recorded in the change's task list:
 //
-//   11.18 (T45) — Mercado Pago's real minimum chargeable amount in ARS. Their
-//         API reference states none and their help page refuses automated
-//         requests, so the only honest way to learn it is to ask by trying.
+//   11.18 (T45) — Mercado Pago's real minimum chargeable amount in ARS, read
+//         from `/v1/payment_methods`, where each method declares its own
+//         `min_allowed_amount`. **This probe was wrong on its first run and the
+//         result is what exposed it**: it created preferences at descending
+//         amounts and every one was accepted, down to 0.01 ARS. A preference is
+//         a checkout *link*; Mercado Pago validates the charge when somebody
+//         pays, not when the link is made. A probe that accepts everything has
+//         not found a floor — it has found that it was measuring the wrong
+//         thing, and adopting 0.01 would have been exactly the failure T45
+//         exists to describe.
 //   11.19       — what the pg driver adapter reports for a violation of a
 //         PARTIAL unique index. `p1-gate-db.ts` measured the ordinary case;
 //         `PrismaPaymentRepository` discriminates two constraints by that
@@ -49,12 +56,10 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma-cli/client';
 import { MercadoPagoGateway } from '../src/server/infrastructure/payments/MercadoPagoGateway';
+import { LIVENESS_URL } from '../src/server/infrastructure/payments/MercadoPagoCredentialVerifier';
 import { PrismaPaymentRepository } from '../src/server/infrastructure/prisma/PrismaPaymentRepository';
 
 const MARK = '__b5_gate__';
-
-/** Descending, to find the floor by where Mercado Pago stops accepting. */
-const MINIMUM_PROBE_AMOUNTS = ['5.00', '1.00', '0.50', '0.10', '0.01'];
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -329,31 +334,67 @@ async function main(): Promise<void> {
       );
 
       // ------------------------------------------------------------- 11.18
-      // T45. The floor is a guess until this runs. Descending amounts until
-      // Mercado Pago stops accepting; the smallest accepted is the answer.
-      let smallestAccepted: string | null = null;
-      for (const amount of MINIMUM_PROBE_AMOUNTS) {
-        const attempt = await gateway.createPreference(
-          {
-            title: `${MARK} minimum probe`,
-            amount,
-            externalReference: booking.id,
-            notificationUrl: 'https://example.com/api/webhooks/mercadopago?ref=gate',
-            backUrl: 'https://example.com/b/gate/pago/retorno',
-            expiresAt,
-          },
-          accessToken
-        );
-        observe(`11.18. minimum probe at ${amount} ARS`, `status=${attempt.status}`);
-        if (attempt.status === 'created') smallestAccepted = amount;
-      }
+      // T45, asked of the right endpoint.
+      //
+      // **The first version of this probe was wrong, and its result is what
+      // exposed it.** It created preferences at descending amounts and reported
+      // the smallest accepted. Every amount was accepted, down to 0.01 ARS —
+      // because a preference is a checkout *link*, and Mercado Pago does not
+      // validate the charge when one is created. It validates when somebody
+      // pays. A probe that accepts everything has not found a floor of 0.01; it
+      // has found that it was measuring the wrong thing, and writing 0.01 into
+      // `MIN_DEPOSIT_AMOUNT` would have been precisely the failure T45 exists
+      // to describe: a number that looks measured and is not.
+      //
+      // `/v1/payment_methods` is the documented answer, and PC2 already calls
+      // it for liveness. Each method carries `min_allowed_amount`, so the floor
+      // is a property of the payment methods a client can choose — not one
+      // number, which is itself the finding.
+      const methods = await fetch(LIVENESS_URL, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
 
-      observe(
-        '11.18. RESULT — smallest accepted amount',
-        smallestAccepted === null
-          ? 'none of the probed amounts was accepted; widen MINIMUM_PROBE_AMOUNTS upward'
-          : `${smallestAccepted} ARS. Write this into MIN_DEPOSIT_AMOUNT and close T45 (tasks 1.2, 1.5, 1.6b, 2.6)`
-      );
+      if (!methods.ok) {
+        observe('11.18. payment methods lookup', `HTTP ${methods.status} — cannot determine the floor`);
+      } else {
+        const body = (await methods.json()) as {
+          id?: string;
+          name?: string;
+          status?: string;
+          payment_type_id?: string;
+          min_allowed_amount?: number;
+          max_allowed_amount?: number;
+        }[];
+
+        const active = body.filter((m) => m.status === 'active');
+        const minimums = active
+          .map((m) => m.min_allowed_amount)
+          .filter((v): v is number => typeof v === 'number');
+
+        for (const method of active) {
+          observe(
+            `11.18. ${method.payment_type_id}/${method.id}`,
+            `min=${method.min_allowed_amount} max=${method.max_allowed_amount} (${method.name})`
+          );
+        }
+
+        const floor = minimums.length > 0 ? Math.min(...minimums) : null;
+        const highest = minimums.length > 0 ? Math.max(...minimums) : null;
+
+        observe(
+          '11.18. RESULT — the amount below which NOBODY can pay',
+          floor === null
+            ? 'no active method reported a minimum'
+            : `${floor} ARS across ${active.length} active methods. This is the value for MIN_DEPOSIT_AMOUNT.`
+        );
+        observe(
+          '11.18. ALSO — the amount below which some methods disappear',
+          highest === null
+            ? 'unknown'
+            : `${highest} ARS is the highest per-method minimum. A deposit between ${floor} and ${highest} ARS is payable, but silently offers the client fewer payment methods — a product decision, not a bug, and worth stating in the deposit editor rather than discovering.`
+        );
+      }
     }
   } finally {
     // Foreign-key order. Every booking FK is Restrict, so nothing cascades and
