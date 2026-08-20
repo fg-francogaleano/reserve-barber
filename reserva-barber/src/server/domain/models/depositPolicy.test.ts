@@ -101,8 +101,35 @@ describe('depositPolicy - the result is always a canonical amount', () => {
   });
 });
 
-describe('depositPolicy - the provisional floor is declared once', () => {
+describe('depositPolicy - the floor is measured, not guessed', () => {
   it('should_expose_the_floor_as_a_canonical_amount', () => {
     expect(MIN_DEPOSIT_AMOUNT).toMatch(/^\d+\.\d{2}$/);
+  });
+
+  /**
+   * **The value is measured, and this test is what stops it drifting back to a
+   * guess.**
+   *
+   * Read from Mercado Pago's `/v1/payment_methods` against a real Argentine
+   * account (B5 gate, 2026-08-19). Sixteen active methods, in four bands:
+   *
+   *   prepaid_card                       min  1 ARS
+   *   debit + Visa/Master/Amex credit    min  3 ARS
+   *   Diners, Naranja, Argencard, Cabal  min 15 ARS
+   *   Rapipago, Pago Fácil (cash)        min 50 ARS
+   *
+   * **15 is the point at which every card works**, and cards are what this
+   * product charges with. One is the literal floor — below it nobody can pay at
+   * all — but a deposit of one or two pesos is payable only by prepaid card,
+   * which means a client holding an ordinary Visa reaches the checkout and
+   * finds nothing they can use. That is the failure this constant exists to
+   * prevent, arriving two pesos later.
+   *
+   * Fifty would also work and is rejected as over-reach: it would silently
+   * raise a deposit twenty-five times over what the owner configured, to
+   * preserve cash payment methods this product has never mentioned.
+   */
+  it('should_be_the_measured_amount_at_which_every_card_method_works', () => {
+    expect(MIN_DEPOSIT_AMOUNT).toBe('15.00');
   });
 });

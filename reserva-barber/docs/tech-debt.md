@@ -913,7 +913,7 @@ and surfacing in another is exactly what gets lost.
 - **Trigger:** **M6.** Anyone implementing service deactivation must check all three consumers above,
   starting with `PaymentConfigService.previewPolicy`.
 
-### T45 — `MIN_DEPOSIT_AMOUNT` is a placeholder, not a measured limit
+### T45 — ~~`MIN_DEPOSIT_AMOUNT` is a placeholder, not a measured limit~~ — **CLOSED (B5, 2026-08-19)**
 **Status:** accepted · **Effort:** ~30 min (one lookup, one constant) · **Added:** PC3 (2026-08-15)
 
 `src/server/domain/models/depositPolicy.ts` floors every computed deposit at `MIN_DEPOSIT_AMOUNT`,
@@ -934,9 +934,42 @@ rejection it was supposed to prevent.
 The blast radius is small today: it only binds on services cheap enough for a percentage to compute
 under a peso, and the owner is warned by name at configuration time when that happens.
 
-- **Trigger:** **B5**, which is the first story to call Mercado Pago with a real charge and therefore
-  the first in a position to know. Confirm the minimum, update the constant, and drop the
-  "provisional" wording from all three places in the same change.
+- ~~**Trigger:** **B5**, which is the first story to call Mercado Pago with a real charge and therefore
+  the first in a position to know.~~ — **fired, and answered.**
+
+**Closed by B5 on 2026-08-19. `MIN_DEPOSIT_AMOUNT` is now `15.00` ARS, measured.**
+
+Read from Mercado Pago's `/v1/payment_methods` against a real Argentine account. Sixteen active
+methods, in four bands:
+
+| band | `min_allowed_amount` |
+| --- | --- |
+| prepaid cards (Visa, Mastercard, Cabal) | 1 ARS |
+| debit, and Visa / Mastercard / Amex credit | 3 ARS |
+| Diners, Naranja, Argencard, Cabal credit | 15 ARS |
+| Rapipago, Pago Fácil (cash tickets) | 50 ARS |
+
+**15 was chosen because it is the point at which every card method works**, and cards are what this
+product charges with. Both alternatives were rejected in writing. **1** is the literal floor — below
+it nobody can pay at all — and it satisfies the letter of this entry while missing its purpose: a
+two-peso deposit is payable only by prepaid card, so a client with an ordinary Visa reaches the
+checkout and finds nothing usable, which is this entry's failure arriving two pesos later. **50**
+would raise a configured deposit twenty-five times over in order to preserve cash methods the
+product has never offered.
+
+**How the number was reached matters as much as the number**, because the first attempt was wrong in
+the direction this entry warns about. The gate originally created preferences at descending amounts
+and reported the smallest accepted — and accepted every one, down to **0.01 ARS**. A preference is a
+checkout *link*; Mercado Pago validates the charge when somebody pays, not when the link is made. The
+probe had found nothing, and `0.01` would have closed this entry with a figure that looked measured
+and was not — the exact failure described above, committed by the story sent to fix it. The result
+was too clean to believe, which is the only reason it was caught.
+
+Updated in `src/server/domain/models/depositPolicy.ts`, `docs/data-model.md` §14, and here. Pinned by
+a test that asserts the value rather than only its shape, so it cannot drift back to a guess quietly.
+
+**One consequence survives, as `T61`:** a deposit between 15 and 50 ARS is payable but silently
+offers the client fewer payment methods than a larger one, and nothing says so.
 
 ### T6 — Platform decision: Cloudflare vs Vercel
 **Status:** **decided — stay on Cloudflare**, revisit on trigger
@@ -1644,3 +1677,41 @@ the honest absence recorded here.
 - **Trigger:** the first owner who asks for it, **or** forged notification traffic appearing in the
   logs. B5 logs the ref-unresolved and payment-not-found-at-Mercado-Pago outcomes as distinct causes
   precisely so that this trigger is observable rather than hypothetical.
+
+### T61 — A low deposit silently removes payment methods, and nothing says so
+**Status:** accepted · **Effort:** ~1–2 h (a band table and a line in the deposit editor) ·
+**Added:** B5 (2026-08-19)
+
+Mercado Pago's payment methods do not share a minimum. Measured against a real Argentine account
+while closing **T45**:
+
+| band | `min_allowed_amount` |
+| --- | --- |
+| prepaid cards | 1 ARS |
+| debit, and Visa / Mastercard / Amex credit | 3 ARS |
+| Diners, Naranja, Argencard, Cabal credit | 15 ARS |
+| Rapipago, Pago Fácil (cash tickets) | 50 ARS |
+
+`MIN_DEPOSIT_AMOUNT` is 15, so every **card** works at any deposit this product will produce. But a
+deposit between **15 and 50 ARS is payable while offering no cash option at all** — Rapipago and
+Pago Fácil simply do not appear at Mercado Pago's checkout, and neither the owner nor the client is
+told why.
+
+**Why this is small today and worth writing down anyway.** A barbershop deposit is realistically a
+few thousand pesos, so the band is unreachable by any sensible configuration. It becomes reachable
+the moment an owner sets a percentage policy against a cheap service — 1% of a 1,500-peso service is
+15 pesos, exactly in the band — and the owner has no way to see that they have quietly excluded
+every client who pays in cash. In Argentina that is not a marginal group.
+
+There is a second, larger version of the same effect: the cash tickets cap at **1,000,000 ARS**
+while cards go to 15,000,000. A deposit above a million loses cash methods from the other end. Out of
+reach for this product, recorded so the table is complete rather than half-remembered.
+
+The fix is not a validation. Refusing a deposit in the band would be wrong — it is a legitimate
+amount and the owner may not care about cash. What is missing is **disclosure**: the deposit editor
+already previews the computed deposit per service (PC3), and that preview is where a line saying
+which payment methods the client will actually be offered belongs.
+
+- **Trigger:** the first owner who asks why clients cannot pay their deposit in cash, **or** B6,
+  which introduces bank transfer as the deliberate answer to "no card" and is the natural place to
+  notice that Mercado Pago's own cash methods were being dropped silently all along.
