@@ -48,6 +48,32 @@ function jsonError(message: string, code: string, status: number): NextResponse 
   return NextResponse.json({ success: false, error: { message, code } }, { status });
 }
 
+/**
+ * The origin Mercado Pago must use to reach this application back.
+ *
+ * **The host comes from the request; the scheme does not, and that distinction
+ * is the whole point.** We cannot know our own public hostname any other way,
+ * but the request's scheme describes how *this client* reached us — not what a
+ * *third party* needs in order to reach us. Mercado Pago requires `https` and
+ * refuses anything else outright, so the scheme is a property of the
+ * integration and is stated rather than inferred.
+ *
+ * **Measured, and it is not a hypothetical distinction.** Through a
+ * TLS-terminating tunnel, `new URL(request.url).origin` yielded
+ * `http://<public-host>` — a perfectly reachable address — and Mercado Pago
+ * refused it with `invalid_auto_return`. The same host with `https` was
+ * accepted. Deriving the scheme from the request made the payment path depend
+ * on how the app happens to be fronted, which is exactly the kind of coupling
+ * that is invisible until it is in front of a client.
+ *
+ * This is consistent with what the rest of the flow already assumes: every
+ * cookie in it is set `secure`, so an `http` origin was never a state this
+ * application intended to serve.
+ */
+function publicOriginOf(request: NextRequest): string {
+  return `https://${new URL(request.url).host}`;
+}
+
 async function readSubmission(request: NextRequest): Promise<Record<string, unknown>> {
   const contentType = request.headers.get('content-type') ?? '';
 
@@ -115,7 +141,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const result = await paymentInitiationService().initiate({
       cancellationToken: token,
-      origin: new URL(request.url).origin,
+      origin: publicOriginOf(request),
     });
 
     switch (result.outcome) {
