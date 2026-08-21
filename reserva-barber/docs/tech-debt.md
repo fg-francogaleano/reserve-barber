@@ -1715,3 +1715,39 @@ which payment methods the client will actually be offered belongs.
 - **Trigger:** the first owner who asks why clients cannot pay their deposit in cash, **or** B6,
   which introduces bank transfer as the deliberate answer to "no card" and is the natural place to
   notice that Mercado Pago's own cash methods were being dropped silently all along.
+
+### T62 — The confirmation moment ends with "please refresh", and that is the normal path
+**Status:** accepted · **Effort:** ~1 h · **Added:** B5 (2026-08-21, observed in runtime verification)
+
+When a client returns from Mercado Pago, the confirmation page reads live state and renders one of
+two things: the booking is `CONFIRMED`, or the notification has not arrived yet and the page says
+**"Estamos confirmando tu pago — actualizá esta página en unos segundos."**
+
+B5 designed that second state as the careful fallback. **Runtime verification showed it is not a
+fallback — it is what nearly every client will see.** The browser redirect from Mercado Pago is a
+direct navigation; the notification is a server-to-server call Mercado Pago makes on its own
+schedule. The redirect wins essentially every time. Measured end to end through a tunnel: the page
+rendered the awaiting state, and the booking was `CONFIRMED` moments later.
+
+So the single most important moment in this product — the one where a client learns whether their
+appointment is real — currently ends with an instruction to refresh. Nothing is wrong; it just reads
+as though nothing happened.
+
+**The page deliberately does not poll**, and that decision stands as written: a spinner implying an
+update that never comes is worse than a plain sentence. What is missing is the update itself.
+
+**The fix that fits this codebase's constraints is a bounded `<meta http-equiv="refresh">` on the
+awaiting state only.** It works with no JavaScript — which the whole public flow requires — and it
+can be bounded without script by carrying an attempt counter in the URL: `?estado=pago-pendiente`
+refreshes once to `&intento=2`, then `&intento=3`, then stops and shows the manual instruction. Three
+attempts over roughly ten seconds covers the ordinary notification delay without hammering the page
+when a notification is never coming. Once the refresh is real, the spinner the current rule forbids
+becomes honest and can be added with it.
+
+Rejected: client-side polling (needs JavaScript, which this flow does not assume) and holding the
+response until the notification lands (Mercado Pago's timing is not ours to wait on, and it would
+pin a Worker request on a third party).
+
+- **Trigger:** before this flow is put in front of real clients, or **N1**, which sends the
+  confirmation email and is the other half of "the client learns their turn is real" — whichever
+  comes first.
