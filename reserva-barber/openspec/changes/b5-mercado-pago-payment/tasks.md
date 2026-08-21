@@ -121,7 +121,7 @@
 - [x] 11.3 **PASSED** (gate, and again live through the tunnel): preference created for a real booking at the snapshotted amount. Original: Gate probe: preference created for a real booking, with the amount matching the snapshot.
 - [x] 11.4 Gate probe: notification round-trip confirms the booking.
 - [x] 11.5 Gate probe: same notification replayed three times → one `CONFIRMED`, one `APPROVED`, three `200`s.
-- [ ] 11.6 **UN-MARKED — it was recorded as passing on evidence that did not test it.** The probe sent `data.id: "1"`, an id Mercado Pago does not have, so the handler answered through the `notAtGateway` branch and the amount comparison never ran. Both refuse, both answer 200, and from the outside they are indistinguishable — which is exactly why the wrong one looked like proof. A real mismatch needs a genuine gateway payment whose `transaction_amount` differs from the stored `payment.amount`; the fixture for it is staged (booking `cmt27n1wc0001h8u6oe0w3eje`, stored 5000.00, real charge 2000.00). Run it against the deployed origin with 11.16. Original: Gate probe: amount mismatch refused, booking untouched.
+- [x] 11.6 **PASSED against production (2026-08-21), on the second attempt and with the right probe.** A genuine approved Mercado Pago charge of 2000.00 ARS carrying the booking as its `external_reference`, against a stored snapshot of 5000.00: the booking stayed `PENDING_PAYMENT`, the payment stayed `PENDING` with no `mpPaymentId`, and the notification was answered `200`. The reference matched, so the amount comparison is the only thing that could have refused it — which is the whole point, and what the first probe never reached.
 - [x] 11.7 **PASSED against the live database (2026-08-21).** Staged the real approved payment with its hold ten minutes past, slot free. The notification routed through `confirmIfSlotFree`, took the per-barber advisory lock, found nothing blocking and **confirmed the booking despite the lapsed hold** — the branch that is easy to lose by omission, and the one that stops a client who paid from losing a slot nobody wanted. Original: Gate probe: lapsed hold with slot free → confirmed.
 - [x] 11.8 **PASSED against the live database (2026-08-21).** Same payment, same lapsed hold, with a second `CONFIRMED` booking written over the slot first. The booking stayed `PENDING_PAYMENT`, the payment was still recorded `APPROVED` with its `mpPaymentId` and `approvedAt` — the charge is real and must be visible to the owner — the blocker was untouched, and Mercado Pago received `200`. The confirmation page rendered the slot-lost state: *"Recibimos tu pago, pero el horario ya no estaba disponible"*, with no payment control and **no claim that the reservation expired**. Original: Gate probe: lapsed hold with slot resold → not confirmed, payment `APPROVED`, outcome logged.
 - [x] 11.9 **PASSED against the preview.** `POST /api/payments/mercadopago` answered **400** (reached the handler, refused the empty body) and `POST /api/webhooks/mercadopago` answered **200**. Neither was a 307. Original: `curl` the payment endpoint anonymously against the running preview and confirm a `303`, not a `307` to `/login` — the exact failure B4 found in the guard.
@@ -135,5 +135,62 @@
 - [x] 11.20 **RESOLVED (2026-08-19): ACCEPTED.** Mercado Pago took `date_of_expiration` as `2026-08-20T00:33:46.918Z` and created the preference. No numeric-offset conversion needed; the gateway keeps sending `toISOString()`. Original probe: **whether Mercado Pago accepts `date_of_expiration` with a `Z` offset.** The gateway sends `toISOString()` (`2026-08-19T12:15:00.000Z`), which is valid ISO 8601, but Mercado Pago's own examples all use a numeric offset (`...-03:00`) and their validators have historically been stricter than the standard. A rejection here surfaces as `invalid` on every preference — the whole story dead — and no unit test can tell the difference, because the transport is a double. Create one real preference and confirm it is accepted and that the expiry is the instant intended; if it is refused, switch to a numeric offset built from the business timezone.
 - [x] 11.19 **RESOLVED against the live database (2026-08-19):** a partial unique index violation reports `code=P2002` with `fields=["\"bookingId\""]` — byte-identical in shape to an ordinary unique index, quotes included. `PrismaPaymentRepository` discriminates it correctly and `createPendingMercadoPago` returned `alreadyLive` end to end. The assumption held; it was still worth measuring, because the failure mode was the two outcomes swapping meanings. Original probe: **what the driver reports for a PARTIAL unique index violation.** `PrismaPaymentRepository` discriminates two constraints by `meta.driverAdapterError.cause.constraint.fields`, a shape `p1-gate-db.ts` measured for ordinary unique indexes only. A partial index was never measured, and no mock can tell us what arrives. If the shape differs, both translations collapse into the fallback and the two outcomes swap meanings — a double-tap becomes an error and a duplicate notification becomes a `5xx`. Trip `Payment_one_live_per_booking` and `Payment_mpPaymentId_key` against the live database, print the raw error, and confirm the field lists this code compares against.
 - [x] 11.18 **RESOLVED (2026-08-19): 15.00 ARS.** Sixteen active methods in four bands — prepaid 1, debit+Visa/Master/Amex 3, Diners/Naranja/Argencard/Cabal 15, cash tickets 50. Chose 15: the point at which every card works. Rejected 1 (payable only by prepaid card, which is this floors own failure two pesos later) and 50 (raises a configured deposit 25x to preserve cash methods this product never offered). Opened **T61** for the 15–50 band, where cash methods vanish silently. Original probe, and the design error it caught:, **rewritten after its first run measured the wrong thing**. The original created preferences at descending amounts and reported the smallest accepted; every amount was accepted, **down to `0.01` ARS**. That is not a floor of one centavo — a preference is a checkout *link*, and Mercado Pago validates the charge when somebody pays, not when the link is created. Adopting `0.01` would have been precisely the failure T45 exists to describe: a number that looks measured and is not. The probe now reads `min_allowed_amount` per method from `/v1/payment_methods` — the documented answer, and the endpoint PC2 already calls for liveness. **Re-run needed.**
-- [ ] 11.16 **Franco:** `npm run deploy`, then repeat 11.9, 11.10 and 11.11 against the deployed origin — the guard and the header are configuration, and configuration is what differs between preview and production.
+- [x] 11.16 **PASSED against `https://reserva-barber.franco-galeano.workers.dev` (2026-08-21).** `POST /api/payments/mercadopago` → **400** and `POST /api/webhooks/mercadopago` → **200**: both reach the handler, neither is a 307. All seven neighbours — `/api`, `/api/payments`, `/api/webhooks`, both deeper segments, `/api/payments/stripe`, `/api/owners` — redirect to `/login` carrying their `next`. `referrer-policy: no-referrer` present on the confirmation route including on a 404, and **absent** from `/b/{slug}`, so it is route-scoped rather than blanket. **The first run of these checks returned 308 on everything**, which was the origin being addressed over `http`: Cloudflare answered before the request reached the Worker. Worth recording because it is indistinguishable from a broken guard until you look at the `Location`.
 - [ ] 11.17 **Franco:** sign-off recorded here before archiving, including which checks ran after 21:00 local.
+
+## 12. Verification record
+
+### 12a. What ran, and where
+
+**Unit surface** — 2421 tests across 143 files, typecheck and lint clean. Worker bundle
+**2782.97 KiB gzip**, +30 KiB over B4's 2752.88, leaving ~289 KiB under the ceiling T51 tracks.
+
+**Against the live database** — the migration's constraints exist and bind; the partial unique index
+refuses a second live payment and the repository translates that violation into the existing payment;
+a rejected payment does not block a retry; both late-payment branches behaved as designed.
+
+**Against real Mercado Pago** — a preference created for a real booking; `date_of_expiration` accepted
+with a `Z` offset; the deposit floor measured from `/v1/payment_methods` at 15.00 ARS.
+
+**End to end through a tunnel** — Franco completed a real test-credential checkout. Mercado Pago
+delivered the notification itself; the booking reached `CONFIRMED` with `mpPaymentId 173935835159`,
+no intervention. Replayed four times: one payment row, one confirmation, `approvedAt` unchanged.
+
+**Against production** (`reserva-barber.franco-galeano.workers.dev`) — the guard's two new entries
+admit, the seven neighbours redirect, `Referrer-Policy` is present and route-scoped, and a genuine
+amount mismatch refused to confirm.
+
+**After 21:00 local** — 11.15 ran at 22:23 (UTC already the next day) and a 22:00-local booking
+rendered as its business-local day, not the runtime's.
+
+### 12b. What the runtime found that the suite could not
+
+Six defects, none of which any of the 2421 tests would have caught:
+
+1. **A refused request reported as a refused amount.** A valid $2.000 deposit came back
+   `monto-rechazado`; Mercado Pago had refused `invalid_auto_return`. The owner would have been sent
+   to change a correct deposit policy.
+2. **Neither cookie was ever deleted.** Both set at `path=/b`, both cleared at `/`. For the payment
+   return cookie that is a privacy defect: on a shared device the next visitor would be forwarded to
+   the previous client's booking. B4's echo cookie had the identical bug.
+3. **The callback scheme was taken from the request.** Behind a TLS-terminating proxy it produced
+   `http://` and Mercado Pago refused it. The scheme is a fact about the gateway, not about how this
+   client arrived.
+4. **A charge taken on an unreachable origin.** Mercado Pago validates that a callback URL is well
+   formed, not that it can be reached, so `https://localhost:8787` was accepted — the client paid,
+   the return died, and the notification went nowhere. Fixed before the charge rather than after.
+5. **The minimum-deposit probe measured nothing.** Preference creation accepted every amount down to
+   0.01; a preference is a link, and the charge is validated at payment time.
+6. **11.6 was marked passing on a probe that tested a different branch.** Caught while preparing this
+   sign-off.
+
+### 12c. Known and accepted at close
+
+- **T60** — no webhook signature; authenticity is the re-fetch, which is the stronger check.
+- **T61** — a deposit between 15 and 50 ARS silently offers no cash payment method.
+- **T62** — the confirmation moment normally ends with "refresh this page"; the redirect beats the
+  notification essentially every time.
+- **T42** — production is live with test credentials, which now confirm real appointments.
+- **1.2b** — the floor is measured from the API; the owner's own account limit is unconfirmed.
+
+- [ ] 12d **Franco's sign-off.** Confirm the record above, or correct it.
