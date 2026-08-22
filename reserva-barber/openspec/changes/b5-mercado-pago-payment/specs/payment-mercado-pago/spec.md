@@ -192,6 +192,30 @@ Responses SHALL be indistinguishable across "ref not found", "already processed"
 - **WHEN** the late-payment re-check runs
 - **THEN** it holds the same per-barber advisory lock the booking write takes and calls `blocksAvailability` rather than expressing the blocking rule again
 
+### Requirement: An approved payment for a booking that no longer exists is reported as loudly as a lost slot
+
+When a notification approves a payment whose booking is no longer bookable — cancelled, or expired — the booking SHALL NOT be confirmed, the payment SHALL still be recorded as approved because the charge is real, and the outcome SHALL be logged at error level carrying the booking's actual status.
+
+**It SHALL NOT be reported as a duplicate delivery.** Both reach the confirming transaction as a guarded update that matched nothing, and from inside that transaction they are indistinguishable — which is exactly why the status it found must travel back with the refusal. A booking already confirmed is the idempotency mechanism working and owes nobody anything; a booking that went away is money taken for an appointment that does not exist, and owes a refund as surely as the slot-lost case does.
+
+#### Scenario: A cancelled booking receives an approved payment
+- **WHEN** a notification approves a payment whose booking has been cancelled
+- **THEN** the booking is not confirmed, the payment is recorded as approved, and the outcome is logged at error with the booking's status
+
+#### Scenario: A duplicate delivery is still routine
+- **WHEN** the same notification arrives again over a booking that is already confirmed
+- **THEN** it is reported as already processed and logged at information level
+
+### Requirement: A second gateway payment id never rewrites the first
+
+On the path that records the payment before checking the booking, the write SHALL be conditioned on the payment having no gateway id yet.
+
+The gateway permits several payment attempts against one checkout. Without the condition, a later approved attempt would overwrite the identifier and the instant of a payment already approved — and the unique constraint would not refuse it, because the new identifier is new. The first approval is the one that happened.
+
+#### Scenario: A second approved attempt on one checkout
+- **WHEN** a notification approves a second gateway payment for a payment record that already carries one
+- **THEN** the stored identifier and approval instant are unchanged and the notification is reported as already processed
+
 ### Requirement: Money returned after confirmation changes no row and is reported
 
 A notification reporting a payment as `refunded`, `charged_back` or `cancelled` for a booking already `CONFIRMED` SHALL change no row, SHALL be answered `200`, and SHALL produce one warning-level log line carrying the booking id, the payment id and the reported status.

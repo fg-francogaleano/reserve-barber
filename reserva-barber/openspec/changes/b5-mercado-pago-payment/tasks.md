@@ -136,7 +136,7 @@
 - [x] 11.19 **RESOLVED against the live database (2026-08-19):** a partial unique index violation reports `code=P2002` with `fields=["\"bookingId\""]` — byte-identical in shape to an ordinary unique index, quotes included. `PrismaPaymentRepository` discriminates it correctly and `createPendingMercadoPago` returned `alreadyLive` end to end. The assumption held; it was still worth measuring, because the failure mode was the two outcomes swapping meanings. Original probe: **what the driver reports for a PARTIAL unique index violation.** `PrismaPaymentRepository` discriminates two constraints by `meta.driverAdapterError.cause.constraint.fields`, a shape `p1-gate-db.ts` measured for ordinary unique indexes only. A partial index was never measured, and no mock can tell us what arrives. If the shape differs, both translations collapse into the fallback and the two outcomes swap meanings — a double-tap becomes an error and a duplicate notification becomes a `5xx`. Trip `Payment_one_live_per_booking` and `Payment_mpPaymentId_key` against the live database, print the raw error, and confirm the field lists this code compares against.
 - [x] 11.18 **RESOLVED (2026-08-19): 15.00 ARS.** Sixteen active methods in four bands — prepaid 1, debit+Visa/Master/Amex 3, Diners/Naranja/Argencard/Cabal 15, cash tickets 50. Chose 15: the point at which every card works. Rejected 1 (payable only by prepaid card, which is this floors own failure two pesos later) and 50 (raises a configured deposit 25x to preserve cash methods this product never offered). Opened **T61** for the 15–50 band, where cash methods vanish silently. Original probe, and the design error it caught:, **rewritten after its first run measured the wrong thing**. The original created preferences at descending amounts and reported the smallest accepted; every amount was accepted, **down to `0.01` ARS**. That is not a floor of one centavo — a preference is a checkout *link*, and Mercado Pago validates the charge when somebody pays, not when the link is created. Adopting `0.01` would have been precisely the failure T45 exists to describe: a number that looks measured and is not. The probe now reads `min_allowed_amount` per method from `/v1/payment_methods` — the documented answer, and the endpoint PC2 already calls for liveness. **Re-run needed.**
 - [x] 11.16 **PASSED against `https://reserva-barber.franco-galeano.workers.dev` (2026-08-21).** `POST /api/payments/mercadopago` → **400** and `POST /api/webhooks/mercadopago` → **200**: both reach the handler, neither is a 307. All seven neighbours — `/api`, `/api/payments`, `/api/webhooks`, both deeper segments, `/api/payments/stripe`, `/api/owners` — redirect to `/login` carrying their `next`. `referrer-policy: no-referrer` present on the confirmation route including on a 404, and **absent** from `/b/{slug}`, so it is route-scoped rather than blanket. **The first run of these checks returned 308 on everything**, which was the origin being addressed over `http`: Cloudflare answered before the request reached the Worker. Worth recording because it is indistinguishable from a broken guard until you look at the `Location`.
-- [ ] 11.17 **Franco:** sign-off recorded here before archiving, including which checks ran after 21:00 local.
+- [x] 11.17 **Satisfied by 12d**, which Franco signed on 2026-08-22 after reading section 12. The two tasks asked for the same thing; 11.17 was written before section 12 existed. Checks that ran after 21:00 local: 11.15 at 22:23. Original: **Franco:** sign-off recorded here before archiving, including which checks ran after 21:00 local.
 
 ## 12. Verification record
 
@@ -194,3 +194,23 @@ Six defects, none of which any of the 2421 tests would have caught:
 - **1.2b** — the floor is measured from the API; the owner's own account limit is unconfirmed.
 
 - [x] 12d **Franco's sign-off, 2026-08-22.** Read section 12 and confirmed it with nothing to correct. **T62 decided in the same pass: it stays open and is resolved with N1**, so that how this product tells a client their appointment is real gets decided once rather than twice.
+
+### 12e. Fixed after the pre-archive review (2026-08-22)
+
+Two defects found by `/opsx:verify`, both on paths unreachable today and both fixed rather than
+deferred:
+
+- [x] 12e.1 **An approved payment over a `CANCELLED` or `EXPIRED` booking was logged as routine
+  idempotency.** `notPending` and `alreadyProcessed` shared one `info` line reading "Notification
+  already handled" — over a real charge for an appointment that does not exist. The repository now
+  reports the status it actually found, and the service branches: `CONFIRMED` stays `info`, anything
+  else is `error` with the amount and the status, matching how `slotLost` is treated. **This was
+  found once before**, by the edge-case hunt that preceded the change, and never became a rule.
+- [x] 12e.2 **The late path could let a second gateway id rewrite the first.** It writes the payment
+  before checking the booking, so the booking's guard cannot protect it; a second approved attempt on
+  one checkout would have overwritten the identifier and instant without tripping the unique
+  constraint. The write is now conditioned on `mpPaymentId` being null, with the constraint kept as a
+  backstop for two transactions that both read null.
+
+Both rules are written into `specs/payment-mercado-pago/spec.md` rather than left in code comments.
+Suite 2433 passing, typecheck and lint clean.

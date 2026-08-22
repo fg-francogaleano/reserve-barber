@@ -212,12 +212,19 @@ describe('the hold decides which transaction runs', () => {
 });
 
 describe('duplicate and out-of-order deliveries', () => {
-  it.each([
-    ['a guarded update that matched nothing', 'notPending'],
-    ['a duplicate gateway id', 'alreadyProcessed'],
-  ])('reports %s as already processed', async (_label, outcome) => {
+  it('reports a duplicate gateway id as already processed', async () => {
     const { service, payments } = build();
-    payments.confirmWithPayment.mockResolvedValue({ outcome });
+    payments.confirmWithPayment.mockResolvedValue({ outcome: 'alreadyProcessed' });
+
+    expect(await service.confirm(REQUEST)).toEqual({ outcome: 'alreadyProcessed' });
+  });
+
+  it('reports a duplicate delivery over a CONFIRMED booking as already processed', async () => {
+    const { service, payments } = build();
+    payments.confirmWithPayment.mockResolvedValue({
+      outcome: 'notPending',
+      bookingStatus: 'CONFIRMED',
+    });
 
     expect(await service.confirm(REQUEST)).toEqual({ outcome: 'alreadyProcessed' });
   });
@@ -356,6 +363,73 @@ describe('what the logs may carry', () => {
     expect(logger.error).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ reason: 'currency_mismatch' })
+    );
+  });
+});
+
+describe('a payment approved for a booking that no longer exists', () => {
+  /**
+   * **Found in review, not by a test, and it had been found once before.**
+   *
+   * The edge-case hunt that preceded this change wrote: *"A booking already
+   * CANCELLED receives an approved payment. No rule today."* It never became a
+   * rule, and the implementation collapsed it into the duplicate-delivery
+   * branch — a single `info` line reading "Notification already handled" over a
+   * real charge for an appointment that does not exist.
+   *
+   * It is materially the slot-lost case. Nobody took the slot; the booking
+   * itself went away. Both owe a refund and both need a human, so both are
+   * logged at `error`.
+   *
+   * **Unreachable today** — nothing writes `CANCELLED` until C1/C2 and nothing
+   * writes `EXPIRED` until B7 — which is precisely why it is decided now rather
+   * than discovered by whichever of those ships first.
+   */
+  it.each(['CANCELLED', 'EXPIRED', 'MISSING'])(
+    'reports an approved payment over a %s booking as bookingUnavailable',
+    async (bookingStatus) => {
+      const { service, payments } = build();
+      payments.confirmWithPayment.mockResolvedValue({ outcome: 'notPending', bookingStatus });
+
+      expect(await service.confirm(REQUEST)).toEqual({ outcome: 'bookingUnavailable' });
+    }
+  );
+
+  it('logs it at error, like the slot-lost branch, because a human owes a refund', async () => {
+    const { service, payments, logger } = build();
+    payments.confirmWithPayment.mockResolvedValue({
+      outcome: 'notPending',
+      bookingStatus: 'CANCELLED',
+    });
+
+    await service.confirm(REQUEST);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('no longer exists'),
+      expect.objectContaining({
+        bookingId: 'bkg-1',
+        paymentId: 'pay-1',
+        bookingStatus: 'CANCELLED',
+        amount: '5000.50',
+      })
+    );
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it('does not report it as routine idempotency', async () => {
+    // The defect this closes, stated directly: one "already handled" line for
+    // two situations that are nothing alike.
+    const { service, payments, logger } = build();
+    payments.confirmWithPayment.mockResolvedValue({
+      outcome: 'notPending',
+      bookingStatus: 'EXPIRED',
+    });
+
+    await service.confirm(REQUEST);
+
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.stringContaining('already handled'),
+      expect.anything()
     );
   });
 });

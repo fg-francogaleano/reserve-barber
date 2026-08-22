@@ -80,7 +80,18 @@ export type CreatePaymentResult =
  */
 export type ConfirmPaymentResult =
   | { readonly outcome: 'confirmed' }
-  | { readonly outcome: 'notPending' }
+  /**
+   * The guarded update matched nothing, **and the status it actually found is
+   * part of the answer**.
+   *
+   * Without it the caller cannot tell two situations apart that look identical
+   * from here and are nothing alike: a duplicate delivery over a booking
+   * already `CONFIRMED`, which is the idempotency mechanism working, and an
+   * approved payment over a booking that is `CANCELLED` or `EXPIRED`, which is
+   * money taken for an appointment that does not exist. The second owes
+   * somebody a refund and the first owes nobody anything.
+   */
+  | { readonly outcome: 'notPending'; readonly bookingStatus: string }
   | { readonly outcome: 'alreadyProcessed' };
 
 export interface IPaymentRepository {
@@ -194,5 +205,5 @@ export interface IPaymentRepository {
 export type LateConfirmResult =
   | { readonly outcome: 'confirmed' }
   | { readonly outcome: 'slotLost' }
-  | { readonly outcome: 'notPending' }
+  | { readonly outcome: 'notPending'; readonly bookingStatus: string }
   | { readonly outcome: 'alreadyProcessed' };

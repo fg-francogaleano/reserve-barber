@@ -50,12 +50,19 @@ function paymentRow(overrides: Record<string, unknown> = {}) {
 function createTx() {
   return {
     $executeRaw: vi.fn().mockResolvedValue(1),
-    payment: { update: vi.fn().mockResolvedValue(paymentRow({ status: 'APPROVED' })) },
+    payment: {
+      update: vi.fn().mockResolvedValue(paymentRow({ status: 'APPROVED' })),
+      // The late path guards its own write on mpPaymentId being null.
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
     booking: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       // Only the late-payment path reads under the lock; it defaults to a free
       // slot so that a test which does not care about contention gets one.
       findMany: vi.fn().mockResolvedValue([]),
+      // Read only when the guarded update matched nothing, to report which
+      // status it actually found.
+      findUnique: vi.fn().mockResolvedValue({ status: 'CONFIRMED' }),
     },
   };
 }
@@ -220,7 +227,7 @@ describe('confirmWithPayment', () => {
       approvedAt: NOW,
     });
 
-    expect(result).toEqual({ outcome: 'notPending' });
+    expect(result).toEqual({ outcome: 'notPending', bookingStatus: 'CONFIRMED' });
   });
 
   it('does not touch the payment when the booking was not pending', async () => {
@@ -446,7 +453,7 @@ describe('confirmIfSlotFree', () => {
     const result = await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE);
 
     expect(result).toEqual({ outcome: 'slotLost' });
-    expect(tx.payment.update).toHaveBeenCalledWith(
+    expect(tx.payment.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) })
     );
     expect(tx.booking.updateMany).not.toHaveBeenCalled();
@@ -510,16 +517,126 @@ describe('confirmIfSlotFree', () => {
 
     expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
       outcome: 'notPending',
+      bookingStatus: 'CONFIRMED',
     });
   });
 
-  it('translates a duplicate gateway id into alreadyProcessed', async () => {
+  it('keeps the unique-violation translation as a backstop', async () => {
+    // The mpPaymentId guard above catches the ordinary repeat. This covers two
+    // transactions that both read null and race to write the same gateway id.
     const tx = createTx();
-    tx.payment.update.mockRejectedValue(uniqueViolation('mpPaymentId'));
+    tx.payment.updateMany.mockRejectedValue(uniqueViolation('mpPaymentId'));
     const { db } = createDb(tx);
 
     expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
       outcome: 'alreadyProcessed',
     });
+  });
+});
+
+describe('a refusal reports the status it actually found', () => {
+  const LATE = {
+    paymentId: PAYMENT,
+    bookingId: BOOKING,
+    barberId: 'barber-1',
+    startTime: new Date('2026-08-19T14:00:00.000Z'),
+    endTime: new Date('2026-08-19T14:30:00.000Z'),
+    gatewayPaymentId: 'mp-1',
+    approvedAt: NOW,
+    now: NOW,
+  };
+
+  /**
+   * Without the status, the caller cannot tell a duplicate delivery over a
+   * `CONFIRMED` booking from an approved payment over a `CANCELLED` one. From
+   * inside the transaction both are "the guarded update matched nothing"; only
+   * one of them owes somebody a refund.
+   */
+  it.each(['CONFIRMED', 'CANCELLED', 'EXPIRED'])(
+    'carries %s back with notPending from confirmWithPayment',
+    async (status) => {
+      const tx = createTx();
+      tx.booking.updateMany.mockResolvedValue({ count: 0 });
+      tx.booking.findUnique.mockResolvedValue({ status });
+      const { db } = createDb(tx);
+
+      expect(
+        await new PrismaPaymentRepository(db).confirmWithPayment({
+          paymentId: PAYMENT,
+          bookingId: BOOKING,
+          gatewayPaymentId: 'mp-1',
+          approvedAt: NOW,
+        })
+      ).toEqual({ outcome: 'notPending', bookingStatus: status });
+    }
+  );
+
+  it('reports MISSING when the booking vanished entirely', async () => {
+    const tx = createTx();
+    tx.booking.updateMany.mockResolvedValue({ count: 0 });
+    tx.booking.findUnique.mockResolvedValue(null);
+    const { db } = createDb(tx);
+
+    expect(
+      await new PrismaPaymentRepository(db).confirmWithPayment({
+        paymentId: PAYMENT,
+        bookingId: BOOKING,
+        gatewayPaymentId: 'mp-1',
+        approvedAt: NOW,
+      })
+    ).toEqual({ outcome: 'notPending', bookingStatus: 'MISSING' });
+  });
+
+  it('carries the status back from the late path too', async () => {
+    const tx = createTx();
+    tx.booking.updateMany.mockResolvedValue({ count: 0 });
+    tx.booking.findUnique.mockResolvedValue({ status: 'CANCELLED' });
+    const { db } = createDb(tx);
+
+    expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
+      outcome: 'notPending',
+      bookingStatus: 'CANCELLED',
+    });
+  });
+});
+
+describe('the late path does not let a second gateway id rewrite the first', () => {
+  const LATE = {
+    paymentId: PAYMENT,
+    bookingId: BOOKING,
+    barberId: 'barber-1',
+    startTime: new Date('2026-08-19T14:00:00.000Z'),
+    endTime: new Date('2026-08-19T14:30:00.000Z'),
+    gatewayPaymentId: 'mp-2',
+    approvedAt: NOW,
+    now: NOW,
+  };
+
+  /**
+   * This is the one path that writes the payment before checking the booking,
+   * so the booking's guard cannot protect it. Mercado Pago permits several
+   * payment attempts against one preference, and a second approved one would
+   * otherwise overwrite the id and the instant of a payment already approved —
+   * without tripping the unique constraint, because the new id is new.
+   */
+  it('guards its own write on mpPaymentId being null', async () => {
+    const { db, tx } = createDb();
+
+    await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE);
+
+    expect(tx.payment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: PAYMENT, mpPaymentId: null } })
+    );
+  });
+
+  it('reports alreadyProcessed rather than rewriting an approved payment', async () => {
+    const tx = createTx();
+    tx.payment.updateMany.mockResolvedValue({ count: 0 });
+    const { db } = createDb(tx);
+
+    expect(await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE)).toEqual({
+      outcome: 'alreadyProcessed',
+    });
+    expect(tx.booking.updateMany).not.toHaveBeenCalled();
   });
 });

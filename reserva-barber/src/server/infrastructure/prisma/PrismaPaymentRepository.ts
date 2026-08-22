@@ -286,7 +286,16 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         });
 
         if (confirmed.count === 0) {
-          return { outcome: 'notPending' as const };
+          // **The status it actually found travels with the refusal.** A
+          // booking already `CONFIRMED` is a duplicate delivery; one that is
+          // `CANCELLED` or `EXPIRED` is money taken for an appointment that no
+          // longer exists. From here the two updates look identical, and only
+          // the caller can act on the difference.
+          const current = await tx.booking.findUnique({
+            where: { id: input.bookingId },
+            select: { status: true },
+          });
+          return { outcome: 'notPending' as const, bookingStatus: current?.status ?? 'MISSING' };
         }
 
         await tx.payment.update({
@@ -385,16 +394,30 @@ export class PrismaPaymentRepository implements IPaymentRepository {
             )
         );
 
-        // The charge happened. Recorded before the branch so both endings
-        // leave the same truth about the money.
-        await tx.payment.update({
-          where: { id: input.paymentId },
+        // The charge happened. Recorded before the branch so both endings leave
+        // the same truth about the money.
+        //
+        // **Guarded on `mpPaymentId: null`, and that guard is not decoration.**
+        // This is the one path that writes the payment before checking the
+        // booking, so the booking's guard cannot protect it. Without this, a
+        // second notification carrying a *different* gateway id — Mercado Pago
+        // permits several payment attempts against one preference — would
+        // overwrite the id and the instant of a payment already approved, and
+        // the unique constraint would not fire because the new id is new. The
+        // first approval is the one that happened; later ones do not get to
+        // rewrite it.
+        const approved = await tx.payment.updateMany({
+          where: { id: input.paymentId, mpPaymentId: null },
           data: {
             status: 'APPROVED',
             mpPaymentId: input.gatewayPaymentId,
             approvedAt: input.approvedAt,
           },
         });
+
+        if (approved.count === 0) {
+          return { outcome: 'alreadyProcessed' as const };
+        }
 
         if (taken) {
           return { outcome: 'slotLost' as const };
@@ -405,9 +428,15 @@ export class PrismaPaymentRepository implements IPaymentRepository {
           data: { status: 'CONFIRMED', holdExpiresAt: null },
         });
 
-        return confirmed.count === 0
-          ? { outcome: 'notPending' as const }
-          : { outcome: 'confirmed' as const };
+        if (confirmed.count === 0) {
+          const current = await tx.booking.findUnique({
+            where: { id: input.bookingId },
+            select: { status: true },
+          });
+          return { outcome: 'notPending' as const, bookingStatus: current?.status ?? 'MISSING' };
+        }
+
+        return { outcome: 'confirmed' as const };
       }, TRANSACTION_OPTIONS);
     } catch (error) {
       if (violates(error, GATEWAY_ID_CONSTRAINT)) {

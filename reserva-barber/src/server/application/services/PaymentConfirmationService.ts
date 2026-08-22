@@ -40,6 +40,12 @@ export type ConfirmationOutcome =
   | 'confirmed'
   /** Approved after the hold lapsed, and the slot had been resold. */
   | 'slotLost'
+  /**
+   * Approved against a booking that is no longer bookable — cancelled, or
+   * expired. Distinct from `slotLost`: nobody took the slot, the appointment
+   * itself went away. Same consequence, and it owes a refund just as loudly.
+   */
+  | 'bookingUnavailable'
   /** The `ref` resolved nothing. Indistinguishable, to the caller, from below. */
   | 'unresolved'
   /** Mercado Pago does not have this payment. The shape a forgery takes. */
@@ -259,17 +265,50 @@ export class PaymentConfirmationService {
         });
         return { outcome: 'slotLost' };
 
-      case 'notPending':
       case 'alreadyProcessed':
-        // The guarded update matched nothing, or the unique gateway id refused
-        // the write. Both are the idempotency mechanism working.
         this.logger.info('Notification already handled', {
           operation: 'payment.confirm',
           bookingId: record.bookingId,
           paymentId: record.paymentId,
-          reason: result.outcome,
         });
         return { outcome: 'alreadyProcessed' };
+
+      case 'notPending': {
+        /**
+         * **Two situations reach here and only one of them is routine.**
+         *
+         * A booking already `CONFIRMED` is a duplicate delivery — the
+         * idempotency mechanism doing its job, worth an `info` and nothing
+         * more. A booking that is `CANCELLED` or `EXPIRED` is the opposite:
+         * an approved payment against an appointment that no longer exists,
+         * which is materially the same as the slot-lost branch and owes
+         * somebody a refund.
+         *
+         * They were collapsed into one `info` line until this was caught in
+         * review. The path is unreachable today — nothing writes `CANCELLED`
+         * until C1/C2 and nothing writes `EXPIRED` until B7 — which is exactly
+         * why it had to be decided now rather than discovered by whichever of
+         * those ships first.
+         */
+        if (result.bookingStatus === 'CONFIRMED') {
+          this.logger.info('Notification already handled', {
+            operation: 'payment.confirm',
+            bookingId: record.bookingId,
+            paymentId: record.paymentId,
+          });
+          return { outcome: 'alreadyProcessed' };
+        }
+
+        this.logger.error('Payment approved for a booking that no longer exists', {
+          operation: 'payment.confirm',
+          bookingId: record.bookingId,
+          paymentId: record.paymentId,
+          gatewayPaymentId: payment.id,
+          bookingStatus: result.bookingStatus,
+          amount: record.amount,
+        });
+        return { outcome: 'bookingUnavailable' };
+      }
     }
   }
 }
