@@ -1102,6 +1102,18 @@ test account, and a decision about what the panel says when the marker is merely
 - **Trigger:** unchanged in substance — the first story or session that can check the nickname marker
   against several real test accounts. The place it belongs is now built and waiting for it.
 
+**The risk INVERTED on 2026-08-22, and this entry is now about the opposite failure.** Franco replaced
+the stored credential with his **production** one while closing B5. The booking flow is deployed and
+public, so **real money can now move**: anyone who reaches the shop's link can be charged for real,
+and there is still no warning anywhere in the dashboard saying which environment is configured.
+
+The entry's original fear was an owner shipping test credentials and taking bookings that never
+charge. The live fear is now its mirror — an owner *testing* against a production credential and
+charging somebody by accident — and **the same missing signal causes both**. Neither direction is
+detectable today, because Mercado Pago stopped issuing the `TEST-` prefix and `APP_USR-` says
+nothing. That is what makes this entry worth more than it looks: it is not a nicety about a label,
+it is the only thing that would tell an owner whether the next tap on "Pagar seña" moves money.
+
 **Re-costed by B5 (2026-08-19) — the consequence arrived.** Every previous costing of this entry could
 only describe a configuration curiosity, because nothing in the product charged anything. B5 confirms
 appointments automatically on an approved payment. **An owner who saved `TEST-` credentials now has
@@ -1748,6 +1760,8 @@ Rejected: client-side polling (needs JavaScript, which this flow does not assume
 response until the notification lands (Mercado Pago's timing is not ours to wait on, and it would
 pin a Worker request on a third party).
 
-- **Trigger:** before this flow is put in front of real clients, or **N1**, which sends the
-  confirmation email and is the other half of "the client learns their turn is real" — whichever
-  comes first.
+- **Trigger:** **N1**, decided by Franco on 2026-08-22 rather than left as "whichever comes first".
+  N1 sends the confirmation email and is the other half of the same problem — the client learning
+  that their turn is real. Solving the page refresh and the email together means deciding once how
+  this product tells somebody their appointment exists, instead of twice in two stories with two
+  different answers. B5 therefore closes with this open, deliberately.
