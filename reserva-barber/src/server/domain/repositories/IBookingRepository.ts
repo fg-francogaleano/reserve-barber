@@ -1,6 +1,7 @@
 import type { Interval } from '@/server/domain/models/availability';
 import type { LocalDate } from '@/server/domain/models/bookingCalendar';
 import type { WorkingWindowMinutes } from './IBarberAvailabilityRepository';
+import type { PaymentStatus } from '../models/Payment';
 
 /**
  * The booking a successful hold produces, as the flow needs it.
@@ -84,6 +85,55 @@ export interface BookingByToken {
   readonly barberDisplayName: string;
   readonly serviceName: string;
   readonly locationName: string;
+  /**
+   * The status of this booking's live payment, or `null` if it has none (B5).
+   *
+   * Enough to tell "nothing paid" from "a checkout is open" from "the money
+   * moved", which is what the page's states turn on.
+   */
+  readonly paymentStatus: PaymentStatus | null;
+  /**
+   * Whether that payment has a checkout the client can return to.
+   *
+   * **A boolean, deliberately, and not the URL.** The page never renders the
+   * checkout address: resuming goes back through the initiation endpoint, which
+   * is already idempotent and answers with the existing checkout. Putting the
+   * URL in the page would be a second path to the same place, and the one that
+   * cannot be re-decided if the payment turns out to be stale.
+   *
+   * `false` with a `PENDING` payment means a preference creation that never
+   * finished — the client gets the ordinary button and the initiation retries.
+   */
+  readonly hasCheckout: boolean;
+}
+
+/**
+ * A booking as the payment initiation path reads it, by cancellation token.
+ *
+ * **A separate projection from `BookingByToken`, not an extension of it.** This
+ * one carries `ownerId` — the initiation needs it to reach that owner's Mercado
+ * Pago credential — and B2 established that the owner id never reaches a page.
+ * Widening the page's projection to serve an API route would hand every render
+ * a field it must not have, so the two are cut apart and neither can grow into
+ * the other by accident.
+ *
+ * `publicSlug` is here for the same reason in the opposite direction: the
+ * return URL Mercado Pago sends the client back to is built from the booking's
+ * own shop, never from anything the request supplied, so a submitted slug
+ * cannot steer where a payment returns to.
+ *
+ * It carries no client name, email or phone. The initiation renders nobody.
+ */
+export interface BookingForPaymentInitiation {
+  readonly id: string;
+  readonly status: string;
+  readonly startTime: Date;
+  readonly endTime: Date;
+  readonly holdExpiresAt: Date | null;
+  readonly depositAmount: string;
+  readonly serviceName: string;
+  readonly ownerId: string;
+  readonly publicSlug: string;
 }
 
 /**
@@ -150,6 +200,16 @@ export interface IBookingRepository {
    * it cannot select are the ones it cannot render.
    */
   findByCancellationToken(token: string): Promise<BookingByToken | null>;
+
+  /**
+   * The booking a payment is about to be opened for, by cancellation token.
+   *
+   * Separate from `findByCancellationToken` because it answers a different
+   * question for a different caller — see `BookingForPaymentInitiation`. The
+   * two must not be merged: one feeds a render and the other feeds a charge,
+   * and each carries exactly the columns its side is allowed to know.
+   */
+  findForPaymentInitiation(token: string): Promise<BookingForPaymentInitiation | null>;
 }
 
 /** Re-exported so the transaction's re-assertion has one vocabulary for windows. */

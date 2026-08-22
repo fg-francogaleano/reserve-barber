@@ -62,7 +62,8 @@ export const ModelName = {
   TimeOff: 'TimeOff',
   PaymentConfig: 'PaymentConfig',
   Client: 'Client',
-  Booking: 'Booking'
+  Booking: 'Booking',
+  Payment: 'Payment'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -244,6 +245,23 @@ export const BookingScalarFieldEnum = {
 } as const
 
 export type BookingScalarFieldEnum = (typeof BookingScalarFieldEnum)[keyof typeof BookingScalarFieldEnum]
+
+
+export const PaymentScalarFieldEnum = {
+  id: 'id',
+  bookingId: 'bookingId',
+  method: 'method',
+  amount: 'amount',
+  status: 'status',
+  mpPaymentId: 'mpPaymentId',
+  mpPreferenceId: 'mpPreferenceId',
+  mpInitPoint: 'mpInitPoint',
+  approvedAt: 'approvedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PaymentScalarFieldEnum = (typeof PaymentScalarFieldEnum)[keyof typeof PaymentScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -689,6 +689,14 @@ loop and does not defeat a distributed one. That limitation is tracked separatel
   rate-limiting rule added for T47/T55 — at which point covering the action endpoints costs almost
   nothing extra, because the rule is already there.
 
+**Re-costed by B5 (2026-08-19).** The unmetered surface is now larger in a way this entry's title no
+longer describes. B5 adds **two** unauthenticated public endpoints — the payment initiation write and
+the Mercado Pago notification handler — and the second is the first endpoint in this project that a
+**third party** calls on a schedule we do not control. Neither is a Server Action, so neither is
+covered by the wording here, but both share the exposure: no metering, no attribution, no per-owner
+accounting. The notification handler additionally triggers an **outbound** call, which is why B5
+orders its cheap `ref` lookup first (see T60) — an unresolvable notification must never spend one.
+
 ### T48 — The public profile has no loading state, because a skeleton costs its HTTP statuses
 **Status:** accepted — measured trade-off, statuses chosen over the skeleton · **Effort:** unknown; needs a way to stream a shell without committing the status early · **Added:** B1 (2026-08-15)
 
@@ -794,6 +802,14 @@ The bet itself is unchanged: still no real traffic, still deliberate. What chang
   **any crawler observed sweeping the `reservar` parameter space**, or any observed burst on
   `POST /api/bookings`. Do this together with **T55** — it is one rule.
 
+**Re-costed by B5 (2026-08-19), and one clause is now wrong.** This entry is written about a surface
+whose worst case is cost. B5 adds a public endpoint that a third party calls, and one whose handler
+performs an **outbound HTTPS request** to Mercado Pago per accepted notification. The amplification
+shape is therefore no longer "our database per request" but "our database *and* the owner's Mercado
+Pago rate limit per request". A Cloudflare rate-limiting rule — still the mitigation this entry and
+T55 both defer to, still ~15 min and no code — now covers three surfaces rather than two, which makes
+it cheaper per unit of risk than at any previous costing.
+
 ### T49 — The public 404 page renders an empty body without JavaScript
 **Status:** accepted · **Effort:** unknown — see the cause · **Added:** B2 (2026-08-15, runtime verification) · **Origin:** B1
 
@@ -897,7 +913,7 @@ and surfacing in another is exactly what gets lost.
 - **Trigger:** **M6.** Anyone implementing service deactivation must check all three consumers above,
   starting with `PaymentConfigService.previewPolicy`.
 
-### T45 — `MIN_DEPOSIT_AMOUNT` is a placeholder, not a measured limit
+### T45 — ~~`MIN_DEPOSIT_AMOUNT` is a placeholder, not a measured limit~~ — **CLOSED (B5, 2026-08-19)**
 **Status:** accepted · **Effort:** ~30 min (one lookup, one constant) · **Added:** PC3 (2026-08-15)
 
 `src/server/domain/models/depositPolicy.ts` floors every computed deposit at `MIN_DEPOSIT_AMOUNT`,
@@ -918,9 +934,42 @@ rejection it was supposed to prevent.
 The blast radius is small today: it only binds on services cheap enough for a percentage to compute
 under a peso, and the owner is warned by name at configuration time when that happens.
 
-- **Trigger:** **B5**, which is the first story to call Mercado Pago with a real charge and therefore
-  the first in a position to know. Confirm the minimum, update the constant, and drop the
-  "provisional" wording from all three places in the same change.
+- ~~**Trigger:** **B5**, which is the first story to call Mercado Pago with a real charge and therefore
+  the first in a position to know.~~ — **fired, and answered.**
+
+**Closed by B5 on 2026-08-19. `MIN_DEPOSIT_AMOUNT` is now `15.00` ARS, measured.**
+
+Read from Mercado Pago's `/v1/payment_methods` against a real Argentine account. Sixteen active
+methods, in four bands:
+
+| band | `min_allowed_amount` |
+| --- | --- |
+| prepaid cards (Visa, Mastercard, Cabal) | 1 ARS |
+| debit, and Visa / Mastercard / Amex credit | 3 ARS |
+| Diners, Naranja, Argencard, Cabal credit | 15 ARS |
+| Rapipago, Pago Fácil (cash tickets) | 50 ARS |
+
+**15 was chosen because it is the point at which every card method works**, and cards are what this
+product charges with. Both alternatives were rejected in writing. **1** is the literal floor — below
+it nobody can pay at all — and it satisfies the letter of this entry while missing its purpose: a
+two-peso deposit is payable only by prepaid card, so a client with an ordinary Visa reaches the
+checkout and finds nothing usable, which is this entry's failure arriving two pesos later. **50**
+would raise a configured deposit twenty-five times over in order to preserve cash methods the
+product has never offered.
+
+**How the number was reached matters as much as the number**, because the first attempt was wrong in
+the direction this entry warns about. The gate originally created preferences at descending amounts
+and reported the smallest accepted — and accepted every one, down to **0.01 ARS**. A preference is a
+checkout *link*; Mercado Pago validates the charge when somebody pays, not when the link is made. The
+probe had found nothing, and `0.01` would have closed this entry with a figure that looked measured
+and was not — the exact failure described above, committed by the story sent to fix it. The result
+was too clean to believe, which is the only reason it was caught.
+
+Updated in `src/server/domain/models/depositPolicy.ts`, `docs/data-model.md` §14, and here. Pinned by
+a test that asserts the value rather than only its shape, so it cannot drift back to a guess quietly.
+
+**One consequence survives, as `T61`:** a deposit between 15 and 50 ARS is payable but silently
+offers the client fewer payment methods than a larger one, and nothing says so.
 
 ### T6 — Platform decision: Cloudflare vs Vercel
 **Status:** **decided — stay on Cloudflare**, revisit on trigger
@@ -1052,6 +1101,44 @@ test account, and a decision about what the panel says when the marker is merely
 
 - **Trigger:** unchanged in substance — the first story or session that can check the nickname marker
   against several real test accounts. The place it belongs is now built and waiting for it.
+
+**The risk INVERTED on 2026-08-22, and this entry is now about the opposite failure.** Franco replaced
+the stored credential with his **production** one while closing B5. The booking flow is deployed and
+public, so **real money can now move**: anyone who reaches the shop's link can be charged for real,
+and there is still no warning anywhere in the dashboard saying which environment is configured.
+
+The entry's original fear was an owner shipping test credentials and taking bookings that never
+charge. The live fear is now its mirror — an owner *testing* against a production credential and
+charging somebody by accident — and **the same missing signal causes both**. Neither direction is
+detectable today, because Mercado Pago stopped issuing the `TEST-` prefix and `APP_USR-` says
+nothing. That is what makes this entry worth more than it looks: it is not a nicety about a label,
+it is the only thing that would tell an owner whether the next tap on "Pagar seña" moves money.
+
+**Re-costed by B5 (2026-08-19) — the consequence arrived.** Every previous costing of this entry could
+only describe a configuration curiosity, because nothing in the product charged anything. B5 confirms
+appointments automatically on an approved payment. **An owner who saved `TEST-` credentials now has
+real clients completing a checkout that moves no money, against bookings the system marks `CONFIRMED`
+and the barber will hold time for.** The blast radius moved from "a label in the dashboard is unhelpful"
+to "the agenda fills with appointments nobody paid for", and the owner has no surface that would say so.
+
+**And the fix is NOT unchanged — an earlier version of this paragraph said it was, and that was
+wrong.** It leaned on `MercadoPagoView.environment` as though it were a working signal. It is not:
+`credentialEnvironment` only ever returns `'test'` for the legacy `TEST-` prefix, and Mercado Pago
+no longer issues that form — confirmed again while running B5's gate, where a current test credential
+arrives as `APP_USR-` exactly like a production one. So the marker this entry's remedy was going to
+read **can never fire on a credential issued today**, and any banner built on it would be dead code
+that looks like protection.
+
+Whatever closes this has to come from somewhere else. Three candidates, none of them free:
+ask Mercado Pago `/users/me` and compare the account against a known test-user list; have the owner
+declare which environment they configured and store the declaration; or detect it after the fact,
+when a payment approves for an amount and card that could only be sandbox. The first is the only one
+that does not rely on the owner being right, and it is undocumented territory — the same endpoint
+T43 already records as decoration rather than authority.
+
+- **Trigger:** unchanged in substance, but the effort is no longer ~2 h and the approach is undecided.
+  Re-estimate before starting: this is now a research task with a small implementation, not the
+  reverse.
 
 ### T38 — No key-rotation or re-encryption tooling
 **Status:** accepted · **Effort:** ~3 h · **Added:** PC2 (2026-08-13)
@@ -1427,6 +1514,19 @@ rule**, which is edge-side, shared across isolates, and covers the read surface 
 - **Trigger:** any observed request spike on the public surface, or the first Cloudflare
   rate-limiting rule added for T47 — the two are the same work and should be done together.
 
+**Re-costed by B5 (2026-08-19), with a measurement that changes how this is verified.** B5's payment
+initiation endpoint reuses `BookingThrottle`, so the per-isolate limitation described here applies to
+it unchanged. Two additions:
+
+- **The notification endpoint is deliberately NOT throttled.** Throttling a gateway's retries would
+  convert a transient failure into a permanent one, because a dropped notification is not re-sent
+  forever. Its protection is the cheap `ref` rejection and idempotency, not a rate limit.
+- **This throttle cannot be verified end-to-end in production, and B4 measured why.** `cf-connecting-ip`
+  **cannot be spoofed against real Cloudflare** — Cloudflare sets and overwrites the header — so a
+  multi-origin test from one machine trips Cloudflare's own edge protection with a `403` before the
+  application throttle is ever consulted. Route tests and the preview run are where this is provable.
+  Anyone re-attempting the production check will otherwise record a false failure, as B4's first pass did.
+
 ### T56 — Guest personal data accumulates with no deletion path
 **Status:** accepted · **Effort:** unknown (a policy decision before an implementation) · **Added:**
 B4 (2026-08-17)
@@ -1551,3 +1651,117 @@ that the `alreadyHeld` path reaches that state too, not only a client returning 
 - **Trigger:** **B5 task 9.2**, before it merges. Verify the confirmed state is reached by a *repeat
   submission* as well as by a successful return from Mercado Pago; the two paths arrive at the same
   page from opposite directions, and only the second is obvious.
+
+### T60 — The Mercado Pago webhook is authenticated by re-fetch, not by signature
+**Status:** accepted — **deliberate, and the alternative is worse than the gap** · **Effort:** ~half a
+day (column, cipher purpose, PC2 field, handler branch) · **Added:** B5 (2026-08-19)
+
+`/api/webhooks/mercadopago` performs **no signature validation**. Mercado Pago's `x-signature` is an
+HMAC keyed by a **per-integration webhook secret** issued in their dashboard, and this product is
+multi-tenant against Mercado Pago: every owner brings their own account. Choosing *which* owner's
+secret to validate with requires resolving the notification first, and no such secret is stored.
+
+**What authenticates a notification instead.** The `notification_url` carries `?ref={payment.id}` —
+not a secret, authorizing nothing — which resolves the owner and therefore their access token. The
+handler then re-fetches the payment from `GET /v1/payments/{id}` with **that owner's own token**, and
+verifies `external_reference`, `transaction_amount` and `currency_id` against the stored row before
+any transition.
+
+**This is the stronger of the two checks, which is why the gap is narrow.** A valid signature proves
+only that Mercado Pago sent the bytes. The re-fetch proves the payment exists, is approved, is for the
+right amount, and is bound to our booking — every property the transition actually depends on. An
+attacker cannot forge a payment that the owner's own account will confirm.
+
+**What is actually missing** is cheap rejection of forged traffic. Without a signature, a fabricated
+notification costs one indexed `ref` lookup before it is dropped. That lookup is deliberately ordered
+first, so no outbound Mercado Pago call is ever spent on an unresolvable notification — but the
+endpoint remains unauthenticated and unmetered, in the same family as T47 and T55.
+
+Doing it properly is not a handler change: it needs an encrypted `PaymentConfig.mpWebhookSecret`
+column, a fourth `CredentialPurpose`, a field on PC2's editor with its own verified and unreadable
+states, and a manual dashboard step walked through with every owner. That is a PC2 amendment wearing
+a B5 costume, and `base-standards.md` §1 says one thing at a time.
+
+**A `validateSignature()` that returns `true` when no secret is configured must never be introduced.**
+It reads as protection in every later review while protecting nothing, and it is strictly worse than
+the honest absence recorded here.
+
+- **Trigger:** the first owner who asks for it, **or** forged notification traffic appearing in the
+  logs. B5 logs the ref-unresolved and payment-not-found-at-Mercado-Pago outcomes as distinct causes
+  precisely so that this trigger is observable rather than hypothetical.
+
+### T61 — A low deposit silently removes payment methods, and nothing says so
+**Status:** accepted · **Effort:** ~1–2 h (a band table and a line in the deposit editor) ·
+**Added:** B5 (2026-08-19)
+
+Mercado Pago's payment methods do not share a minimum. Measured against a real Argentine account
+while closing **T45**:
+
+| band | `min_allowed_amount` |
+| --- | --- |
+| prepaid cards | 1 ARS |
+| debit, and Visa / Mastercard / Amex credit | 3 ARS |
+| Diners, Naranja, Argencard, Cabal credit | 15 ARS |
+| Rapipago, Pago Fácil (cash tickets) | 50 ARS |
+
+`MIN_DEPOSIT_AMOUNT` is 15, so every **card** works at any deposit this product will produce. But a
+deposit between **15 and 50 ARS is payable while offering no cash option at all** — Rapipago and
+Pago Fácil simply do not appear at Mercado Pago's checkout, and neither the owner nor the client is
+told why.
+
+**Why this is small today and worth writing down anyway.** A barbershop deposit is realistically a
+few thousand pesos, so the band is unreachable by any sensible configuration. It becomes reachable
+the moment an owner sets a percentage policy against a cheap service — 1% of a 1,500-peso service is
+15 pesos, exactly in the band — and the owner has no way to see that they have quietly excluded
+every client who pays in cash. In Argentina that is not a marginal group.
+
+There is a second, larger version of the same effect: the cash tickets cap at **1,000,000 ARS**
+while cards go to 15,000,000. A deposit above a million loses cash methods from the other end. Out of
+reach for this product, recorded so the table is complete rather than half-remembered.
+
+The fix is not a validation. Refusing a deposit in the band would be wrong — it is a legitimate
+amount and the owner may not care about cash. What is missing is **disclosure**: the deposit editor
+already previews the computed deposit per service (PC3), and that preview is where a line saying
+which payment methods the client will actually be offered belongs.
+
+- **Trigger:** the first owner who asks why clients cannot pay their deposit in cash, **or** B6,
+  which introduces bank transfer as the deliberate answer to "no card" and is the natural place to
+  notice that Mercado Pago's own cash methods were being dropped silently all along.
+
+### T62 — The confirmation moment ends with "please refresh", and that is the normal path
+**Status:** accepted · **Effort:** ~1 h · **Added:** B5 (2026-08-21, observed in runtime verification)
+
+When a client returns from Mercado Pago, the confirmation page reads live state and renders one of
+two things: the booking is `CONFIRMED`, or the notification has not arrived yet and the page says
+**"Estamos confirmando tu pago — actualizá esta página en unos segundos."**
+
+B5 designed that second state as the careful fallback. **Runtime verification showed it is not a
+fallback — it is what nearly every client will see.** The browser redirect from Mercado Pago is a
+direct navigation; the notification is a server-to-server call Mercado Pago makes on its own
+schedule. The redirect wins essentially every time. Measured end to end through a tunnel: the page
+rendered the awaiting state, and the booking was `CONFIRMED` moments later.
+
+So the single most important moment in this product — the one where a client learns whether their
+appointment is real — currently ends with an instruction to refresh. Nothing is wrong; it just reads
+as though nothing happened.
+
+**The page deliberately does not poll**, and that decision stands as written: a spinner implying an
+update that never comes is worse than a plain sentence. What is missing is the update itself.
+
+**The fix that fits this codebase's constraints is a bounded `<meta http-equiv="refresh">` on the
+awaiting state only.** It works with no JavaScript — which the whole public flow requires — and it
+can be bounded without script by carrying an attempt counter in the URL: `?estado=pago-pendiente`
+refreshes once to `&intento=2`, then `&intento=3`, then stops and shows the manual instruction. Three
+attempts over roughly ten seconds covers the ordinary notification delay without hammering the page
+when a notification is never coming. Once the refresh is real, the spinner the current rule forbids
+becomes honest and can be added with it.
+
+Rejected: client-side polling (needs JavaScript, which this flow does not assume) and holding the
+response until the notification lands (Mercado Pago's timing is not ours to wait on, and it would
+pin a Worker request on a third party).
+
+- **Trigger:** **N1**, decided by Franco on 2026-08-22 rather than left as "whichever comes first".
+  N1 sends the confirmation email and is the other half of the same problem — the client learning
+  that their turn is real. Solving the page refresh and the email together means deciding once how
+  this product tells somebody their appointment exists, instead of twice in two stories with two
+  different answers. B5 therefore closes with this open, deliberately.

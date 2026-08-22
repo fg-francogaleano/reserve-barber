@@ -10,7 +10,16 @@ import {
   // the general one, and asking it about an appointment is the same question.
   businessToday as businessDateOf,
 } from '@/server/domain/models/bookingCalendar';
-import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
+import {
+  BOOKING_OUTCOME_PARAM,
+  parsePaymentOutcomeCode,
+} from '@/server/application/booking/bookingOutcome';
+import {
+  resolvePaymentPageState,
+  offersPayment,
+  type PaymentPageState,
+} from '@/server/application/booking/paymentPageState';
+import { PayDepositButton } from '@/components/booking/PayDepositButton';
 import { bookingConfirmationService } from './bookingConfirmationService';
 import { logger } from '@/server/infrastructure/logger';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
@@ -30,30 +39,33 @@ export const metadata: Metadata = {
 
 interface PageProps {
   params: Promise<{ slug: string; token: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 /** Generous, like every other bound on a stranger-supplied value in this flow. */
 const MAX_TOKEN_LENGTH = 128;
 
 /**
- * The hold confirmation.
+ * The hold confirmation, and the payment.
  *
- * **Addressed by `cancellationToken`, not by booking id** (design D10). The
+ * **Addressed by `cancellationToken`, not by booking id** (B4 design D10). The
  * token is already unique and unguessable, is held by exactly this person, and
- * is the same credential the confirmation email will carry — a second
- * view-only secret would be two secrets for one holder.
+ * is the same credential the confirmation email will carry.
  *
- * It renders the appointment, the deposit and the time left on the hold, and
+ * It renders the appointment, the deposit and the state of the payment, and
  * **never the client's email or phone**: the link can be shared or opened on a
  * shared device, and the repository projection that feeds this page does not
  * select those columns, so they cannot appear by accident.
  *
- * It reads live state rather than trusting the redirect that sent the client
- * here, so a hold that lapsed while the page sat open is shown as lapsed
- * rather than counting down toward a slot that is already back on sale.
+ * **It reads live state and the outcome code decides nothing.** The code in the
+ * URL only chooses wording within what the database already says is true — a
+ * forged one cannot produce a confirmation, and a stale one cannot tell someone
+ * their confirmed appointment failed. The precedence is a table in
+ * `resolvePaymentPageState`, not branching here, because precedence is the part
+ * of this page that is easy to get wrong.
  */
-export default async function BookingConfirmationPage({ params }: PageProps) {
-  const { token } = await params;
+export default async function BookingConfirmationPage({ params, searchParams }: PageProps) {
+  const { slug, token } = await params;
 
   if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) {
     notFound();
@@ -73,17 +85,27 @@ export default async function BookingConfirmationPage({ params }: PageProps) {
     notFound();
   }
 
+  const outcome = parsePaymentOutcomeCode((await searchParams)[BOOKING_OUTCOME_PARAM]);
   const now = new Date();
-  const isLive = blocksAvailability(
-    {
-      startTime: booking.startTime,
-      endTime: booking.endTime,
-      status: booking.status as BookingStatus,
-      holdExpiresAt: booking.holdExpiresAt,
-    },
-    now
-  );
 
+  const state = resolvePaymentPageState({
+    bookingStatus: booking.status,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    holdExpiresAt: booking.holdExpiresAt,
+    paymentStatus: booking.paymentStatus,
+    hasCheckout: booking.hasCheckout,
+    outcome,
+    now,
+  });
+
+  /**
+   * Whole minutes, rendered on the server.
+   *
+   * A client-side ticking timer would be a hydration mismatch on the one page
+   * whose entire value is being truthful about time — and it would keep
+   * counting down past a deadline the server already knows has passed.
+   */
   const minutesLeft =
     booking.holdExpiresAt === null
       ? null
@@ -91,15 +113,8 @@ export default async function BookingConfirmationPage({ params }: PageProps) {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        {isLive ? COPY.booking.holdHeading : COPY.booking.holdExpired}
-      </h1>
-
-      {isLive ? (
-        <p className="text-muted-foreground text-sm">{COPY.booking.holdIntro}</p>
-      ) : (
-        <p className="text-muted-foreground text-sm">{COPY.booking.holdExpiredHelp}</p>
-      )}
+      <h1 className="text-2xl font-semibold tracking-tight">{headingFor(state)}</h1>
+      <p className="text-muted-foreground text-sm">{introFor(state)}</p>
 
       <section className="border-border flex flex-col gap-2 rounded-md border p-4">
         <p className="text-lg font-medium break-words">
@@ -122,23 +137,82 @@ export default async function BookingConfirmationPage({ params }: PageProps) {
         <p className="text-xl font-semibold break-words">
           {formatCurrency(booking.depositAmount)}
         </p>
-        {isLive && minutesLeft !== null && (
+        {state === 'holdLiveUnpaid' && minutesLeft !== null && (
           <p className="text-muted-foreground text-sm">
             {COPY.booking.holdExpiresIn(minutesLeft)}
           </p>
         )}
+        {/* The rejection is the one failure where the remaining time is what
+            decides whether trying again is worth attempting. */}
+        {state === 'paymentRejected' && minutesLeft !== null && (
+          <p className="text-muted-foreground text-sm">
+            {COPY.booking.paymentRejectedTimeLeft(minutesLeft)}
+          </p>
+        )}
       </section>
 
-      {/* B5 and B6 own the two ways to pay. Until they ship the page says so
-          plainly rather than ending on a control that goes nowhere — the same
-          disclosure B1 made for the "Reservar" button, now attached to a
-          statement that is finally true. */}
-      {isLive && (
-        <div className="flex flex-col items-center gap-1 text-center">
-          <p className="text-muted-foreground text-sm">{COPY.booking.paymentUnavailable}</p>
-          <p className="text-muted-foreground text-sm">{COPY.booking.paymentUnavailableHelp}</p>
-        </div>
+      {/* Absent, never disabled. Every state below this line means the client
+          has nothing left to do here, and a disabled-looking control would
+          invite a tap that cannot succeed. */}
+      {offersPayment(state) && (
+        <form
+          method="post"
+          action="/api/payments/mercadopago"
+          className="flex flex-col items-center gap-2 text-center"
+        >
+          {/* The token in the body, never in the URL: a fixed path is what lets
+              the deny-by-default guard admit this endpoint by equality, and it
+              keeps a live credential out of access logs. */}
+          <input type="hidden" name="token" value={token} />
+          <input type="hidden" name="slug" value={slug} />
+          <PayDepositButton resuming={state === 'paymentInFlight'} />
+          <p className="text-muted-foreground text-sm">
+            {state === 'paymentInFlight'
+              ? COPY.booking.resumePaymentHelp
+              : COPY.booking.payDepositHelp}
+          </p>
+        </form>
       )}
     </main>
   );
+}
+
+function headingFor(state: PaymentPageState): string {
+  switch (state) {
+    case 'confirmed':
+      return COPY.booking.paymentConfirmed;
+    case 'awaitingConfirmation':
+      return COPY.booking.paymentConfirming;
+    case 'paymentRejected':
+      return COPY.booking.paymentRejected;
+    case 'holdLapsed':
+      return COPY.booking.holdExpired;
+    case 'paidSlotLost':
+      return COPY.booking.paymentPaidSlotLost;
+    case 'paymentsUnavailable':
+      return COPY.booking.paymentsUnavailable;
+    case 'holdLiveUnpaid':
+    case 'paymentInFlight':
+      return COPY.booking.holdHeading;
+  }
+}
+
+function introFor(state: PaymentPageState): string {
+  switch (state) {
+    case 'confirmed':
+      return COPY.booking.paymentConfirmedHelp;
+    case 'awaitingConfirmation':
+      return COPY.booking.paymentConfirmingHelp;
+    case 'paymentRejected':
+      return COPY.booking.paymentRejectedHelp;
+    case 'holdLapsed':
+      return COPY.booking.holdExpiredHelp;
+    case 'paidSlotLost':
+      return COPY.booking.paymentPaidSlotLostHelp;
+    case 'paymentsUnavailable':
+      return COPY.booking.paymentsUnavailableHelp;
+    case 'holdLiveUnpaid':
+    case 'paymentInFlight':
+      return COPY.booking.holdIntro;
+  }
 }

@@ -2,9 +2,7 @@
 
 ## Purpose
 The last step of the public booking flow and the first write a stranger can perform: the client's name, email and phone, and the transaction that turns a chosen time into a held one. A booking is created `PENDING_PAYMENT` with a deadline, its slot removed from sale while the client pays, and the deposit and price snapshotted from the policy in force at that instant. The no-overlap invariant is enforced inside a database transaction under a per-barber lock — never by an application read-then-write — and the rule that decides whether a booking blocks is the same one availability reads, so the flow cannot offer a time it will then refuse. Created by archiving change b4-provisional-booking-hold.
-
 ## Requirements
-
 ### Requirement: The flow ends by collecting the client's contact details
 
 After a valid start time is selected, the flow SHALL render a **client-details step** collecting exactly three fields — name, email and phone — and SHALL NOT collect anything else. There is no account, no password and no optional field: `data-model.md` §10 defines a guest client as these three values and nothing more.
@@ -281,9 +279,9 @@ The throttle SHALL be documented as **best effort**: this runtime offers no shar
 
 On success the client SHALL be redirected to a page addressed by the booking's `cancellationToken`, not by its id. The token is already unique and unguessable, is held by exactly this person, and is the same credential the confirmation email will carry — a second view-only secret would be two secrets for one holder.
 
-That route SHALL send `Referrer-Policy: no-referrer`. Without it, the redirect to an external payment provider that B5 introduces would carry the token to a third party in the `Referer` header.
+That route SHALL send `Referrer-Policy: no-referrer`. Without it, the redirect to Mercado Pago that this flow now performs would carry the token to a third party in the `Referer` header. Because that redirect now exists, the header SHALL be covered by a regression test: removing it would break nothing visible in the payment flow.
 
-The page SHALL show the appointment, the deposit amount and the time remaining on the hold, and SHALL state in Spanish that the slot is held and that payment is not yet available. It SHALL NOT render the client's email or phone back, since the link can be shared or opened on a shared device. It SHALL read the booking's live state rather than trusting the redirect, so a hold that lapsed while the page was open is not shown counting down.
+The page SHALL show the appointment, the deposit amount and the time remaining on the hold. It SHALL offer the client a way to pay that deposit — the payment states are specified in the `payment-mercado-pago` capability — and SHALL NOT state that payment is unavailable, which was true only while no payment path existed. It SHALL NOT render the client's email or phone back, since the link can be shared or opened on a shared device. It SHALL read the booking's live state rather than trusting the redirect, so a hold that lapsed while the page was open is not shown counting down, and a booking confirmed by a notification that arrived while the page sat open is shown as confirmed.
 
 #### Scenario: A successful creation
 - **WHEN** a booking is created
@@ -293,6 +291,10 @@ The page SHALL show the appointment, the deposit amount and the time remaining o
 - **WHEN** the confirmation page is served
 - **THEN** it carries `Referrer-Policy: no-referrer`
 
+#### Scenario: The header is protected by test
+- **WHEN** `Referrer-Policy: no-referrer` is removed from the confirmation route
+- **THEN** a test fails
+
 #### Scenario: Contact details are not echoed
 - **WHEN** the confirmation page renders
 - **THEN** the client's email and phone appear nowhere in the response
@@ -300,6 +302,10 @@ The page SHALL show the appointment, the deposit amount and the time remaining o
 #### Scenario: An unknown token
 - **WHEN** the page is opened with a token that matches no booking
 - **THEN** the response is 404 and discloses nothing about whether the token ever existed
+
+#### Scenario: The page no longer denies that payment is possible
+- **WHEN** the confirmation page renders for a live hold at a shop with Mercado Pago configured
+- **THEN** it offers a payment control and contains no statement that payment is unavailable
 
 ### Requirement: Every outcome has a state, and the error survives without JavaScript
 
@@ -408,3 +414,4 @@ The roadmap forbids starting the payment stories, the expiry job and the receipt
 #### Scenario: The concurrency gate
 - **WHEN** the verification script runs against the live database
 - **THEN** the concurrent-submission, idempotency, lapsed-hold and lock-availability checks all pass and the script exits non-zero if any does not
+

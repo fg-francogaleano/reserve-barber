@@ -105,3 +105,71 @@ export function parseEcho(raw: string | undefined): BookingEcho | null {
     return null;
   }
 }
+
+/**
+ * The payment round trip's own outcome codes (B5).
+ *
+ * A separate set from `BOOKING_OUTCOMES` rather than more members on it. The
+ * booking codes are read by the wizard's steps and these are read by the
+ * confirmation page; one union would let a step render a payment message it has
+ * no state for, and a page render a validation message about a form it does not
+ * contain. Two sets, two `parse` functions, and neither can answer the other's
+ * question.
+ */
+export const PAYMENT_OUTCOMES = [
+  /** Returned from the gateway; the notification has not been processed yet. */
+  'pago-pendiente',
+  /** The gateway reported the payment as rejected. The hold may still be live. */
+  'pago-rechazado',
+  /** The booking is no longer payable — already confirmed, cancelled or expired. */
+  'no-pagable',
+  /** The hold lapsed before the payment was started. */
+  'vencido',
+  /** This shop has not configured Mercado Pago. */
+  'sin-mercadopago',
+  /**
+   * The shop's stored credential exists but cannot be used — unreadable, or
+   * rejected by Mercado Pago. Deliberately ONE code for both: the client's
+   * situation is identical and neither cause is theirs to act on, so splitting
+   * it would only leak which of the owner's problems it is.
+   */
+  'pagos-no-disponibles',
+  /** Mercado Pago was unreachable. The only code that invites an immediate retry. */
+  'reintenta',
+  /** The return landed with no cookie, so the booking could not be identified. */
+  'link-propio',
+] as const;
+
+export type PaymentOutcomeCode = (typeof PAYMENT_OUTCOMES)[number];
+
+export function parsePaymentOutcomeCode(
+  raw: string | string[] | undefined
+): PaymentOutcomeCode | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return PAYMENT_OUTCOMES.includes(value as PaymentOutcomeCode)
+    ? (value as PaymentOutcomeCode)
+    : null;
+}
+
+/**
+ * Carries the cancellation token across the trip to Mercado Pago and back
+ * (design D11).
+ *
+ * The gateway is never told the confirmation page's address, because that
+ * address **is** a credential. So the token waits here instead: httpOnly, so no
+ * script can read it; `SameSite=Lax`, which is both required and sufficient
+ * because the return from Mercado Pago is a top-level cross-site **GET**
+ * navigation — `Strict` would drop it and the client would land nowhere;
+ * scoped to `/b`, so it never accompanies a dashboard or API request.
+ *
+ * This is B4's echo-cookie mechanism, reused rather than reinvented.
+ */
+export const PAYMENT_RETURN_COOKIE = 'rb_payment_return';
+
+/**
+ * Comfortably past the 15-minute hold, because a checkout can outlive it and a
+ * client who paid late must still land on their own page to be told what
+ * happened. Short enough that a shared device does not carry it into another
+ * session.
+ */
+export const PAYMENT_RETURN_MAX_AGE_SECONDS = 3600;

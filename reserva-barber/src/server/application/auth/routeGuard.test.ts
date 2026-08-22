@@ -240,7 +240,12 @@ describe('decideGuardAction', () => {
     // The entry is an EXACT match, never a prefix — opening `/api` as a
     // prefix would admit every future endpoint the moment it is created,
     // including the dashboard's own. These are the negative cases that prove it.
-    it.each(['/api', '/api/', '/api/bookings/', '/api/bookings/anything', '/api/webhooks/mercadopago'])(
+    // `/api/webhooks/mercadopago` was in this list until B5. It was the right
+    // assertion at the time — B4 opened one door and proved the sibling stayed
+    // shut — and B5 is the story that opens it deliberately, with its own
+    // entry and its own negative cases below. Replaced rather than deleted, so
+    // the property this case was testing still has a case testing it.
+    it.each(['/api', '/api/', '/api/bookings/', '/api/bookings/anything', '/api/webhooks'])(
       'should_still_guard_%s_after_the_booking_write_was_opened',
       (pathname) => {
         const action = decideGuardAction({ hasSession: false, pathname, search: '' });
@@ -291,5 +296,106 @@ describe('decideGuardAction', () => {
 
       expect(action).toEqual({ type: 'continue' });
     });
+  });
+});
+
+/**
+ * B5's two public endpoints.
+ *
+ * The positive cases are what makes the story work at all — B4 measured that a
+ * missing entry answers `307` to `/login`, breaking the flow for every guest
+ * with no symptom an authenticated owner would ever see. The negative cases are
+ * what keeps the deny-by-default guarantee: `/api` as a prefix would admit
+ * every future endpoint the moment it is created, including the dashboard's.
+ */
+describe('the payment endpoints are named exactly', () => {
+  const anonymous = { hasSession: false, search: '' };
+
+  it('should_admit_the_payment_initiation_without_a_session', () => {
+    expect(decideGuardAction({ ...anonymous, pathname: '/api/payments/mercadopago' })).toEqual({
+      type: 'continue',
+    });
+  });
+
+  it('should_admit_the_mercado_pago_webhook_without_a_session', () => {
+    expect(decideGuardAction({ ...anonymous, pathname: '/api/webhooks/mercadopago' })).toEqual({
+      type: 'continue',
+    });
+  });
+
+  it.each([
+    '/api',
+    '/api/payments',
+    '/api/webhooks',
+    '/api/payments/mercadopago/extra',
+    '/api/webhooks/mercadopago/extra',
+    '/api/payments/stripe',
+    '/api/webhooks/stripe',
+    '/api/owners',
+  ])('should_protect_%s', (pathname) => {
+    expect(decideGuardAction({ ...anonymous, pathname })).toEqual({
+      type: 'redirect',
+      to: `/login?next=${encodeURIComponent(pathname)}`,
+    });
+  });
+
+  it('should_not_admit_a_payment_path_carrying_an_identifier', () => {
+    // The reason these endpoints take no identifier in their path: equality is
+    // the match, so a tokenised path is simply not admissible. If someone ever
+    // adds one, it fails here rather than silently 307-ing every guest.
+    expect(
+      decideGuardAction({ ...anonymous, pathname: '/api/payments/mercadopago/tok-1' })
+    ).toEqual({
+      type: 'redirect',
+      to: `/login?next=${encodeURIComponent('/api/payments/mercadopago/tok-1')}`,
+    });
+  });
+
+  it('should_still_admit_the_booking_write', () => {
+    // The entry B4 added, re-asserted from this side: adding two more must not
+    // disturb the one already there.
+    expect(decideGuardAction({ ...anonymous, pathname: '/api/bookings' })).toEqual({
+      type: 'continue',
+    });
+  });
+
+  it('should_still_protect_the_barbers_namespace', () => {
+    // The defect a browser check cannot catch, re-asserted because this change
+    // touched the line that decides it.
+    expect(decideGuardAction({ ...anonymous, pathname: '/barberos' })).toEqual({
+      type: 'redirect',
+      to: `/login?next=${encodeURIComponent('/barberos')}`,
+    });
+  });
+});
+
+/**
+ * The `no-referrer` header on the confirmation route, guarded by test.
+ *
+ * B4 added the header for a redirect that did not exist yet: "B5's redirect to
+ * Mercado Pago would carry the token to a third party in the `Referer`
+ * header". B5 is that redirect, so the header is now load-bearing — and
+ * removing it would break **nothing visible**. The payment would still work,
+ * the tests would still pass, and a live cancellation credential would start
+ * arriving at Mercado Pago in a header nobody reads.
+ *
+ * `middleware.ts` applies it to exactly the paths this predicate matches, so
+ * the predicate is what the regression is asserted against.
+ */
+describe('the confirmation route is still the one that suppresses the referrer', () => {
+  it.each([
+    '/b/barberia-don-juan/reserva/tok-1',
+    '/b/barberia-don-juan/reserva/tok-1/',
+    '/b/x/reserva/aVeryLongCancellationTokenValue',
+  ])('matches %s', (pathname) => {
+    expect(isBookingConfirmationRoute(pathname)).toBe(true);
+  });
+
+  it('still matches after the payment routes were added beside it', () => {
+    // The payment landing route sits under the same slug. It must NOT be
+    // treated as the confirmation route — it carries no credential — but its
+    // existence must not stop the confirmation route from being recognised.
+    expect(isBookingConfirmationRoute('/b/barberia-don-juan/pago/retorno')).toBe(false);
+    expect(isBookingConfirmationRoute('/b/barberia-don-juan/reserva/tok-1')).toBe(true);
   });
 });

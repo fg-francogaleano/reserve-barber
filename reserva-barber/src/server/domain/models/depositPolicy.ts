@@ -21,18 +21,45 @@ export interface DepositPolicy {
 /**
  * The smallest deposit worth creating a charge for, as a canonical amount.
  *
- * **This value is provisional.** A computed deposit below a payment gateway's
- * own minimum produces a charge that cannot be created, and the failure lands
- * inside a client's checkout rather than at configuration time — so a floor has
- * to exist. What Mercado Pago's actual minimum is, is a fact this story does
- * not verify.
+ * **Measured, not assumed** (B5, 2026-08-19). Read from Mercado Pago's
+ * `/v1/payment_methods` against a real Argentine account: sixteen active
+ * methods in four bands.
  *
- * **B5 confirms it and updates this constant.** That is the first story to call
- * Mercado Pago with real money and therefore the first in a position to know.
- * Until then, treat this as a placeholder that prevents an obviously
- * uncharageable deposit, not as an established limit (see `docs/tech-debt.md`).
+ * | band                                | `min_allowed_amount` |
+ * | ----------------------------------- | -------------------- |
+ * | prepaid cards                       | 1 ARS                |
+ * | debit, and Visa/Mastercard/Amex     | 3 ARS                |
+ * | Diners, Naranja, Argencard, Cabal   | 15 ARS               |
+ * | Rapipago, Pago Fácil (cash tickets) | 50 ARS               |
+ *
+ * **15 is the point at which every card method works**, and cards are what
+ * this product charges with. The literal floor is 1 — below it nobody can pay
+ * at all — and choosing it would have satisfied the letter of this constant
+ * while missing its purpose: a two-peso deposit is payable only by prepaid
+ * card, so a client holding an ordinary Visa reaches the checkout and finds
+ * nothing they can use. That is exactly the failure this floor exists to
+ * prevent, arriving two pesos later than it used to.
+ *
+ * 50 was rejected as over-reach. It would raise a deposit twenty-five times
+ * over what an owner configured, in order to preserve cash payment methods
+ * this product has never offered or mentioned.
+ *
+ * **The consequence that remains is recorded as `T61`**: a deposit between 15
+ * and 50 ARS is payable, but silently offers the client fewer methods than a
+ * larger one would. The deposit editor does not say so.
+ *
+ * **This floor is derived from Mercado Pago and applied to every payment
+ * method**, including B6's bank transfer, which has no such limit. That is
+ * accepted rather than accidental: one floor is simpler than a per-method rule,
+ * and at these amounts the difference is theoretical.
+ *
+ * How this number was arrived at matters as much as the number. The first probe
+ * created preferences at descending amounts and accepted every one, down to
+ * `0.01` — because a preference is a checkout link and Mercado Pago validates
+ * the charge when somebody pays, not when the link is made. Adopting `0.01`
+ * would have closed `T45` with a figure that looked measured and was not.
  */
-export const MIN_DEPOSIT_AMOUNT = '1.00';
+export const MIN_DEPOSIT_AMOUNT = '15.00';
 
 /**
  * What a client owes to confirm a booking of a service priced `priceAtBooking`.

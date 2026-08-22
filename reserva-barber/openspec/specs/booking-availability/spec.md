@@ -2,9 +2,7 @@
 
 ## Purpose
 The date and the time a client picks after choosing a barber, and the rule that decides which start times exist: the barber's working hours for that weekday, minus every absence, minus every booking whose hold is live, with each candidate sized by the service duration. The grid is five minutes and every candidate is anchored at the start of a free interval, so a cancellation reopens every position it freed. Created by archiving change b3-available-time-slots.
-
 ## Requirements
-
 ### Requirement: Available start times are working hours minus absences minus blocking bookings
 
 For a chosen `(barber, service, business-local date)`, the system SHALL compute available start times as: the barber's working windows for that weekday, minus every absence, minus every blocking booking. A start SHALL be offered only when `[start, start + service.durationMinutes)` lies entirely inside **one** working window and overlaps no absence and no blocking booking.
@@ -377,3 +375,24 @@ The date strip and the slot list SHALL each be a semantic list of controls with 
 #### Scenario: The selected date is programmatic
 - **WHEN** a date is selected
 - **THEN** its selected state is exposed to assistive technology rather than indicated by styling alone
+
+### Requirement: A payment confirmation is a third caller of the blocking rule and of the per-barber lock
+
+A payment confirmation that would place a booking into the calendar after its hold has lapsed SHALL determine whether the slot is still free by calling the shared blocking predicate, and SHALL do so inside a transaction holding **the same per-barber advisory lock the booking write takes**.
+
+The lock binds only code that takes it. The booking write established it; the sweeper and the transfer approval are named as future callers; this is a third, and it is the first that *confirms* an existing booking rather than creating one. A confirmation that skipped the lock could place a booking into a slot a concurrent write is in the middle of taking, which is the same double-booking the write's transaction exists to prevent, arriving from the side nobody watches.
+
+The predicate SHALL NOT be re-expressed for this caller. If the confirming side and the reading side disagreed about which bookings block, the product would confirm an appointment its own availability considers free, or refuse one it considers taken.
+
+#### Scenario: The confirming path takes the lock
+- **WHEN** a lapsed-hold payment confirmation re-checks availability
+- **THEN** the transaction holds the same per-barber advisory lock the booking write takes, acquired before the read
+
+#### Scenario: The confirming path reuses the predicate
+- **WHEN** the confirmation determines whether the slot is free
+- **THEN** it calls the shared blocking function rather than expressing the blocking statuses again
+
+#### Scenario: A concurrent write and a confirmation cannot both win
+- **WHEN** a booking write and a lapsed-hold confirmation contend for the same barber and start time
+- **THEN** exactly one of them results in a booking occupying that slot
+

@@ -23,6 +23,39 @@ export const PUBLIC_PROFILE_ROOT = '/b';
 export const PUBLIC_BOOKING_API = '/api/bookings';
 
 /**
+ * The public payment initiation (B5). Same reasoning as the booking write, and
+ * the same **exact** match — never a prefix.
+ *
+ * **This is why the endpoint takes no identifier in its path.** The comparison
+ * below is `===`, so a route like `/api/payments/{token}/...` could only be
+ * admitted by teaching this guard to match patterns, in the one place where a
+ * loose match is most expensive. The cancellation token travels in the request
+ * body instead, which also keeps a live credential out of access logs.
+ */
+export const PUBLIC_PAYMENT_API = '/api/payments/mercadopago';
+
+/**
+ * The Mercado Pago notification endpoint (B5).
+ *
+ * This is the entry the note above `PUBLIC_BOOKING_API` promised: B4 opened one
+ * door deliberately and recorded that the webhook would need its own. It is
+ * called by a third party with no session and nothing this guard could
+ * authenticate — the handler establishes authenticity itself, by re-fetching
+ * the payment from Mercado Pago with the owner's own access token.
+ *
+ * Exact, like the others. `/api/webhooks` as a prefix would admit every future
+ * provider's endpoint the moment it existed.
+ */
+export const PUBLIC_MP_WEBHOOK = '/api/webhooks/mercadopago';
+
+/** The public API paths, matched by equality and never by prefix. */
+const PUBLIC_API_PATHS: readonly string[] = [
+  PUBLIC_BOOKING_API,
+  PUBLIC_PAYMENT_API,
+  PUBLIC_MP_WEBHOOK,
+];
+
+/**
  * The hold-confirmation namespace: `/b/{slug}/reserva/{cancellationToken}`.
  *
  * Already public by virtue of `/b/**`. It is named separately because its URL
@@ -95,7 +128,7 @@ function isDecodable(pathname: string): boolean {
  * protected the moment it exists rather than when someone remembers to add it
  * to a list.
  *
- * That set holds exactly three entries:
+ * That set holds exactly five entries:
  *
  * 1. **`/login`** — the page an unauthenticated owner is sent to.
  * 2. **`/b/**`** — the public booking namespace (B1 design D1). It is served to
@@ -103,6 +136,16 @@ function isDecodable(pathname: string): boolean {
  *    away from it: the owner checks their own public page by opening it.
  * 3. **`/api/bookings`** (B4 design D1/D2) — the public booking write, an
  *    **exact** match rather than a prefix. See `PUBLIC_BOOKING_API`.
+ * 4. **`/api/payments/mercadopago`** (B5) — the public payment initiation.
+ * 5. **`/api/webhooks/mercadopago`** (B5) — the gateway's notification
+ *    endpoint. No session could authenticate it; the handler establishes
+ *    authenticity itself by re-fetching the payment from Mercado Pago with the
+ *    owner's own access token.
+ *
+ * Entries 3 to 5 are compared with `===` through `PUBLIC_API_PATHS`. **None of
+ * them takes an identifier in its path**, precisely so that equality stays
+ * expressive enough and this guard never needs to match a pattern. That is a
+ * constraint on the endpoints, not a coincidence about them.
  *
  * Permitting a path here does not make any dashboard page, layout or server
  * action reachable through it. `/b/**` is its own route tree outside the
@@ -134,7 +177,7 @@ export function decideGuardAction({
     return { type: 'continue' };
   }
 
-  if (isPublicProfileRoute(pathname) || pathname === PUBLIC_BOOKING_API) {
+  if (isPublicProfileRoute(pathname) || PUBLIC_API_PATHS.includes(pathname)) {
     return { type: 'continue' };
   }
 

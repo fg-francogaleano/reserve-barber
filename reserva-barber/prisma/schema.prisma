@@ -463,20 +463,13 @@ model Booking {
   cancelledAt   DateTime?    @db.Timestamptz(3)
   cancelledBy   CancelledBy?
 
+  /// A list, not a single payment: a rejected attempt does not block a retry,
+  /// so a booking can accumulate several. At most one of them is ever live,
+  /// which is a partial unique index on Payment rather than a rule here.
+  payments Payment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // Serves both sides of this table's life: B3's "which bookings overlap this
-  // range for this barber" read, and B4's transactional no-overlap check. A
-  // partial index on the blocking statuses was considered and rejected as
-  // premature — it would optimize a predicate B7 may still refine.
-  //
-  // The read also needs a LOWER bound on startTime to use this index at both
-  // ends. Measured with EXPLAIN: with only `startTime < rangeEnd`, `endTime`
-  // lands in Filter and the scan walks every earlier row of that barber. The
-  // repository bounds it by MAX_DURATION_MINUTES, which is safe only while that
-  // cap is enforced on write — raise the cap and the read must widen with it.
-  @@index([barberId, startTime])
 
   // THIS TABLE ALSO CARRIES A CHECK CONSTRAINT THAT PRISMA CANNOT DECLARE:
   //
@@ -491,4 +484,110 @@ model Booking {
   // `prisma db push` and any schema-only reasoning will not see it. It lives in
   // the migration; this comment exists so the schema file is not mistaken for
   // the whole truth.
+
+  // Serves both sides of this table's life: B3's "which bookings overlap this
+  // range for this barber" read, and B4's transactional no-overlap check. A
+  // partial index on the blocking statuses was considered and rejected as
+  // premature — it would optimize a predicate B7 may still refine.
+  //
+  // The read also needs a LOWER bound on startTime to use this index at both
+  // ends. Measured with EXPLAIN: with only `startTime < rangeEnd`, `endTime`
+  // lands in Filter and the scan walks every earlier row of that barber. The
+  // repository bounds it by MAX_DURATION_MINUTES, which is safe only while that
+  // cap is enforced on write — raise the cap and the read must widen with it.
+  @@index([barberId, startTime])
+}
+
+/// How a deposit was paid. `BANK_TRANSFER` exists from this migration even
+/// though B6 is what writes it: an enum is cheaper to declare whole than to
+/// alter later, and a two-member enum with one live member is honest about the
+/// design rather than about today's code.
+enum PaymentMethod {
+  MERCADO_PAGO
+  BANK_TRANSFER
+}
+
+/// A payment's own lifecycle, which is NOT the booking's.
+///
+/// `APPROVED` does not imply the booking is `CONFIRMED`. The late-payment case
+/// produces exactly that pair: the hold lapsed, the slot was resold, and the
+/// charge nonetheless happened. Recording it as `REJECTED` would hide real
+/// money from the owner's accounting, so income counters must join through the
+/// booking's status rather than counting approved payments (data-model.md §12).
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Payment {
+  id        String  @id @default(cuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  method PaymentMethod
+
+  /// Copied from `Booking.depositAmount` at creation, never recomputed. The
+  /// webhook compares Mercado Pago's reported `transaction_amount` against THIS
+  /// column, so an owner editing their deposit policy mid-checkout cannot make
+  /// a correct payment look wrong.
+  ///
+  /// Explicit precision and scale, NEVER Prisma's default Decimal(65,30), per
+  /// the convention Service.price established. It crosses the repository
+  /// boundary as a canonical string: the driver returns a stored 2000.50 as
+  /// 2000.5, and integer-cent arithmetic then reads the lone 5 as five
+  /// centavos (measured in PC3).
+  amount Decimal       @db.Decimal(12, 2)
+  status PaymentStatus @default(PENDING)
+
+  /// **Unique because it IS the webhook's idempotency guarantee.** Duplicate
+  /// delivery is normal operation for this gateway — it retries, sends several
+  /// topics per payment, and can deliver out of order. Resting idempotency on a
+  /// prior read instead would let two concurrent deliveries both pass it. The
+  /// violation is translated as already-processed, qualified on the constraint
+  /// (T15 is the defect that happens when it is not).
+  mpPaymentId    String? @unique
+  mpPreferenceId String?
+
+  /// Where to send the client to pay — Mercado Pago's `init_point`, stored
+  /// rather than reconstructed.
+  ///
+  /// A repeat submission must answer with the *same* checkout rather than
+  /// creating a second preference, which means the URL has to survive the first
+  /// request. The two alternatives are both worse: rebuilding it from
+  /// `mpPreferenceId` depends on a redirect URL Mercado Pago does not document,
+  /// and re-fetching the preference spends a round trip on a path that is
+  /// already an owner-facing wait and can fail — leaving a double-tap in a worse
+  /// state than the first tap.
+  ///
+  /// Nullable because the row is written *before* the preference exists: the
+  /// `notification_url` has to carry this row's own id, so the payment is
+  /// created first and the URL attached after. A live payment with a null
+  /// `mpInitPoint` is a preference creation that did not finish, and it is
+  /// retried rather than treated as a block.
+  mpInitPoint String?
+
+  /// Zone-aware, like every instant compared against a human's clock.
+  approvedAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // THIS TABLE ALSO CARRIES AN INDEX PRISMA CANNOT DECLARE:
+  //
+  //   CREATE UNIQUE INDEX "Payment_one_live_per_booking"
+  //     ON "Payment" ("bookingId") WHERE status <> 'REJECTED';
+  //
+  // Added in migration 20260819_add_payment. It is what actually guarantees
+  // "at most one live payment per booking": two concurrent taps on the payment
+  // control each observe no existing payment, so handler logic alone cannot.
+  // A REJECTED payment deliberately does not block a retry.
+  //
+  // `prisma db push` and any schema-only reasoning will not see it. It lives in
+  // the migration; this comment exists so the schema file is not mistaken for
+  // the whole truth — the same note Booking carries for its hold constraint.
+
+  // The initiation path and the confirmation page ask by booking; the webhook
+  // asks by `id` (the `ref`) or by `mpPaymentId`, both already unique.
+  @@index([bookingId])
 }

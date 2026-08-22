@@ -189,7 +189,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const response = NextResponse.redirect(new URL(confirmation, request.url), 303);
         // The echo has served its purpose; a stale one would repopulate the
         // form on a later visit with data from an attempt long finished.
-        response.cookies.delete(BOOKING_ECHO_COOKIE);
+        //
+        // **The path is required.** This cookie is set with `path=/b`, and a
+        // delete at the default `/` emits a `Set-Cookie` that matches nothing
+        // — so the clear was a no-op and the echo survived its full lifetime.
+        // Found in B5 while reading the preview's response headers on the
+        // payment return cookie, which had the identical defect.
+        response.cookies.delete({ name: BOOKING_ECHO_COOKIE, path: '/b' });
         return response;
       }
 
