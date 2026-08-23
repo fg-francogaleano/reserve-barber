@@ -1,4 +1,5 @@
 import type {
+  CommitTransferResult,
   ConfirmPaymentResult,
   LateConfirmResult,
   CreatePaymentResult,
@@ -6,10 +7,14 @@ import type {
   PaymentForNotification,
   PaymentRecord,
 } from '@/server/domain/repositories/IPaymentRepository';
-import type { PaymentStatus } from '@/server/domain/models/Payment';
+import type { PaymentMethod, PaymentStatus } from '@/server/domain/models/Payment';
 // The blocking rule has one home, and the late-payment re-check calls it rather
 // than expressing the statuses again in SQL (booking-availability spec).
-import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
+import {
+  blocksAvailability,
+  transferHoldExpiresAtFor,
+  type BookingStatus,
+} from '@/server/domain/models/Booking';
 import { overlaps } from '@/server/domain/models/availability';
 import { MAX_DURATION_MINUTES } from '@/server/domain/models/slotGranularity';
 import { toCanonicalDecimal } from './canonicalDecimal';
@@ -84,6 +89,7 @@ function violates(error: unknown, expected: string[]): boolean {
 const PAYMENT_SELECT = {
   id: true,
   bookingId: true,
+  method: true,
   status: true,
   amount: true,
   mpPreferenceId: true,
@@ -94,6 +100,7 @@ const PAYMENT_SELECT = {
 interface PaymentRow {
   id: string;
   bookingId: string;
+  method: string;
   status: string;
   amount: unknown;
   mpPreferenceId: string | null;
@@ -105,6 +112,7 @@ function toRecord(row: PaymentRow): PaymentRecord {
   return {
     id: row.id,
     bookingId: row.bookingId,
+    method: row.method as PaymentMethod,
     status: row.status as PaymentStatus,
     // Converted here and nowhere above: the driver returns a stored 5000.50 as
     // 5000.5, and integer-cent arithmetic reads the lone 5 as five centavos.
@@ -129,6 +137,135 @@ const TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 10_000 } as const;
 
 export class PrismaPaymentRepository implements IPaymentRepository {
   constructor(private readonly db: PrismaClient) {}
+
+  /**
+   * Opens a bank-transfer payment and extends the hold, in one transaction.
+   *
+   * **No advisory lock.** Nothing here changes whether the booking blocks — it
+   * is `PENDING_PAYMENT` on both sides of this write — so no slot is being
+   * taken and there is no race to serialize. `attachReceipt` and the owner's
+   * approval do take it, because both move a booking between blocking states.
+   */
+  async commitBankTransfer(input: {
+    bookingId: string;
+    amount: string;
+    startTime: Date;
+    now: Date;
+  }): Promise<CommitTransferResult> {
+    try {
+      return await this.db.$transaction(async (tx) => {
+        const booking = await tx.booking.findUnique({
+          where: { id: input.bookingId },
+          select: { status: true, holdExpiresAt: true, startTime: true, endTime: true },
+        });
+
+        if (booking === null) {
+          return { outcome: 'notPending' as const, bookingStatus: 'MISSING' };
+        }
+
+        if (booking.status !== 'PENDING_PAYMENT') {
+          return { outcome: 'notPending' as const, bookingStatus: booking.status };
+        }
+
+        // The shared predicate, not a hand-written date comparison. A hold that
+        // this rule considers lapsed must not be extendable, or the client is
+        // sent to their bank holding a slot availability has already resold.
+        const holdIsLive = blocksAvailability(
+          {
+            startTime: booking.startTime,
+            endTime: booking.endTime,
+            status: booking.status as BookingStatus,
+            holdExpiresAt: booking.holdExpiresAt,
+          },
+          input.now
+        );
+        if (!holdIsLive) {
+          return { outcome: 'holdExpired' as const };
+        }
+
+        const live = await tx.payment.findFirst({
+          where: { bookingId: input.bookingId, status: { not: 'REJECTED' } },
+          select: PAYMENT_SELECT,
+        });
+
+        if (live !== null) {
+          const record = toRecord(live as PaymentRow);
+
+          // The ordinary double-tap. The deadline is deliberately NOT pushed
+          // again: extending on every tap would let a client hold a slot for as
+          // long as they keep pressing the control.
+          if (record.method === 'BANK_TRANSFER') {
+            return {
+              outcome: 'alreadyCommitted' as const,
+              payment: record,
+              holdExpiresAt: booking.holdExpiresAt,
+            };
+          }
+
+          // A checkout exists and can be paid at any moment. Making room for a
+          // second method here is how a client gets charged twice.
+          if (record.mpInitPoint !== null) {
+            return { outcome: 'mercadoPagoInFlight' as const };
+          }
+
+          // No `mpInitPoint` means the preference was never created, so no
+          // checkout ever existed and nobody could have paid it. Rejecting it
+          // frees the partial index without putting any money at risk — and it
+          // is what keeps a gateway outage from trapping the client in a method
+          // that cannot work (data-model.md §12).
+          await tx.payment.updateMany({
+            where: { id: record.id, mpInitPoint: null, status: 'PENDING' },
+            data: { status: 'REJECTED' },
+          });
+        }
+
+        const created = await tx.payment.create({
+          data: {
+            bookingId: input.bookingId,
+            method: 'BANK_TRANSFER',
+            status: 'PENDING',
+            amount: input.amount,
+          },
+          select: PAYMENT_SELECT,
+        });
+
+        const holdExpiresAt = transferHoldExpiresAtFor({
+          committedAt: input.now,
+          startTime: input.startTime,
+        });
+
+        await tx.booking.updateMany({
+          where: { id: input.bookingId, status: 'PENDING_PAYMENT' },
+          data: { holdExpiresAt },
+        });
+
+        return {
+          outcome: 'committed' as const,
+          payment: toRecord(created as PaymentRow),
+          holdExpiresAt,
+        };
+      }, TRANSACTION_OPTIONS);
+    } catch (error) {
+      // Two concurrent commitments both passed the read above; the partial
+      // index settled it. The loser is handed the winner's row, because B4
+      // established that a client must not be able to tell they double-tapped.
+      if (!violates(error, LIVE_PAYMENT_CONSTRAINT)) throw error;
+
+      const existing = await this.findLiveByBookingId(input.bookingId);
+      if (existing === null) throw error;
+
+      const booking = await this.db.booking.findUnique({
+        where: { id: input.bookingId },
+        select: { holdExpiresAt: true },
+      });
+
+      return {
+        outcome: 'alreadyCommitted',
+        payment: existing,
+        holdExpiresAt: booking?.holdExpiresAt ?? null,
+      };
+    }
+  }
 
   /**
    * Opens a pending payment, or hands back the live one that beat us to it.

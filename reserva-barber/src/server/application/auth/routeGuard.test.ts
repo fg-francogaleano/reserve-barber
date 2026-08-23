@@ -323,12 +323,22 @@ describe('the payment endpoints are named exactly', () => {
     });
   });
 
+  it('should_admit_the_bank_transfer_endpoint_without_a_session', () => {
+    // B6's own entry. It does not inherit the Mercado Pago one, and could not:
+    // `/api/payments` as a prefix would admit every future payment endpoint.
+    expect(decideGuardAction({ ...anonymous, pathname: '/api/payments/transfer' })).toEqual({
+      type: 'continue',
+    });
+  });
+
   it.each([
     '/api',
     '/api/payments',
     '/api/webhooks',
     '/api/payments/mercadopago/extra',
     '/api/webhooks/mercadopago/extra',
+    '/api/payments/transfer/extra',
+    '/api/payments/transferencia',
     '/api/payments/stripe',
     '/api/webhooks/stripe',
     '/api/owners',

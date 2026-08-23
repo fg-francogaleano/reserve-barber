@@ -590,4 +590,68 @@ model Payment {
   // The initiation path and the confirmation page ask by booking; the webhook
   // asks by `id` (the `ref`) or by `mpPaymentId`, both already unique.
   @@index([bookingId])
+
+  transferReceipt TransferReceipt?
+}
+
+/// The review state of a proof-of-transfer file. Distinct from `PaymentStatus`
+/// even though the two move together, because they answer different questions:
+/// this one is whether a human has looked, that one is whether money is
+/// recognized.
+enum ReceiptStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A proof-of-transfer file uploaded by the client, which the owner approves or
+/// rejects from the dashboard (data-model.md §13).
+///
+/// **This table stores no evidence of payment.** A receipt image is trivially
+/// fabricated and this product has no bank integration, so the file is material
+/// for a human decision and nothing here may be read as proof that money moved.
+model TransferReceipt {
+  id        String  @id @default(cuid())
+  /// Unique: one receipt per transfer payment. A replacement UPDATES this row
+  /// rather than inserting a second, which is what keeps the constraint true
+  /// while still letting a client fix a wrong photo before it is reviewed.
+  paymentId String  @unique
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  /// **The object KEY, not a URL.** The bucket is private, so no URL resolves
+  /// without credentials and a signed one expires — persisting a signature
+  /// would store a value that is wrong within the hour. The review surface
+  /// signs this key at render time with the owner's own session.
+  ///
+  /// Composed entirely of server-held values as
+  /// `{ownerAuthUserId}/{bookingId}/{uploadedAtEpochMs}.{ext}`, the extension
+  /// derived from the DETECTED type. No part of it comes from the uploaded
+  /// file's name: storage keys accept path separators, so a client-supplied
+  /// filename reaching a key is a traversal primitive aimed at this bucket.
+  ///
+  /// The leading segment is the SUPABASE AUTH user id, not `Owner.id`. They are
+  /// distinct values, and only the former is what a bucket policy can compare
+  /// against a session — the same distinction P1's storage policy calls out.
+  filePath String
+
+  status ReceiptStatus @default(PENDING)
+
+  /// How many times this booking has submitted a receipt, including the first.
+  ///
+  /// A column rather than a count of rows, because a replacement UPDATES this
+  /// row in place to keep `paymentId` unique — so there is nothing to count.
+  /// This is the bound that actually holds against an unbounded write path into
+  /// object storage: the per-origin throttle is per-isolate (T55), and the
+  /// caller here holds a valid cancellation token rather than being an
+  /// anonymous stranger.
+  uploadCount Int @default(1)
+
+  /// Zone-aware, like every instant in this schema compared against a clock.
+  uploadedAt DateTime  @default(now()) @db.Timestamptz(3)
+  reviewedAt DateTime? @db.Timestamptz(3)
+
+  // The owner's queue reads pending receipts oldest first. Status is the
+  // selective column here: the overwhelming majority of rows will be reviewed,
+  // and the queue is the only read that scans by it.
+  @@index([status, uploadedAt])
 }

@@ -1,7 +1,8 @@
 import type { Interval } from '@/server/domain/models/availability';
 import type { LocalDate } from '@/server/domain/models/bookingCalendar';
 import type { WorkingWindowMinutes } from './IBarberAvailabilityRepository';
-import type { PaymentStatus } from '../models/Payment';
+import type { PaymentMethod, PaymentStatus } from '../models/Payment';
+import type { ReceiptStatus } from '../models/TransferReceipt';
 
 /**
  * The booking a successful hold produces, as the flow needs it.
@@ -105,6 +106,61 @@ export interface BookingByToken {
    * finished — the client gets the ordinary button and the initiation retries.
    */
   readonly hasCheckout: boolean;
+  /**
+   * Which method the live payment belongs to, or `null` if there is none (B6).
+   *
+   * With two methods in the product, a `PENDING` payment is no longer a
+   * complete answer: it means "resume the checkout" for one and "upload your
+   * receipt" for the other.
+   */
+  readonly paymentMethod: PaymentMethod | null;
+  /** The review state of this booking's receipt, if it has one (B6). */
+  readonly receiptStatus: ReceiptStatus | null;
+  /**
+   * Whether the shop can be paid through Mercado Pago.
+   *
+   * Derived **in SQL** as `mpAccessToken IS NOT NULL`, so the credential never
+   * enters the process on a route a stranger reaches without a session — the
+   * technique B4 established for the booking write's readiness gate. This
+   * interface has no field the token could occupy.
+   */
+  readonly hasMercadoPago: boolean;
+  /**
+   * Whether the shop has a transfer destination a client could **use** (B6).
+   *
+   * Deliberately separate from `transfer` below, because they answer different
+   * questions: this one is "may the page offer the method", that one is "may
+   * the page show the account number". Collapsing them into one field is how a
+   * CBU ends up rendered to somebody who has not committed and whose hold is
+   * about to lapse.
+   *
+   * Stricter than the bookability gate: a destination with no holder name is
+   * unusable here, because the client cannot confirm from their bank's screen
+   * who they are paying.
+   */
+  readonly hasTransferOption: boolean;
+  /**
+   * The transfer destination, **and `null` unless this booking has already
+   * committed to paying by transfer** (B6).
+   *
+   * Not merely "not rendered yet" — unrepresentable. The rule is that a CBU
+   * must never be visible during a window that is about to lapse, because a
+   * client who transfers into a lapsed hold has moved real money that no row
+   * here records and no gateway can be asked about. A projection that carried
+   * the destination unconditionally would leave that rule to whoever writes the
+   * next component; this one cannot be got wrong from the page.
+   *
+   * It is also `null` when the destination is missing a holder name, which
+   * `isTransferOfferableToClient` treats as unusable.
+   */
+  readonly transfer: PublicTransferDestination | null;
+}
+
+/** The three plaintext columns a client is shown. Never a credential. */
+export interface PublicTransferDestination {
+  readonly cbuCvu: string | null;
+  readonly alias: string | null;
+  readonly holderName: string;
 }
 
 /**
@@ -134,6 +190,39 @@ export interface BookingForPaymentInitiation {
   readonly serviceName: string;
   readonly ownerId: string;
   readonly publicSlug: string;
+}
+
+/**
+ * What the bank transfer path needs, and a third projection rather than a
+ * widened second one (B6).
+ *
+ * It differs from `BookingForPaymentInitiation` in three columns, and each is
+ * needed for a reason the Mercado Pago path does not share:
+ *
+ * - `barberId`, because attaching a receipt moves the booking between blocking
+ *   states and must take the per-barber advisory lock. The Mercado Pago
+ *   initiation takes no lock and has no use for it.
+ * - `ownerAuthUserId`, because it is the leading segment of the storage key and
+ *   therefore what the bucket's policies compare against a session. It is the
+ *   **Supabase auth user id**, not `Owner.id` — distinct values, and only this
+ *   one is comparable to `auth.uid()`.
+ * - no `serviceName`, because nothing on this path renders one.
+ *
+ * `ownerAuthUserId` is nullable at the column level. A booking whose owner has
+ * none cannot have a key composed for it, and the caller refuses rather than
+ * inventing a prefix.
+ */
+export interface BookingForTransfer {
+  readonly id: string;
+  readonly status: string;
+  readonly startTime: Date;
+  readonly endTime: Date;
+  readonly holdExpiresAt: Date | null;
+  readonly depositAmount: string;
+  readonly ownerId: string;
+  readonly ownerAuthUserId: string | null;
+  readonly publicSlug: string;
+  readonly barberId: string;
 }
 
 /**
@@ -210,6 +299,15 @@ export interface IBookingRepository {
    * and each carries exactly the columns its side is allowed to know.
    */
   findForPaymentInitiation(token: string): Promise<BookingForPaymentInitiation | null>;
+
+  /**
+   * The same token, answered for the bank transfer path.
+   *
+   * A third method rather than a widened second one, for the reason stated on
+   * `BookingForTransfer`: each projection carries exactly the columns its side
+   * is allowed to know, and the two payment paths need different ones.
+   */
+  findForTransfer(token: string): Promise<BookingForTransfer | null>;
 }
 
 /** Re-exported so the transaction's re-assertion has one vocabulary for windows. */

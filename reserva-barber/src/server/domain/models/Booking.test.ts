@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { blocksAvailability, holdExpiresAtFor, type BlockingCandidate } from './Booking';
+import {
+  blocksAvailability,
+  holdExpiresAtFor,
+  transferHoldExpiresAtFor,
+  type BlockingCandidate,
+} from './Booking';
 
 const NOW = new Date('2026-08-17T15:00:00.000Z');
 const AN_HOUR_AGO = new Date('2026-08-17T14:00:00.000Z');
@@ -91,5 +96,106 @@ describe('Booking - the hold deadline', () => {
     const result = holdExpiresAtFor({ createdAt, startTime });
     expect(result.getTime()).toBeLessThanOrEqual(startTime.getTime());
     expect(result).toEqual(startTime);
+  });
+});
+
+describe('Booking - an unanswered receipt eventually stops blocking', () => {
+  // `holdExpiresAt` is the deadline for UPLOADING a receipt, never for
+  // answering one. Releasing the slot underneath a transfer the owner is about
+  // to approve would sell it twice.
+  it('should_still_block_a_pending_approval_whose_appointment_is_ahead', () => {
+    expect(
+      blocksAvailability(
+        booking({
+          status: 'PENDING_APPROVAL',
+          holdExpiresAt: AN_HOUR_AGO,
+          startTime: new Date('2026-08-18T13:00:00.000Z'),
+          endTime: new Date('2026-08-18T13:30:00.000Z'),
+        }),
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  // The one exception, and the only exit this status has that does not depend
+  // on the owner being attentive. The time cannot be sold to anyone any more,
+  // so releasing it sells nothing twice.
+  it('should_stop_blocking_a_pending_approval_whose_appointment_has_passed', () => {
+    expect(
+      blocksAvailability(
+        booking({
+          status: 'PENDING_APPROVAL',
+          holdExpiresAt: AN_HOUR_AGO,
+          startTime: new Date('2026-08-17T13:00:00.000Z'),
+          endTime: new Date('2026-08-17T13:30:00.000Z'),
+        }),
+        NOW
+      )
+    ).toBe(false);
+  });
+
+  it('should_block_a_pending_approval_at_the_exact_start_instant', () => {
+    // "Has passed" is false at the instant something begins. The conservative
+    // direction: holding one instant too long costs nothing, releasing one
+    // instant too early offers a time that is being used right now.
+    expect(
+      blocksAvailability(
+        booking({
+          status: 'PENDING_APPROVAL',
+          holdExpiresAt: AN_HOUR_AGO,
+          startTime: NOW,
+          endTime: new Date('2026-08-17T15:30:00.000Z'),
+        }),
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it('should_not_change_what_a_confirmed_booking_does_after_its_appointment', () => {
+    // A confirmed appointment in the past is history, not a hold, and this
+    // rule must not reach it.
+    expect(
+      blocksAvailability(
+        booking({
+          status: 'CONFIRMED',
+          startTime: new Date('2026-08-17T13:00:00.000Z'),
+          endTime: new Date('2026-08-17T13:30:00.000Z'),
+        }),
+        NOW
+      )
+    ).toBe(true);
+  });
+});
+
+describe('Booking - the transfer hold extension', () => {
+  it('should_be_the_commitment_instant_plus_the_transfer_duration', () => {
+    const committedAt = new Date('2026-08-17T15:00:00.000Z');
+    const startTime = new Date('2026-08-18T13:00:00.000Z');
+    expect(transferHoldExpiresAtFor({ committedAt, startTime })).toEqual(
+      new Date('2026-08-17T15:45:00.000Z')
+    );
+  });
+
+  it('should_obey_the_same_clamp_the_creation_write_obeys', () => {
+    const committedAt = new Date('2026-08-17T15:00:00.000Z');
+    const startTime = new Date('2026-08-17T15:20:00.000Z'); // sooner than 45 minutes
+    expect(transferHoldExpiresAtFor({ committedAt, startTime })).toEqual(startTime);
+  });
+
+  it('should_never_exceed_startTime_at_the_exact_boundary', () => {
+    const committedAt = new Date('2026-08-17T15:00:00.000Z');
+    const startTime = new Date('2026-08-17T15:45:00.000Z');
+    expect(transferHoldExpiresAtFor({ committedAt, startTime })).toEqual(startTime);
+  });
+
+  // The extension is three times the creation duration, so the clamp it shares
+  // with `holdExpiresAtFor` is materially closer to being reached here. That is
+  // the reason it is one function rather than a rule each writer restates.
+  it('should_extend_beyond_what_the_creation_duration_would_have_given', () => {
+    const at = new Date('2026-08-17T15:00:00.000Z');
+    const startTime = new Date('2026-08-18T13:00:00.000Z');
+    expect(transferHoldExpiresAtFor({ committedAt: at, startTime }).getTime()).toBeGreaterThan(
+      holdExpiresAtFor({ createdAt: at, startTime }).getTime()
+    );
   });
 });

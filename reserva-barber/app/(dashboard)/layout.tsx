@@ -21,10 +21,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           >
             {COPY.locations.nav}
           </Link>
-          <Link
-            href="/barberos"
-            className="text-sm font-medium underline-offset-4 hover:underline"
-          >
+          <Link href="/barberos" className="text-sm font-medium underline-offset-4 hover:underline">
             {COPY.barbers.nav}
           </Link>
           <Link
@@ -51,10 +48,25 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <Link href="/sena" className="text-sm font-medium underline-offset-4 hover:underline">
             {COPY.deposit.nav}
           </Link>
+          {/*
+            Last, beside the payment configuration it belongs with. No pending
+            count on it: D1's dashboard home owns the counters, and a badge here
+            would be a second query on every dashboard render for a number that
+            page already has to compute.
+          */}
+          <Link
+            href="/comprobantes"
+            className="text-sm font-medium underline-offset-4 hover:underline"
+          >
+            {COPY.receipts.nav}
+          </Link>
         </nav>
         <span className="text-muted-foreground text-sm">{owner.email}</span>
         <form action={logoutAction}>
-          <button type="submit" className="text-primary text-sm font-medium underline-offset-4 hover:underline">
+          <button
+            type="submit"
+            className="text-primary text-sm font-medium underline-offset-4 hover:underline"
+          >
             {COPY.auth.logout}
           </button>
         </form>

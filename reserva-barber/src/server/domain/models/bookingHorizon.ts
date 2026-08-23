@@ -60,3 +60,33 @@ export const MIN_BOOKING_LEAD_MINUTES = 60;
  * an emergent property of another constant.
  */
 export const HOLD_DURATION_MINUTES = 15;
+
+/**
+ * How long a hold lasts once the client has committed to paying by bank
+ * transfer.
+ *
+ * A fourth judgement of the same kind as the three above, and the one with the
+ * sharpest failure. Fifteen minutes was sized for a hosted checkout; a transfer
+ * means authenticating into a banking app, registering a destination — which
+ * several Argentine banks gate behind their own confirmation step — making the
+ * transfer, capturing the screen and coming back to upload. A hold that lapses
+ * in the middle of that leaves the client's money gone and **no row in this
+ * system recording that anyone paid**, because unlike the Mercado Pago path
+ * there is no gateway to ask afterwards.
+ *
+ * The extension is applied at the moment the client commits, not at creation,
+ * so a Mercado Pago client never holds a slot three times longer than they
+ * need. It is also why the destination is not disclosed until that write
+ * succeeds: a CBU must never be visible during a window that is about to lapse.
+ *
+ * **45 rather than 60**, deliberately: `MIN_BOOKING_LEAD_MINUTES` is 60, so a
+ * 60-minute hold would sit exactly on `holdExpiresAtFor`'s clamp for the
+ * nearest bookable appointment — and `tech-debt.md` T53 records that the lead
+ * time is the first of these constants a real shop is likely to ask to lower,
+ * at which point that clamp stops being theoretical.
+ *
+ * T53 names B6 as the story that could finally *measure* one of these. It
+ * cannot: no real shop has used the product. What it delivers instead is the
+ * constant, its home beside the other three, and this note.
+ */
+export const TRANSFER_HOLD_DURATION_MINUTES = 45;

@@ -522,6 +522,86 @@ export const COPY = {
     paymentsUnavailable: 'No podemos procesar pagos en este momento',
     paymentsUnavailableHelp:
       'Es un problema de la barbería, no tuyo. Escribiles para coordinar la seña y no pierdas tu turno.',
+
+    // ---- B6: the bank transfer deposit ----
+
+    /** The two methods, side by side when both are configured. */
+    payWithMercadoPago: 'Pagar con Mercado Pago',
+    payWithTransfer: 'Pagar por transferencia',
+    payWithTransferHelp: 'Vas a ver el CBU y después subís el comprobante.',
+
+    /**
+     * The destination, disclosed only after the client commits — which is also
+     * what extends the hold. A CBU shown during a window about to lapse is how
+     * somebody transfers real money into a turn they have already lost.
+     */
+    transferHeading: 'Transferí la seña',
+    transferIntro: 'Hacé la transferencia y después subí el comprobante acá mismo.',
+    transferDestinationHeading: 'Datos de la cuenta',
+    transferCbuLabel: 'CBU / CVU',
+    transferAliasLabel: 'Alias',
+    transferHolderLabel: 'Titular',
+    transferAmountLabel: 'Importe exacto a transferir',
+    transferCopy: 'Copiar',
+    transferCopied: 'Copiado',
+
+    /**
+     * Above the account number, never after it. Once the deadline passes there
+     * is no gateway to ask whether the money moved, so the only protection is
+     * that the client reads this **before** they transfer.
+     */
+    transferDeadlineWarning: (minutes: number) =>
+      minutes === 1
+        ? 'Te queda 1 minuto. Si transferís después de ese plazo, el turno puede perderse y la devolución hay que coordinarla con la barbería.'
+        : `Te quedan ${minutes} minutos. Si transferís después de ese plazo, el turno puede perderse y la devolución hay que coordinarla con la barbería.`,
+
+    receiptHeading: 'Subí el comprobante',
+    receiptHelp: 'Aceptamos JPG, PNG o PDF, hasta 10 MB.',
+    receiptField: 'Comprobante de la transferencia',
+    receiptSubmit: 'Enviar comprobante',
+    receiptSubmitting: 'Enviando…',
+    receiptReplace: 'Subir otro comprobante',
+
+    /** Under review. Terminal for the client: nothing left for them to do. */
+    receiptUnderReview: 'Recibimos tu comprobante',
+    receiptUnderReviewHelp:
+      'La barbería lo va a revisar y confirmar tu turno. El horario queda reservado mientras tanto.',
+
+    receiptRejected: 'La barbería no aprobó el comprobante',
+    receiptRejectedHelp:
+      'El turno quedó liberado. Escribiles si creés que hubo un error, o reservá de nuevo.',
+
+    /**
+     * Each refusal names its own cause, because each has a different next move.
+     * A single "no se pudo subir" would tell a client with a 12 MB PDF and a
+     * client with a HEIC photo the same useless thing.
+     */
+    receiptInvalid: 'Ese archivo no es un comprobante que podamos leer',
+    receiptInvalidHelp:
+      'Tiene que ser una imagen JPG o PNG, o un PDF. Si sacaste la foto con un iPhone, probá compartirla como JPG.',
+    receiptTooLarge: 'El archivo es demasiado grande',
+    receiptTooLargeHelp: 'El límite es 10 MB. Probá con una foto de menor resolución.',
+    receiptTooMany: 'Ya subiste varios comprobantes para este turno',
+    receiptTooManyHelp: 'Esperá a que la barbería revise el último que enviaste.',
+
+    /** The shop has a destination that a client cannot safely use, or none. */
+    transferUnavailable: 'Esta barbería no está recibiendo transferencias',
+    transferUnavailableHelp: 'Probá con otro medio de pago o escribiles para coordinar.',
+
+    /**
+     * A Mercado Pago checkout is already open. Its own message because the
+     * client can act on it — by finishing the one they started.
+     */
+    methodInUse: 'Ya tenés un pago de Mercado Pago en curso',
+    methodInUseHelp: 'Completá ese pago, o esperá a que venza para elegir otro medio.',
+
+    /**
+     * The transfer arrived after the slot was gone. Distinct from a plain
+     * expiry, because this one may mean money moved and nothing here knows it.
+     */
+    transferSlotLost: 'El horario ya no estaba disponible',
+    transferSlotLostHelp:
+      'No pudimos guardar tu comprobante para este turno. Si ya transferiste, escribile a la barbería para coordinar la devolución o un nuevo horario.',
   },
   transfer: {
     nav: 'Transferencia',
@@ -664,6 +744,50 @@ export const COPY = {
 
     remove: 'Borrar credenciales',
     removed: 'Credenciales borradas.',
+  },
+  receipts: {
+    nav: 'Comprobantes',
+    heading: 'Comprobantes por revisar',
+    /**
+     * The instruction, and the only honest framing of it. Nothing in this
+     * product verifies that a transfer happened — a receipt image is trivially
+     * fabricated and there is no bank integration — so the page says what the
+     * owner has to do rather than implying the system already did it.
+     */
+    intro:
+      'Verificá cada transferencia en tu banco antes de aprobar. El comprobante es una foto: no confirma que el dinero haya entrado.',
+    emptyState: 'No hay comprobantes esperando revisión.',
+    emptyStateHelp: 'Cuando un cliente pague por transferencia, su comprobante aparece acá.',
+
+    appointmentLabel: 'Turno',
+    clientLabel: 'Cliente',
+    amountLabel: 'Importe que debería haber entrado',
+    uploadedLabel: 'Comprobante subido',
+    openFile: 'Ver comprobante',
+    openFileHelp: 'Se descarga a tu dispositivo.',
+
+    approve: 'Aprobar y confirmar turno',
+    approving: 'Aprobando…',
+    approved: 'Turno confirmado.',
+
+    reject: 'Rechazar',
+    rejecting: 'Rechazando…',
+    rejected: 'Comprobante rechazado y turno liberado.',
+    /**
+     * Rejection is irreversible from here: it cancels the booking and frees the
+     * slot. The confirmation says both halves, including the one this system
+     * cannot do anything about.
+     */
+    rejectConfirm:
+      '¿Rechazar este comprobante? El turno se cancela y el horario queda libre. Si el cliente ya transfirió, la devolución la tenés que coordinar vos.',
+
+    /** The booking moved while the page was open. Not an error the owner caused. */
+    noLongerPending: 'Ese turno ya no está esperando revisión. Actualizá la página.',
+    notFound: 'No encontramos ese comprobante.',
+    loadFailed: 'No pudimos cargar los comprobantes.',
+    actionFailed: 'No pudimos completar la acción. Intentá de nuevo.',
+    /** The signed link could not be produced. The row still renders. */
+    fileUnavailable: 'No pudimos generar el enlace al comprobante.',
   },
   deposit: {
     nav: 'Seña',

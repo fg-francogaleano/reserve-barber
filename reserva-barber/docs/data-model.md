@@ -337,7 +337,7 @@ A single appointment. This is the central entity of the system: it ties a client
 
 **`BookingStatus` enum values:**
 - `PENDING_PAYMENT` — slot held provisionally while the client completes payment (Mercado Pago not yet confirmed, or transfer receipt not yet uploaded)
-- `PENDING_APPROVAL` — transfer receipt uploaded, awaiting owner approval (still a provisional hold)
+- `PENDING_APPROVAL` — transfer receipt uploaded, awaiting owner approval (still a provisional hold, and **not one that time resolves** — see the blocking rule below)
 - `CONFIRMED` — payment confirmed (Mercado Pago webhook) or transfer approved by owner
 - `CANCELLED` — cancelled by owner or client
 - `EXPIRED` — provisional hold expired without confirmation; slot released
@@ -349,6 +349,8 @@ A single appointment. This is the central entity of the system: it ties a client
 - `depositAmount` is derived from PaymentConfig by the `DepositPolicy` rule stated in §14 — the fixed value or the percentage of `priceAtBooking`, rounded half-up, capped at the price and floored at the minimum chargeable amount
 - **`depositAmount` is a snapshot and is never recomputed.** It is calculated once, at booking creation, from the policy in force at that instant. A later change to the deposit policy does not alter this booking in any status, and validating a payment compares against the recorded amount, never against the live policy. Recomputing would reject a client who is paying a checkout created moments before the owner edited the policy — the payment would be correct and the system would call it wrong
 - **`holdExpiresAt` is the creation instant plus `HOLD_DURATION_MINUTES` (15), clamped so it never exceeds `startTime`.** The duration is a judgement rather than a measurement — no real shop has used this product yet — comfortable for a Mercado Pago checkout and tight but workable for locating a bank transfer destination. **The clamp is correctness, not a preference.** An unclamped hold on a near-term appointment would lapse *after* the appointment has already begun, and the job that sweeps expired holds would then expire a booking whose time has passed. The minimum booking lead time (`MIN_BOOKING_LEAD_MINUTES`, declared alongside `HOLD_DURATION_MINUTES` in `bookingHorizon.ts`) makes this case unreachable today only because that lead time is itself a guess likely to be lowered once a real shop asks for it — so the clamp is written into the rule rather than relied upon as an emergent property of another constant
+- **The hold duration is no longer a single constant for a booking's lifetime.** Committing to a bank transfer extends `holdExpiresAt` to that instant plus `TRANSFER_HOLD_DURATION_MINUTES` (**45**), declared beside the creation constant and carrying the same disclosure that it is a judgement. Fifteen minutes was sized for a hosted checkout; forty-five is sized for authenticating into a banking app, registering a destination — which several banks gate behind their own confirmation step — transferring, capturing and uploading. A hold that lapses mid-transfer is the worst failure this product has: the client's money has moved and **no row here records that anyone paid**, because there is no gateway to ask. **Every write that sets or moves `holdExpiresAt` applies the same clamp, expressed once and called by each writer.** The extension being three times the creation duration brings the clamp materially closer to being reached, which is the second reason it is a shared function rather than a rule each writer restates
+- **`PENDING_APPROVAL` blocks its slot and is never expired by `holdExpiresAt`.** That column is the deadline for *uploading* a receipt, not for *answering* one. Releasing the slot underneath a transfer the owner is about to approve would sell it twice. **The one exception is a `PENDING_APPROVAL` booking whose `startTime` has already passed**, which is eligible for expiry: its time cannot be sold to anyone any more, so releasing it sells nothing twice, and without it the status has no exit that does not depend on the owner being attentive. The review surface makes an unanswered receipt rarer, not impossible — an owner on holiday blocks the calendar exactly as an absent reviewer would
 
 **Relationships:**
 - `client`: Many-to-one → Client
@@ -375,7 +377,7 @@ A payment attempt/record associated with a booking's deposit. Supports both Merc
 - `approvedAt`: When the payment was approved (**`Timestamptz(3)`**, optional — zone-aware, never the zone-less default)
 - `createdAt` / `updatedAt`: Timestamps
 
-> **`TransferReceipt` is not created alongside this table.** B5 creates `Payment` and the two enums only; the receipt entity and `ReceiptStatus` belong to B6. The `BANK_TRANSFER` method value exists from the start because an enum is cheaper to declare whole than to alter later, not because anything writes it yet.
+> **`TransferReceipt` was not created alongside this table.** B5 created `Payment` and the two enums only; the receipt entity and `ReceiptStatus` arrived with B6. The `BANK_TRANSFER` method value existed from the start because an enum is cheaper to declare whole than to alter later — B5 wrote nothing with it, and B6 is its first writer.
 
 **Validation Rules:**
 - `amount`: required, > 0
@@ -385,6 +387,7 @@ A payment attempt/record associated with a booking's deposit. Supports both Merc
 - **At most one non-rejected payment per booking**, enforced by a partial unique index Prisma cannot declare:
   `CREATE UNIQUE INDEX "Payment_one_live_per_booking" ON "Payment" ("bookingId") WHERE status <> 'REJECTED';`
   Without it, two concurrent taps on the payment control each observe no existing payment and create two preferences for one slot. A `REJECTED` payment deliberately does not block a retry
+- **The index bounds *methods* as well as attempts, and `mpInitPoint` is where the boundary falls.** A client who taps Mercado Pago and then chooses bank transfer collides with this index, so the choice has to be decided rather than left to a constraint violation. A live `MERCADO_PAGO` payment **with** a stored `mpInitPoint` blocks a transfer commitment: a checkout exists, it can be paid at any moment, and making room for a second method risks charging the client twice. A live `MERCADO_PAGO` payment **without** one is set to `REJECTED` inside the committing transaction and the transfer proceeds — that state is an unfinished preference creation, already documented above as something to retry rather than treat as a block, and no checkout ever existed for anyone to pay. The strict alternative, first-method-wins, was rejected because it traps precisely the client B6 exists to serve: the one whose Mercado Pago attempt failed for the shop's reasons
 - **The confirming transition is conditional, never assigned.** The update to `CONFIRMED` is guarded on the booking still being `PENDING_PAYMENT`, so a second delivery updates zero rows — which is a normal outcome, not an error. A handler that writes the last-seen status would let an out-of-order `pending` un-confirm a paid booking
 - **A payment may be `APPROVED` while its booking is not `CONFIRMED`.** This is the late-payment case: the hold lapsed, the slot was resold, and the charge nonetheless happened. Recording it as `REJECTED` would hide real money from the owner's own accounting. Statistics and income counters must therefore join through the booking's status rather than counting approved payments alone
 
@@ -400,15 +403,22 @@ A proof-of-transfer file uploaded by the client for a bank-transfer payment, whi
 **Fields:**
 - `id`: Unique identifier (PK, cuid)
 - `paymentId`: Foreign key → Payment (required, unique — one receipt per transfer payment)
-- `fileUrl`: URL of the uploaded receipt in Supabase Storage (required)
+- `filePath`: **The object key** of the uploaded receipt in Supabase Storage (required)
 - `status`: Review state — enum `ReceiptStatus` (`PENDING`, `APPROVED`, `REJECTED`) (required, default: `PENDING`)
-- `uploadedAt`: When the client uploaded the receipt (auto-set)
-- `reviewedAt`: When the owner reviewed it (DateTime, optional)
+- `uploadCount`: How many times this booking has submitted a receipt, including the first (Int, default 1). A column rather than a count of rows, because a replacement updates this row in place to keep `paymentId` unique — there is nothing to count
+- `uploadedAt`: When the client uploaded the receipt (**`Timestamptz(3)`**, auto-set — zone-aware, never the zone-less default)
+- `reviewedAt`: When the owner reviewed it (**`Timestamptz(3)`**, optional)
+
+> **Why the column is a key and not a URL.** This bucket is **private**, so there is no URL that resolves without credentials, and a signed URL expires — persisting one would store a value that is wrong within the hour. The key is the stable identity of the object; the owner's review surface signs it at render time with the owner's own session. `IImageStorage.StoredImage.url` already declined to promise public readability for exactly this case.
 
 **Validation Rules:**
-- `fileUrl`: required; allowed types JPG, PNG, PDF; max 10 MB (validated at upload)
-- Approving a receipt sets the parent Payment to `APPROVED` and the Booking to `CONFIRMED`
-- Rejecting a receipt sets the parent Payment to `REJECTED` and releases the Booking hold (Booking → `CANCELLED` or `EXPIRED`)
+- `filePath`: required; allowed types **JPG, PNG and PDF**; max 10 MB. **SVG is excluded**, for the reason `imageType.ts` records — it is a script-execution surface — and the exclusion holds even though this bucket is private, because the file is later opened in the owner's own browser
+- **The type is determined by inspecting the file's leading bytes**, never by the declared content type or the extension. Both are client-controlled and prove nothing. The 10 MB ceiling is enforced three times: at the route before the body is read, again against the actual byte length because `Content-Length` is client-controlled, and by the bucket's own `file_size_limit`
+- **No filename is stored, and none contributes to the key.** The key is `{ownerAuthUserId}/{bookingId}/{uploadedAtEpochMs}.{ext}`, composed entirely of server-held values, with the extension derived from the *detected* type. Storage keys accept path separators, so a client-supplied filename reaching a key is a traversal primitive — and this private bucket is precisely what such a traversal would aim at. The leading segment is the **Supabase auth user id**, not `Owner.id`: they are distinct values (`Owner.authUserId` maps one to the other), and only the former is what a bucket policy can compare against a session
+- **A receipt may be replaced while its status is `PENDING`.** A further submission updates this same row with a new `filePath` and `uploadedAt`; it never creates a second row, so the unique `paymentId` holds. **The superseded object is left in the bucket, as a bounded orphan** — deleting it would require granting the anonymous uploader a delete policy, and an anonymous caller who can delete can delete anybody's receipt. The displaced key is logged so a retention rule can find it later. Replacement exists because rejection is destructive — it cancels the booking — and without it an accidental wrong photo would cost the client their appointment. Submissions are capped at `MAX_RECEIPT_UPLOADS_PER_BOOKING` (3), checked against the database, which is the bound that actually holds: the per-origin throttle is per-isolate (`tech-debt.md` T55) and the token's holder is a legitimate client
+- Approving a receipt sets the parent Payment to `APPROVED` and the Booking to `CONFIRMED`. Rejecting it sets the parent Payment to `REJECTED` and the Booking to `CANCELLED`, releasing the slot
+- **Both transitions are conditional and both run under the per-barber advisory lock** the booking write takes (`backend-standards.md` rule 4). The booking update is guarded on the status it expects, so a concurrent transition matches zero rows instead of being reasserted — the same rule the Mercado Pago confirmation follows, and for the same reason
+- **Nothing in this entity verifies that a transfer happened.** A receipt image is trivially fabricated and this product has no bank integration. The file is evidence for a human, and the review surface renders the booking's snapshotted deposit beside it so the comparison is possible at all. No column here should ever be read as proof of payment
 
 **Relationships:**
 - `payment`: One-to-one → Payment

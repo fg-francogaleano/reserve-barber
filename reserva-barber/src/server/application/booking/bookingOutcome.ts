@@ -138,6 +138,43 @@ export const PAYMENT_OUTCOMES = [
   'reintenta',
   /** The return landed with no cookie, so the booking could not be identified. */
   'link-propio',
+
+  // ---------------------------------------------------------------- B6
+  //
+  // The transfer path's codes. On the same union as the Mercado Pago ones, and
+  // deliberately so: both are read by the confirmation page, which is one page
+  // with one state resolver. The split that matters is the one B5 drew —
+  // between the wizard's codes and this page's — and it still holds.
+
+  /** The client committed to transfer; the destination is now disclosed. */
+  'transferencia-iniciada',
+  /** The receipt was accepted and is waiting for the owner. */
+  'comprobante-recibido',
+  /** The file was not a JPG, PNG or PDF, decided by its bytes. */
+  'comprobante-invalido',
+  /** The file exceeded the size ceiling. */
+  'comprobante-grande',
+  /** The per-booking submission cap was reached. */
+  'demasiados-comprobantes',
+  /** This shop has no usable transfer destination. */
+  'sin-transferencia',
+  /**
+   * A Mercado Pago checkout is already live for this booking.
+   *
+   * Its own code rather than a generic failure: the client can act on it — by
+   * finishing that checkout — and a message that did not say so would leave
+   * them tapping a control that will never work.
+   */
+  'metodo-en-curso',
+  /**
+   * The hold lapsed and the slot was taken while the client was at their bank.
+   *
+   * Distinct from `vencido`, which means the turn expired with nothing paid.
+   * This one may mean money has moved and nobody here knows it, so it is the
+   * one message on this page that owes an explanation rather than an
+   * instruction.
+   */
+  'transferencia-sin-lugar',
 ] as const;
 
 export type PaymentOutcomeCode = (typeof PAYMENT_OUTCOMES)[number];

@@ -36,6 +36,13 @@ function booking(overrides: Partial<BookingByToken> = {}): BookingByToken {
     locationName: 'Centro',
     paymentStatus: null,
     hasCheckout: false,
+    paymentMethod: null,
+    receiptStatus: null,
+    // The default shop is Mercado Pago only, which is what B5 shipped. Transfer
+    // cases opt in, so every existing assertion keeps meaning what it meant.
+    hasMercadoPago: true,
+    hasTransferOption: false,
+    transfer: null,
     ...overrides,
   };
 }
@@ -76,11 +83,11 @@ describe('the payment control', () => {
   });
 
   it('names the control as a resumption when a checkout is already open', async () => {
-    await renderPage(booking({ paymentStatus: 'PENDING', hasCheckout: true }));
-
-    expect(screen.getByRole('button', { name: COPY.booking.resumePayment }).tagName).toBe(
-      'BUTTON'
+    await renderPage(
+      booking({ paymentStatus: 'PENDING', hasCheckout: true, paymentMethod: 'MERCADO_PAGO' })
     );
+
+    expect(screen.getByRole('button', { name: COPY.booking.resumePayment }).tagName).toBe('BUTTON');
   });
 
   /**
@@ -216,5 +223,221 @@ describe('what never appears', () => {
   it('answers a token that matches nothing with a 404', async () => {
     await expect(renderPage(null)).rejects.toThrow('NEXT_NOT_FOUND');
     expect(notFound).toHaveBeenCalled();
+  });
+});
+
+/** A shop whose transfer destination is complete and therefore offerable. */
+function transferable(overrides: Partial<BookingByToken> = {}): BookingByToken {
+  return booking({ hasTransferOption: true, ...overrides });
+}
+
+const DESTINATION = {
+  cbuCvu: '0000003100010000000001',
+  alias: 'mi.barberia',
+  holderName: 'Ana Pérez',
+};
+
+describe('choosing a method', () => {
+  it('offers both controls at a shop with both configured', async () => {
+    await renderPage(transferable());
+
+    expect(screen.getByRole('button', { name: COPY.booking.payDeposit })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: COPY.booking.payWithTransfer })).toBeInTheDocument();
+  });
+
+  /**
+   * The gap B6 closes. `isBookable` already admits a transfer-only shop and B4
+   * already lets it create holds, so before this the client met a control that
+   * could only fail.
+   */
+  it('offers only transfer at a shop without Mercado Pago', async () => {
+    await renderPage(transferable({ hasMercadoPago: false }));
+
+    expect(screen.getByRole('button', { name: COPY.booking.payWithTransfer })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: COPY.booking.payDeposit })).not.toBeInTheDocument();
+  });
+
+  it('offers only Mercado Pago at a shop without a usable destination', async () => {
+    await renderPage(booking());
+
+    expect(screen.getByRole('button', { name: COPY.booking.payDeposit })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: COPY.booking.payWithTransfer })
+    ).not.toBeInTheDocument();
+  });
+
+  it('reports a shop with neither method as unable to take payments', async () => {
+    const { container } = await renderPage(booking({ hasMercadoPago: false }));
+
+    expect(screen.getByText(COPY.booking.paymentsUnavailable)).toBeInTheDocument();
+    expect(container.querySelector('button')).toBeNull();
+  });
+
+  it('posts the transfer commitment to its own endpoint with the token in the body', async () => {
+    const { container } = await renderPage(transferable());
+    const transferForm = Array.from(container.querySelectorAll('form')).find(
+      (form) => form.getAttribute('action') === '/api/payments/transfer'
+    );
+
+    expect(transferForm).toBeDefined();
+    expect(transferForm?.getAttribute('action')).not.toContain(TOKEN);
+    expect(transferForm?.querySelector('input[name="token"]')).toHaveValue(TOKEN);
+  });
+});
+
+describe('the destination is never shown before it is earned', () => {
+  /**
+   * The rule this story turns on: a CBU visible during a window about to lapse
+   * is how a client transfers real money into a turn they have already lost,
+   * with no gateway anywhere that could be asked about it.
+   */
+  it('shows no account number while the client is still choosing', async () => {
+    const { container } = await renderPage(transferable());
+
+    expect(container.textContent).not.toContain(DESTINATION.cbuCvu);
+    expect(container.textContent).not.toContain(DESTINATION.holderName);
+  });
+
+  it('shows no account number on a lapsed hold', async () => {
+    const { container } = await renderPage(
+      transferable({ holdExpiresAt: LAPSED_HOLD, transfer: DESTINATION })
+    );
+
+    expect(container.textContent).not.toContain(DESTINATION.cbuCvu);
+  });
+
+  it('shows the destination once a transfer payment is live', async () => {
+    const { container } = await renderPage(
+      transferable({
+        paymentStatus: 'PENDING',
+        paymentMethod: 'BANK_TRANSFER',
+        transfer: DESTINATION,
+      })
+    );
+
+    expect(container.textContent).toContain(DESTINATION.cbuCvu);
+    expect(container.textContent).toContain(DESTINATION.holderName);
+  });
+
+  /** The warning has to be read before the number, so it precedes it. */
+  it('puts the deadline warning above the account number', async () => {
+    const { container } = await renderPage(
+      transferable({
+        paymentStatus: 'PENDING',
+        paymentMethod: 'BANK_TRANSFER',
+        transfer: DESTINATION,
+      })
+    );
+
+    const text = container.textContent ?? '';
+    const warning = text.indexOf('Si transfer');
+    const cbu = text.indexOf(DESTINATION.cbuCvu);
+
+    expect(warning).toBeGreaterThanOrEqual(0);
+    expect(warning).toBeLessThan(cbu);
+  });
+
+  it('renders the snapshotted deposit beside the destination', async () => {
+    const { container } = await renderPage(
+      transferable({
+        depositAmount: '5000.00',
+        paymentStatus: 'PENDING',
+        paymentMethod: 'BANK_TRANSFER',
+        transfer: DESTINATION,
+      })
+    );
+
+    expect(container.textContent).toContain(COPY.booking.transferAmountLabel);
+  });
+});
+
+describe('the receipt form', () => {
+  function committed(overrides: Partial<BookingByToken> = {}) {
+    return transferable({
+      paymentStatus: 'PENDING',
+      paymentMethod: 'BANK_TRANSFER',
+      transfer: DESTINATION,
+      ...overrides,
+    });
+  }
+
+  it('is a native multipart form posting to the transfer endpoint', async () => {
+    const { container } = await renderPage(committed());
+    const form = Array.from(container.querySelectorAll('form')).find(
+      (candidate) => candidate.getAttribute('enctype') === 'multipart/form-data'
+    );
+
+    expect(form).toBeDefined();
+    expect(form?.getAttribute('method')).toBe('post');
+    expect(form?.getAttribute('action')).toBe('/api/payments/transfer');
+    expect(form?.querySelector('input[type="file"]')).toBeInTheDocument();
+  });
+
+  /** A hint to the picker, never a check. The bytes decide, server-side. */
+  it('hints the accepted types without relying on the attribute', async () => {
+    const { container } = await renderPage(committed());
+    const file = container.querySelector('input[type="file"]');
+
+    expect(file?.getAttribute('accept')).toBe('image/jpeg,image/png,application/pdf');
+  });
+});
+
+describe('the states a receipt produces', () => {
+  function underReview(overrides: Partial<BookingByToken> = {}) {
+    return transferable({
+      status: 'PENDING_APPROVAL',
+      paymentStatus: 'PENDING',
+      paymentMethod: 'BANK_TRANSFER',
+      receiptStatus: 'PENDING',
+      ...overrides,
+    });
+  }
+
+  it('tells a client their receipt is under review', async () => {
+    await renderPage(underReview());
+
+    expect(screen.getByText(COPY.booking.receiptUnderReview)).toBeInTheDocument();
+  });
+
+  /**
+   * `holdExpiresAt` was the deadline for uploading a receipt, never for
+   * answering one. Telling this client their turn expired while the owner is
+   * looking at their comprobante would be false.
+   */
+  it('does not call an unanswered receipt an expired turn', async () => {
+    await renderPage(underReview({ holdExpiresAt: LAPSED_HOLD }));
+
+    expect(screen.getByText(COPY.booking.receiptUnderReview)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.booking.holdExpired)).not.toBeInTheDocument();
+  });
+
+  it('leaves no control once a receipt is under review', async () => {
+    const { container } = await renderPage(underReview());
+
+    expect(container.querySelector('form')).toBeNull();
+  });
+
+  it('reports a rejected receipt rather than a bare cancellation', async () => {
+    await renderPage(
+      transferable({ status: 'CANCELLED', holdExpiresAt: null, receiptStatus: 'REJECTED' })
+    );
+
+    expect(screen.getByText(COPY.booking.receiptRejected)).toBeInTheDocument();
+  });
+
+  /** May mean money moved with nothing here recording it. Its own message. */
+  it('is honest when a transfer arrived after the slot was taken', async () => {
+    await renderPage(transferable({ holdExpiresAt: LAPSED_HOLD }), {
+      estado: 'transferencia-sin-lugar',
+    });
+
+    expect(screen.getByText(COPY.booking.transferSlotLost)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.booking.holdExpired)).not.toBeInTheDocument();
+  });
+
+  it('explains why the other method is blocked', async () => {
+    await renderPage(transferable(), { estado: 'metodo-en-curso' });
+
+    expect(screen.getByText(COPY.booking.methodInUse)).toBeInTheDocument();
   });
 });
