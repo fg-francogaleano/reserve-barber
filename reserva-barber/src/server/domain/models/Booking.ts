@@ -7,7 +7,7 @@
  * that belongs to a writer.
  */
 
-import { HOLD_DURATION_MINUTES } from './bookingHorizon';
+import { HOLD_DURATION_MINUTES, TRANSFER_HOLD_DURATION_MINUTES } from './bookingHorizon';
 
 export const BOOKING_STATUSES = [
   'PENDING_PAYMENT',
@@ -45,9 +45,28 @@ export interface BlockingCandidate {
  * filter would let every abandoned checkout block its slot forever, with no
  * surface anywhere in the product that would explain it to the owner.
  *
- * `PENDING_APPROVAL` is never expired by time: the client has uploaded a
- * receipt and a human owes them an answer. Releasing the slot underneath a
- * transfer that the owner is about to approve would sell it twice.
+ * `PENDING_APPROVAL` is never expired by `holdExpiresAt`: that column is the
+ * deadline for *uploading* a receipt, not for *answering* one. Releasing the
+ * slot underneath a transfer that the owner is about to approve would sell it
+ * twice.
+ *
+ * **It does stop blocking once its own appointment has passed**, and that is
+ * the only exit this status has which does not depend on the owner being
+ * attentive. Nothing is sold twice by it — the time is unsellable by then —
+ * and without it an unanswered receipt blocks a slot forever. The review
+ * surface makes that rarer, not impossible: an owner on holiday blocks the
+ * calendar exactly as an absent reviewer would.
+ *
+ * The comparison is inclusive of the start instant — the booking blocks while
+ * `startTime >= now` — because "has passed" is false at the moment something
+ * begins. This is the conservative direction: holding one instant too long
+ * costs nothing, and releasing one instant too early would offer a time that
+ * is being used right now. It is deliberately *not* the half-open rule the
+ * interval boundaries follow, which answers a different question.
+ *
+ * `CONFIRMED` is deliberately *not* given the same treatment. A confirmed
+ * appointment in the past is history rather than a hold, and nothing is
+ * waiting on it.
  *
  * A null `holdExpiresAt` blocks. The column is optional, and reading its
  * absence as "expired long ago" would release a slot the instant a write set
@@ -56,8 +75,10 @@ export interface BlockingCandidate {
 export function blocksAvailability(booking: BlockingCandidate, now: Date): boolean {
   switch (booking.status) {
     case 'CONFIRMED':
-    case 'PENDING_APPROVAL':
       return true;
+
+    case 'PENDING_APPROVAL':
+      return booking.startTime.getTime() >= now.getTime();
 
     case 'PENDING_PAYMENT':
       // Half-open, like every other boundary here: the hold covers
@@ -83,6 +104,39 @@ export function blocksAvailability(booking: BlockingCandidate, now: Date): boole
  * rule rather than relied on as a side effect of another constant.
  */
 export function holdExpiresAtFor(input: { createdAt: Date; startTime: Date }): Date {
-  const unclamped = new Date(input.createdAt.getTime() + HOLD_DURATION_MINUTES * 60_000);
-  return unclamped.getTime() > input.startTime.getTime() ? input.startTime : unclamped;
+  return holdDeadline(input.createdAt, HOLD_DURATION_MINUTES, input.startTime);
+}
+
+/**
+ * When a hold lapses once the client has committed to paying by bank transfer:
+ * the commitment instant plus `TRANSFER_HOLD_DURATION_MINUTES`, **under the
+ * same clamp**.
+ *
+ * The extension exists because 15 minutes was sized for a hosted checkout and
+ * a bank transfer is not one. It is applied at commitment rather than at
+ * creation so that a Mercado Pago client never holds a slot three times longer
+ * than they need — and because making it a write is what allows the destination
+ * to be withheld until it succeeds. A CBU shown during a window that is about
+ * to lapse is how a client ends up having transferred real money that no row
+ * here records.
+ *
+ * It shares `holdDeadline` with the creation write rather than restating the
+ * clamp. At three times the duration this clamp is materially closer to being
+ * reached, so two copies of the rule would be two chances to get it wrong.
+ */
+export function transferHoldExpiresAtFor(input: { committedAt: Date; startTime: Date }): Date {
+  return holdDeadline(input.committedAt, TRANSFER_HOLD_DURATION_MINUTES, input.startTime);
+}
+
+/**
+ * The clamp, in one place.
+ *
+ * Every write that sets or moves `holdExpiresAt` goes through here. A hold must
+ * never be scheduled to lapse after the appointment it holds has already begun:
+ * the sweeper would then expire a booking whose time has passed, and the
+ * confirmation page would count down to a deadline that means nothing.
+ */
+function holdDeadline(from: Date, durationMinutes: number, startTime: Date): Date {
+  const unclamped = new Date(from.getTime() + durationMinutes * 60_000);
+  return unclamped.getTime() > startTime.getTime() ? startTime : unclamped;
 }

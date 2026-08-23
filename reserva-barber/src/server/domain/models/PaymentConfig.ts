@@ -178,6 +178,26 @@ export function hasTransferConfigured(transfer: TransferDetails): boolean {
 }
 
 /**
+ * True when a transfer destination is **complete enough to show a client**.
+ *
+ * Stricter than `hasTransferConfigured`, and deliberately a second predicate
+ * rather than a tightening of the first. `hasTransferConfigured` feeds
+ * `isBookable`, which decides whether the shop may take bookings at all;
+ * changing its meaning would retroactively close the booking flow for a shop
+ * B4 already admits, which is not this rule's business.
+ *
+ * The difference is the holder name. `data-model.md` §14 requires it whenever a
+ * destination exists, because without it the client cannot confirm from their
+ * own bank's screen that they are paying the right business — a destination
+ * without one is not a destination a stranger can safely use. The column is
+ * nullable only because the whole destination is optional, so a row can still
+ * reach the public flow with a CBU and no name, and this is what happens then.
+ */
+export function isTransferOfferableToClient(transfer: TransferDetails): boolean {
+  return hasTransferConfigured(transfer) && transfer.holderName !== null;
+}
+
+/**
  * True when a deposit policy has been chosen.
  *
  * Asked of the value, never of the type: the type always holds something,

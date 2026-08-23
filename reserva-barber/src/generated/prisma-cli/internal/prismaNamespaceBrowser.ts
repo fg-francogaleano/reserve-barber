@@ -63,7 +63,8 @@ export const ModelName = {
   PaymentConfig: 'PaymentConfig',
   Client: 'Client',
   Booking: 'Booking',
-  Payment: 'Payment'
+  Payment: 'Payment',
+  TransferReceipt: 'TransferReceipt'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -262,6 +263,19 @@ export const PaymentScalarFieldEnum = {
 } as const
 
 export type PaymentScalarFieldEnum = (typeof PaymentScalarFieldEnum)[keyof typeof PaymentScalarFieldEnum]
+
+
+export const TransferReceiptScalarFieldEnum = {
+  id: 'id',
+  paymentId: 'paymentId',
+  filePath: 'filePath',
+  status: 'status',
+  uploadCount: 'uploadCount',
+  uploadedAt: 'uploadedAt',
+  reviewedAt: 'reviewedAt'
+} as const
+
+export type TransferReceiptScalarFieldEnum = (typeof TransferReceiptScalarFieldEnum)[keyof typeof TransferReceiptScalarFieldEnum]
 
 
 export const SortOrder = {

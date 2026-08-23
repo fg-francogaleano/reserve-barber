@@ -65,12 +65,20 @@ function createDb(
   };
 
   const tx = { $executeRaw: executeRaw, barber, booking };
+  /**
+   * The confirmation page's read issues a raw statement alongside the Prisma
+   * one, because `select` cannot express `"mpAccessToken" IS NOT NULL` and the
+   * alternative would bring a bearer credential into the process on a route a
+   * stranger reaches without a session.
+   */
+  const queryRaw = vi.fn().mockResolvedValue([{ hasMercadoPago: false }]);
   const db = {
     $transaction: vi.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
+    $queryRaw: queryRaw,
     booking,
   } as unknown as PrismaClient;
 
-  return { db, tx, executeRaw, barber, booking };
+  return { db, tx, executeRaw, barber, booking, queryRaw };
 }
 
 /** A blocking booking overlapping 09:00–09:30. */
@@ -449,5 +457,175 @@ describe('PrismaBookingRepository - the live hold count', () => {
       { status: 'PENDING_PAYMENT', holdExpiresAt: null },
       { status: 'PENDING_PAYMENT', holdExpiresAt: { gt: NOW } },
     ]);
+  });
+});
+
+describe('PrismaBookingRepository - what the confirmation page may see', () => {
+  const CONFIG = {
+    transferCbuCvu: '0000003100010000000001',
+    transferAlias: 'mi.barberia',
+    transferHolderName: 'Ana Pérez',
+  };
+
+  /** A row shaped the way the confirmation page's select produces one. */
+  function row(overrides: {
+    paymentConfig?: Record<string, unknown> | null;
+    payments?: Record<string, unknown>[];
+  }) {
+    return {
+      id: 'bkg-1',
+      status: 'PENDING_PAYMENT',
+      startTime: START,
+      endTime: END,
+      holdExpiresAt: new Date(NOW.getTime() + 10 * 60_000),
+      depositAmount: '1000.00',
+      client: { name: 'Ana' },
+      service: { name: 'Corte' },
+      barber: {
+        displayName: 'Leo',
+        location: {
+          name: 'Centro',
+          owner: {
+            paymentConfig:
+              overrides.paymentConfig === undefined ? CONFIG : overrides.paymentConfig,
+          },
+        },
+      },
+      payments: overrides.payments ?? [],
+    };
+  }
+
+  it('offers transfer when the destination is complete', async () => {
+    const { db, booking } = createDb();
+    booking.findUnique.mockResolvedValue(row({}));
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    expect(result?.hasTransferOption).toBe(true);
+  });
+
+  /**
+   * Stricter than the bookability gate, deliberately: without a holder name the
+   * client cannot confirm from their bank's screen who they are paying.
+   */
+  it('does not offer a destination missing its holder name', async () => {
+    const { db, booking } = createDb();
+    booking.findUnique.mockResolvedValue(
+      row({ paymentConfig: { ...CONFIG, transferHolderName: null } })
+    );
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    expect(result?.hasTransferOption).toBe(false);
+    expect(result?.transfer).toBeNull();
+  });
+
+  /**
+   * **The rule this story turns on.** A CBU visible during a window about to
+   * lapse is how a client transfers real money into a turn they have already
+   * lost — and unlike the Mercado Pago path there is no gateway that could be
+   * asked afterwards whether it happened. Enforced here, in the projection, so
+   * the page cannot render what it was never given.
+   */
+  it('withholds the destination until a transfer is committed', async () => {
+    const { db, booking } = createDb();
+    booking.findUnique.mockResolvedValue(row({}));
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    expect(result?.transfer).toBeNull();
+  });
+
+  it('withholds the destination while a Mercado Pago payment is the live one', async () => {
+    const { db, booking } = createDb();
+    booking.findUnique.mockResolvedValue(
+      row({
+        payments: [
+          { status: 'PENDING', method: 'MERCADO_PAGO', mpInitPoint: 'https://mp', transferReceipt: null },
+        ],
+      })
+    );
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    expect(result?.transfer).toBeNull();
+  });
+
+  it('releases the destination once a transfer payment is live', async () => {
+    const { db, booking } = createDb();
+    booking.findUnique.mockResolvedValue(
+      row({
+        payments: [
+          { status: 'PENDING', method: 'BANK_TRANSFER', mpInitPoint: null, transferReceipt: null },
+        ],
+      })
+    );
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    expect(result?.transfer).toEqual({
+      cbuCvu: CONFIG.transferCbuCvu,
+      alias: CONFIG.transferAlias,
+      holderName: CONFIG.transferHolderName,
+    });
+  });
+
+  it('carries the receipt status when one exists', async () => {
+    const { db, booking } = createDb();
+    booking.findUnique.mockResolvedValue(
+      row({
+        payments: [
+          {
+            status: 'PENDING',
+            method: 'BANK_TRANSFER',
+            mpInitPoint: null,
+            transferReceipt: { status: 'PENDING' },
+          },
+        ],
+      })
+    );
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    expect(result?.receiptStatus).toBe('PENDING');
+    expect(result?.paymentMethod).toBe('BANK_TRANSFER');
+  });
+
+  it('handles a shop with no payment configuration row at all', async () => {
+    const { db, booking } = createDb();
+    booking.findUnique.mockResolvedValue(row({ paymentConfig: null }));
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    expect(result?.hasTransferOption).toBe(false);
+    expect(result?.transfer).toBeNull();
+  });
+
+  /**
+   * The access token lives in the same row as the three columns above it. The
+   * presence check is evaluated by PostgreSQL and only its boolean answer
+   * crosses the wire — the technique B4 established for the booking write.
+   */
+  it('never selects the access token, and derives its presence in SQL', async () => {
+    const { db, booking, queryRaw } = createDb();
+    booking.findUnique.mockResolvedValue(row({}));
+    queryRaw.mockResolvedValue([{ hasMercadoPago: true }]);
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    const call = booking.findUnique.mock.calls[0]![0] as { select: unknown };
+    expect(JSON.stringify(call.select)).not.toContain('mpAccessToken');
+    expect(result?.hasMercadoPago).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('mpAccessToken');
+  });
+
+  it('reports no Mercado Pago when the presence query returns nothing', async () => {
+    const { db, booking, queryRaw } = createDb();
+    booking.findUnique.mockResolvedValue(row({}));
+    queryRaw.mockResolvedValue([]);
+
+    const result = await new PrismaBookingRepository(db).findByCancellationToken('tok-1');
+
+    expect(result?.hasMercadoPago).toBe(false);
   });
 });

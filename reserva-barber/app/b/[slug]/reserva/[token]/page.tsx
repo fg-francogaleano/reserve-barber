@@ -16,10 +16,16 @@ import {
 } from '@/server/application/booking/bookingOutcome';
 import {
   resolvePaymentPageState,
-  offersPayment,
+  offersMercadoPago,
+  offersTransfer,
+  canBePaid,
   type PaymentPageState,
 } from '@/server/application/booking/paymentPageState';
+import { PUBLIC_TRANSFER_API } from '@/server/application/auth/routeGuard';
 import { PayDepositButton } from '@/components/booking/PayDepositButton';
+import { ChooseTransferButton } from '@/components/booking/ChooseTransferButton';
+import { TransferDestination } from '@/components/booking/TransferDestination';
+import { ReceiptUploadForm } from '@/components/booking/ReceiptUploadForm';
 import { bookingConfirmationService } from './bookingConfirmationService';
 import { logger } from '@/server/infrastructure/logger';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
@@ -88,14 +94,31 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
   const outcome = parsePaymentOutcomeCode((await searchParams)[BOOKING_OUTCOME_PARAM]);
   const now = new Date();
 
+  /**
+   * What this shop can actually be paid with.
+   *
+   * Deliberately **not** derived from `booking.transfer`, which is non-null
+   * only once a transfer has been committed. The two answer different
+   * questions: `hasTransferOption` is "may the page offer the method",
+   * `booking.transfer` is "may the page show the account number". Collapsing
+   * them is how a CBU ends up in front of somebody who never chose it.
+   */
+  const methods = {
+    hasMercadoPago: booking.hasMercadoPago,
+    hasTransfer: booking.hasTransferOption,
+  };
+
   const state = resolvePaymentPageState({
     bookingStatus: booking.status,
     startTime: booking.startTime,
     endTime: booking.endTime,
     holdExpiresAt: booking.holdExpiresAt,
     paymentStatus: booking.paymentStatus,
+    paymentMethod: booking.paymentMethod,
     hasCheckout: booking.hasCheckout,
+    receiptStatus: booking.receiptStatus,
     outcome,
+    shopCanBePaid: canBePaid(methods),
     now,
   });
 
@@ -154,7 +177,7 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
       {/* Absent, never disabled. Every state below this line means the client
           has nothing left to do here, and a disabled-looking control would
           invite a tap that cannot succeed. */}
-      {offersPayment(state) && (
+      {offersMercadoPago(state, methods) && (
         <form
           method="post"
           action="/api/payments/mercadopago"
@@ -172,6 +195,35 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
               : COPY.booking.payDepositHelp}
           </p>
         </form>
+      )}
+
+      {/* The second method. A separate form rather than a second submit on the
+          first, because they post to different endpoints — and because a client
+          with no JavaScript must be able to choose either by navigation. */}
+      {offersTransfer(state, methods) && (
+        <form
+          method="post"
+          action={PUBLIC_TRANSFER_API}
+          className="flex flex-col items-center gap-2 text-center"
+        >
+          <input type="hidden" name="token" value={token} />
+          <ChooseTransferButton />
+          <p className="text-muted-foreground text-sm">{COPY.booking.payWithTransferHelp}</p>
+        </form>
+      )}
+
+      {/* The destination, and only here. `booking.transfer` is null unless a
+          transfer is committed, so this cannot render for somebody who has not
+          chosen — the guarantee is the projection's, not this condition's. */}
+      {state === 'transferAwaitingReceipt' && booking.transfer !== null && (
+        <>
+          <TransferDestination
+            destination={booking.transfer}
+            depositAmount={booking.depositAmount}
+            minutesLeft={minutesLeft}
+          />
+          <ReceiptUploadForm token={token} replacing={booking.receiptStatus === 'PENDING'} />
+        </>
       )}
     </main>
   );
@@ -191,6 +243,16 @@ function headingFor(state: PaymentPageState): string {
       return COPY.booking.paymentPaidSlotLost;
     case 'paymentsUnavailable':
       return COPY.booking.paymentsUnavailable;
+    case 'transferAwaitingReceipt':
+      return COPY.booking.transferHeading;
+    case 'receiptUnderReview':
+      return COPY.booking.receiptUnderReview;
+    case 'receiptRejected':
+      return COPY.booking.receiptRejected;
+    case 'transferSlotLost':
+      return COPY.booking.transferSlotLost;
+    case 'methodInUse':
+      return COPY.booking.methodInUse;
     case 'holdLiveUnpaid':
     case 'paymentInFlight':
       return COPY.booking.holdHeading;
@@ -211,6 +273,16 @@ function introFor(state: PaymentPageState): string {
       return COPY.booking.paymentPaidSlotLostHelp;
     case 'paymentsUnavailable':
       return COPY.booking.paymentsUnavailableHelp;
+    case 'transferAwaitingReceipt':
+      return COPY.booking.transferIntro;
+    case 'receiptUnderReview':
+      return COPY.booking.receiptUnderReviewHelp;
+    case 'receiptRejected':
+      return COPY.booking.receiptRejectedHelp;
+    case 'transferSlotLost':
+      return COPY.booking.transferSlotLostHelp;
+    case 'methodInUse':
+      return COPY.booking.methodInUseHelp;
     case 'holdLiveUnpaid':
     case 'paymentInFlight':
       return COPY.booking.holdIntro;

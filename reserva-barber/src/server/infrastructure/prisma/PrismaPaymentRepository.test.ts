@@ -29,6 +29,7 @@ function paymentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: PAYMENT,
     bookingId: BOOKING,
+    method: 'MERCADO_PAGO',
     status: 'PENDING',
     amount: '5000.50',
     mpPreferenceId: null,
@@ -54,6 +55,10 @@ function createTx() {
       update: vi.fn().mockResolvedValue(paymentRow({ status: 'APPROVED' })),
       // The late path guards its own write on mpPaymentId being null.
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      // The transfer commitment looks for a live payment before creating one,
+      // and defaults to finding none.
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue(paymentRow({ method: 'BANK_TRANSFER' })),
     },
     booking: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -638,5 +643,72 @@ describe('the late path does not let a second gateway id rewrite the first', () 
       outcome: 'alreadyProcessed',
     });
     expect(tx.booking.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('commitBankTransfer - concurrency and constraint translation', () => {
+  const START = new Date('2026-08-20T13:00:00.000Z');
+  const LIVE_HOLD = new Date('2026-08-19T12:10:00.000Z');
+
+  function heldBooking(overrides: Record<string, unknown> = {}) {
+    return {
+      status: 'PENDING_PAYMENT',
+      holdExpiresAt: LIVE_HOLD,
+      startTime: START,
+      endTime: new Date('2026-08-20T13:30:00.000Z'),
+      ...overrides,
+    };
+  }
+
+  // Two concurrent commitments both passed the read above; only the partial
+  // unique index can settle it, and the loser must not be able to tell.
+  it('translates the live-payment index violation as an existing commitment', async () => {
+    const { db, raw, tx } = createDb();
+    tx.booking.findUnique.mockResolvedValue(heldBooking());
+    tx.payment.create.mockRejectedValue(uniqueViolation('bookingId'));
+    raw.payment.findFirst.mockResolvedValue(paymentRow({ method: 'BANK_TRANSFER' }));
+    Object.assign(raw, {
+      booking: { findUnique: vi.fn().mockResolvedValue({ holdExpiresAt: LIVE_HOLD }) },
+    });
+
+    const result = await new PrismaPaymentRepository(db).commitBankTransfer({
+      bookingId: BOOKING,
+      amount: '5000.50',
+      startTime: START,
+      now: NOW,
+    });
+
+    expect(result.outcome).toBe('alreadyCommitted');
+  });
+
+  // T15, the defect this codebase already carries elsewhere: a violation on a
+  // different constraint must never be mistranslated into this one's meaning.
+  it('rethrows a unique violation on a different constraint', async () => {
+    const { db, tx } = createDb();
+    tx.booking.findUnique.mockResolvedValue(heldBooking());
+    tx.payment.create.mockRejectedValue(uniqueViolation('mpPaymentId'));
+
+    await expect(
+      new PrismaPaymentRepository(db).commitBankTransfer({
+        bookingId: BOOKING,
+        amount: '5000.50',
+        startTime: START,
+        now: NOW,
+      })
+    ).rejects.toThrow();
+  });
+
+  it('reports a booking that no longer exists rather than inventing one', async () => {
+    const { db, tx } = createDb();
+    tx.booking.findUnique.mockResolvedValue(null);
+
+    const result = await new PrismaPaymentRepository(db).commitBankTransfer({
+      bookingId: BOOKING,
+      amount: '5000.50',
+      startTime: START,
+      now: NOW,
+    });
+
+    expect(result).toEqual({ outcome: 'notPending', bookingStatus: 'MISSING' });
   });
 });

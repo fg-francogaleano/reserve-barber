@@ -186,3 +186,13 @@ export type Booking = Prisma.BookingModel
  * 
  */
 export type Payment = Prisma.PaymentModel
+/**
+ * Model TransferReceipt
+ * A proof-of-transfer file uploaded by the client, which the owner approves or
+ * rejects from the dashboard (data-model.md §13).
+ * 
+ * **This table stores no evidence of payment.** A receipt image is trivially
+ * fabricated and this product has no bank integration, so the file is material
+ * for a human decision and nothing here may be read as proof that money moved.
+ */
+export type TransferReceipt = Prisma.TransferReceiptModel

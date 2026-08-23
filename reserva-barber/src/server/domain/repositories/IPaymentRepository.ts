@@ -8,12 +8,21 @@
  * its caller has no use for.
  */
 
-import type { PaymentStatus } from '../models/Payment';
+import type { PaymentMethod, PaymentStatus } from '../models/Payment';
 
 /** A payment as the initiation path and the confirmation page read it. */
 export interface PaymentRecord {
   readonly id: string;
   readonly bookingId: string;
+  /**
+   * Which method this payment belongs to.
+   *
+   * Added by B6: with two methods live in the product, "the booking's live
+   * payment" is no longer a complete answer to what the confirmation page
+   * should render — a `PENDING` payment means "resume the checkout" for one
+   * method and "upload your receipt" for the other.
+   */
+  readonly method: PaymentMethod;
   readonly status: PaymentStatus;
   readonly amount: string;
   readonly mpPreferenceId: string | null;
@@ -94,7 +103,72 @@ export type ConfirmPaymentResult =
   | { readonly outcome: 'notPending'; readonly bookingStatus: string }
   | { readonly outcome: 'alreadyProcessed' };
 
+/**
+ * What committing to a bank transfer decided.
+ *
+ * `committed` carries the extended deadline because the page renders it
+ * immediately, beside the account number, and re-reading the booking to learn a
+ * value this transaction just wrote would be a second round trip for nothing.
+ */
+export type CommitTransferResult =
+  | {
+      readonly outcome: 'committed';
+      readonly payment: PaymentRecord;
+      readonly holdExpiresAt: Date;
+    }
+  /**
+   * A `BANK_TRANSFER` payment was already live. The ordinary double-tap, and
+   * the deadline is **not** extended again — otherwise a client could hold a
+   * slot indefinitely by tapping the control.
+   */
+  | {
+      readonly outcome: 'alreadyCommitted';
+      readonly payment: PaymentRecord;
+      readonly holdExpiresAt: Date | null;
+    }
+  /** A Mercado Pago checkout exists and can be paid. See the method rule below. */
+  | { readonly outcome: 'mercadoPagoInFlight' }
+  /** The booking is no longer accepting a payment; the status found is the answer. */
+  | { readonly outcome: 'notPending'; readonly bookingStatus: string }
+  /** The hold lapsed before the client chose a method. */
+  | { readonly outcome: 'holdExpired' };
+
 export interface IPaymentRepository {
+  /**
+   * Opens a `BANK_TRANSFER` payment and **extends the hold**, in one
+   * transaction.
+   *
+   * One call rather than two because the two writes are one decision: a payment
+   * row without the extension would leave the client looking at an account
+   * number behind a deadline sized for a hosted checkout, which is the failure
+   * the extension exists to prevent. The deadline comes from
+   * `transferHoldExpiresAtFor`, which shares its clamp with the creation write.
+   *
+   * **No advisory lock, deliberately, and the asymmetry is the point.** This
+   * transaction does not change whether the booking blocks — it is
+   * `PENDING_PAYMENT` before and after — so no slot is being taken and there is
+   * nothing to race. `attachReceipt` and the owner's approval both *do* take
+   * the lock, because both move a booking between blocking states.
+   *
+   * **The method rule (data-model.md §12).** A live `MERCADO_PAGO` payment
+   * holding an `mpInitPoint` blocks this and answers `mercadoPagoInFlight`: a
+   * checkout exists, it can be paid at any moment, and making room for a second
+   * method risks charging the client twice. A live `MERCADO_PAGO` payment with
+   * **no** `mpInitPoint` is an unfinished preference creation — no checkout ever
+   * existed, so nobody could have paid it — and is set to `REJECTED` inside this
+   * same transaction so the client is not trapped by a gateway outage.
+   *
+   * The partial unique index is still the arbiter between two concurrent
+   * commitments. Its violation MUST be translated as `alreadyCommitted` and
+   * MUST be qualified on the violated constraint (T15).
+   */
+  commitBankTransfer(input: {
+    bookingId: string;
+    amount: string;
+    startTime: Date;
+    now: Date;
+  }): Promise<CommitTransferResult>;
+
   /**
    * Opens a pending Mercado Pago payment for a booking, or hands back the live
    * one that already exists.

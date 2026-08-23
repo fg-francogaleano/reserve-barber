@@ -396,7 +396,8 @@ export const ModelName = {
   PaymentConfig: 'PaymentConfig',
   Client: 'Client',
   Booking: 'Booking',
-  Payment: 'Payment'
+  Payment: 'Payment',
+  TransferReceipt: 'TransferReceipt'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -412,7 +413,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "owner" | "businessProfile" | "socialLink" | "location" | "barber" | "service" | "barberService" | "workingHours" | "timeOff" | "paymentConfig" | "client" | "booking" | "payment"
+    modelProps: "owner" | "businessProfile" | "socialLink" | "location" | "barber" | "service" | "barberService" | "workingHours" | "timeOff" | "paymentConfig" | "client" | "booking" | "payment" | "transferReceipt"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1378,6 +1379,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    TransferReceipt: {
+      payload: Prisma.$TransferReceiptPayload<ExtArgs>
+      fields: Prisma.TransferReceiptFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.TransferReceiptFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.TransferReceiptFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>
+        }
+        findFirst: {
+          args: Prisma.TransferReceiptFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.TransferReceiptFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>
+        }
+        findMany: {
+          args: Prisma.TransferReceiptFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>[]
+        }
+        create: {
+          args: Prisma.TransferReceiptCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>
+        }
+        createMany: {
+          args: Prisma.TransferReceiptCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.TransferReceiptCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>[]
+        }
+        delete: {
+          args: Prisma.TransferReceiptDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>
+        }
+        update: {
+          args: Prisma.TransferReceiptUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>
+        }
+        deleteMany: {
+          args: Prisma.TransferReceiptDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.TransferReceiptUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.TransferReceiptUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>[]
+        }
+        upsert: {
+          args: Prisma.TransferReceiptUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TransferReceiptPayload>
+        }
+        aggregate: {
+          args: Prisma.TransferReceiptAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateTransferReceipt>
+        }
+        groupBy: {
+          args: Prisma.TransferReceiptGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TransferReceiptGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.TransferReceiptCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TransferReceiptCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -1599,6 +1674,19 @@ export const PaymentScalarFieldEnum = {
 export type PaymentScalarFieldEnum = (typeof PaymentScalarFieldEnum)[keyof typeof PaymentScalarFieldEnum]
 
 
+export const TransferReceiptScalarFieldEnum = {
+  id: 'id',
+  paymentId: 'paymentId',
+  filePath: 'filePath',
+  status: 'status',
+  uploadCount: 'uploadCount',
+  uploadedAt: 'uploadedAt',
+  reviewedAt: 'reviewedAt'
+} as const
+
+export type TransferReceiptScalarFieldEnum = (typeof TransferReceiptScalarFieldEnum)[keyof typeof TransferReceiptScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -1777,6 +1865,20 @@ export type ListEnumPaymentStatusFieldRefInput<$PrismaModel> = FieldRefInputType
 
 
 /**
+ * Reference to a field of type 'ReceiptStatus'
+ */
+export type EnumReceiptStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ReceiptStatus'>
+    
+
+
+/**
+ * Reference to a field of type 'ReceiptStatus[]'
+ */
+export type ListEnumReceiptStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ReceiptStatus[]'>
+    
+
+
+/**
  * Reference to a field of type 'Float'
  */
 export type FloatFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Float'>
@@ -1912,6 +2014,7 @@ export type GlobalOmitConfig = {
   client?: Prisma.ClientOmit
   booking?: Prisma.BookingOmit
   payment?: Prisma.PaymentOmit
+  transferReceipt?: Prisma.TransferReceiptOmit
 }
 
 /* Types for Logging */

@@ -1,6 +1,8 @@
 import type {
   BookingByToken,
   BookingForPaymentInitiation,
+  BookingForTransfer,
+  PublicTransferDestination,
   HeldBooking,
   IBookingRepository,
   ProvisionalBookingInput,
@@ -9,7 +11,9 @@ import type {
 import type { Interval } from '@/server/domain/models/availability';
 import { overlaps } from '@/server/domain/models/availability';
 import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
-import type { PaymentStatus } from '@/server/domain/models/Payment';
+import type { PaymentMethod, PaymentStatus } from '@/server/domain/models/Payment';
+import type { ReceiptStatus } from '@/server/domain/models/TransferReceipt';
+import { isTransferOfferableToClient } from '@/server/domain/models/PaymentConfig';
 import { workingIntervalsFor } from '@/server/domain/models/bookingCalendar';
 import { MAX_DURATION_MINUTES } from '@/server/domain/models/slotGranularity';
 import { MAX_TIME_OFF_DAYS } from '@/server/application/timeOff/timeOffSchema';
@@ -324,32 +328,103 @@ export class PrismaBookingRepository implements IBookingRepository {
    * it cannot select are the columns it cannot render.
    */
   async findByCancellationToken(token: string): Promise<BookingByToken | null> {
-    const row = await this.db.booking.findUnique({
-      where: { cancellationToken: token },
-      select: {
-        id: true,
-        status: true,
-        startTime: true,
-        endTime: true,
-        holdExpiresAt: true,
-        depositAmount: true,
-        client: { select: { name: true } },
-        service: { select: { name: true } },
-        barber: { select: { displayName: true, location: { select: { name: true } } } },
-        // The booking's live payment, in the same query. A second read would be
-        // a second round trip on the page a paying client is staring at, and
-        // the partial unique index guarantees there is at most one.
-        payments: {
-          where: { status: { not: 'REJECTED' } },
-          select: { status: true, mpInitPoint: true },
-          take: 1,
+    // Two statements, issued together so their round trips overlap rather than
+    // queue. The second exists because Prisma's `select` cannot express
+    // `"mpAccessToken" IS NOT NULL` as a projected column, and the alternative
+    // — selecting the token and reducing it here — would bring a bearer
+    // credential into the process on a route a stranger reaches without a
+    // session. B4 settled this for the booking write; the same answer holds on
+    // the page. Keyed by the token in both, so neither waits on the other.
+    const [row, mercadoPago] = await Promise.all([
+      this.db.booking.findUnique({
+        where: { cancellationToken: token },
+        select: {
+          id: true,
+          status: true,
+          startTime: true,
+          endTime: true,
+          holdExpiresAt: true,
+          depositAmount: true,
+          client: { select: { name: true } },
+          service: { select: { name: true } },
+          barber: {
+            select: {
+              displayName: true,
+              location: {
+                select: {
+                  name: true,
+                  // The three plaintext columns a client is shown. The access
+                  // token lives in this row and is deliberately not selected;
+                  // the projection returned below has no field it could occupy.
+                  owner: {
+                    select: {
+                      paymentConfig: {
+                        select: {
+                          transferCbuCvu: true,
+                          transferAlias: true,
+                          transferHolderName: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          // The booking's live payment, in the same query. A second read would
+          // be a second round trip on the page a paying client is staring at,
+          // and the partial unique index guarantees there is at most one.
+          payments: {
+            where: { status: { not: 'REJECTED' } },
+            select: {
+              status: true,
+              method: true,
+              mpInitPoint: true,
+              transferReceipt: { select: { status: true } },
+            },
+            take: 1,
+          },
         },
-      },
-    });
+      }),
+      this.db.$queryRaw<{ hasMercadoPago: boolean }[]>`
+        SELECT pc."mpAccessToken" IS NOT NULL AS "hasMercadoPago"
+        FROM "Booking" b
+        JOIN "Barber" br ON br.id = b."barberId"
+        JOIN "Location" l ON l.id = br."locationId"
+        LEFT JOIN "PaymentConfig" pc ON pc."ownerId" = l."ownerId"
+        WHERE b."cancellationToken" = ${token}
+      `,
+    ]);
 
     if (row === null) return null;
 
     const payment = row.payments[0] ?? null;
+    const config = row.barber.location.owner.paymentConfig;
+
+    // Whether the method may be OFFERED. Stricter than the bookability gate: a
+    // destination with no holder name is unusable to a client, who cannot
+    // confirm from their bank's screen who they are paying.
+    const hasTransferOption =
+      config != null &&
+      isTransferOfferableToClient({
+        cbuCvu: config.transferCbuCvu,
+        alias: config.transferAlias,
+        holderName: config.transferHolderName,
+      });
+
+    // Whether the account number may be SHOWN — a different question, and only
+    // once the client has committed. The rule is that a CBU must never be
+    // visible during a window that is about to lapse, and this is where it is
+    // enforced: the page cannot render what it was not given.
+    const destination: PublicTransferDestination | null =
+      hasTransferOption && payment?.method === 'BANK_TRANSFER' && config != null
+        ? {
+            cbuCvu: config.transferCbuCvu,
+            alias: config.transferAlias,
+            // Non-null by `hasTransferOption`, which requires it.
+            holderName: config.transferHolderName as string,
+          }
+        : null;
 
     return {
       id: row.id,
@@ -366,6 +441,11 @@ export class PrismaBookingRepository implements IBookingRepository {
       // A boolean, never the URL: resuming goes back through the idempotent
       // initiation endpoint rather than through a second path rendered here.
       hasCheckout: payment?.mpInitPoint != null,
+      paymentMethod: payment === null ? null : (payment.method as PaymentMethod),
+      receiptStatus: (payment?.transferReceipt?.status as ReceiptStatus | undefined) ?? null,
+      hasMercadoPago: mercadoPago[0]?.hasMercadoPago ?? false,
+      hasTransferOption,
+      transfer: destination,
     };
   }
 
@@ -444,4 +524,62 @@ export class PrismaBookingRepository implements IBookingRepository {
     };
   }
 
+  /**
+   * The same token, answered for the bank transfer path.
+   *
+   * Reaches one column further than the Mercado Pago projection —
+   * `Owner.authUserId` — because that value is the leading segment of the
+   * storage key and therefore what the bucket's policies compare against a
+   * session. It is deliberately absent from the Mercado Pago projection, which
+   * has no key to compose.
+   */
+  async findForTransfer(token: string): Promise<BookingForTransfer | null> {
+    const row = await this.db.booking.findUnique({
+      where: { cancellationToken: token },
+      select: {
+        id: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        holdExpiresAt: true,
+        depositAmount: true,
+        barberId: true,
+        barber: {
+          select: {
+            location: {
+              select: {
+                ownerId: true,
+                owner: {
+                  select: {
+                    authUserId: true,
+                    businessProfile: { select: { publicSlug: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (row === null) return null;
+
+    // Same rule as the Mercado Pago projection: a booking whose shop has no
+    // public profile has nowhere to send the client back to.
+    const slug = row.barber.location.owner.businessProfile?.publicSlug;
+    if (slug === undefined) return null;
+
+    return {
+      id: row.id,
+      status: row.status,
+      startTime: row.startTime,
+      endTime: row.endTime,
+      holdExpiresAt: row.holdExpiresAt,
+      depositAmount: toCanonicalDecimal(row.depositAmount),
+      ownerId: row.barber.location.ownerId,
+      ownerAuthUserId: row.barber.location.owner.authUserId,
+      publicSlug: slug,
+      barberId: row.barberId,
+    };
+  }
 }

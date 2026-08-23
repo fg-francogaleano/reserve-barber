@@ -48,10 +48,27 @@ export const PUBLIC_PAYMENT_API = '/api/payments/mercadopago';
  */
 export const PUBLIC_MP_WEBHOOK = '/api/webhooks/mercadopago';
 
+/**
+ * The public bank transfer endpoint (B6) — commitment and receipt submission.
+ *
+ * **It does not inherit `PUBLIC_PAYMENT_API`**, and could not: the comparison
+ * below is `===`, and `/api/payments` as a prefix would admit every future
+ * payment endpoint the moment it existed — including ones nobody had thought
+ * about admitting. Each door is opened by name.
+ *
+ * Both of this endpoint's intents share one path for the same reason
+ * `PUBLIC_PAYMENT_API` takes no identifier: the cancellation token is a live
+ * credential and belongs in the body, where it stays out of access logs and
+ * `Referer` headers, rather than in a path this guard would then have to match
+ * by pattern.
+ */
+export const PUBLIC_TRANSFER_API = '/api/payments/transfer';
+
 /** The public API paths, matched by equality and never by prefix. */
 const PUBLIC_API_PATHS: readonly string[] = [
   PUBLIC_BOOKING_API,
   PUBLIC_PAYMENT_API,
+  PUBLIC_TRANSFER_API,
   PUBLIC_MP_WEBHOOK,
 ];
 
@@ -128,7 +145,7 @@ function isDecodable(pathname: string): boolean {
  * protected the moment it exists rather than when someone remembers to add it
  * to a list.
  *
- * That set holds exactly five entries:
+ * That set holds exactly six entries:
  *
  * 1. **`/login`** — the page an unauthenticated owner is sent to.
  * 2. **`/b/**`** — the public booking namespace (B1 design D1). It is served to
@@ -137,12 +154,15 @@ function isDecodable(pathname: string): boolean {
  * 3. **`/api/bookings`** (B4 design D1/D2) — the public booking write, an
  *    **exact** match rather than a prefix. See `PUBLIC_BOOKING_API`.
  * 4. **`/api/payments/mercadopago`** (B5) — the public payment initiation.
- * 5. **`/api/webhooks/mercadopago`** (B5) — the gateway's notification
+ * 5. **`/api/payments/transfer`** (B6) — the bank transfer commitment and the
+ *    receipt submission. A separate entry from 4, because `/api/payments` as a
+ *    prefix would admit every future payment endpoint on creation.
+ * 6. **`/api/webhooks/mercadopago`** (B5) — the gateway's notification
  *    endpoint. No session could authenticate it; the handler establishes
  *    authenticity itself by re-fetching the payment from Mercado Pago with the
  *    owner's own access token.
  *
- * Entries 3 to 5 are compared with `===` through `PUBLIC_API_PATHS`. **None of
+ * Entries 3 to 6 are compared with `===` through `PUBLIC_API_PATHS`. **None of
  * them takes an identifier in its path**, precisely so that equality stays
  * expressive enough and this guard never needs to match a pattern. That is a
  * constraint on the endpoints, not a coincidence about them.

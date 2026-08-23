@@ -810,6 +810,85 @@ Pago rate limit per request". A Cloudflare rate-limiting rule — still the miti
 T55 both defer to, still ~15 min and no code — now covers three surfaces rather than two, which makes
 it cheaper per unit of risk than at any previous costing.
 
+
+**Re-costed by B6 (2026-08-22), and the shape changes again — this time toward bandwidth.**
+B6 adds a fourth public endpoint, `POST /api/payments/transfer`, and it is unlike the three before
+it: the receipt intent accepts a **multipart body of up to 10 MB** and spends a storage round trip
+per accepted upload. Every previous entry on this list is about database round trips; this one adds
+ingress and object storage to the amplification.
+
+Three things bound it, and only the last is real:
+
+- The route refuses on `Content-Length` **before reading the body**, so an oversized request costs a
+  header parse rather than 10 MB of isolate memory.
+- `BookingThrottle`, which is per-isolate and defeats one script from one address — see T55.
+- **`uploadCount` against `MAX_RECEIPT_UPLOADS_PER_BOOKING`, read before the upload and re-checked
+  inside the transaction.** This is the bound that holds: three uploads per booking, and a booking
+  requires passing the whole wizard and the hold cap first. An attacker willing to create bookings
+  can still push 30 MB per booking.
+
+  **This sentence was false when first written, and the correction is the point.** The cap lived
+  only inside the transaction that records the row — which runs *after* the upload. It therefore
+  bounded rows and left object storage completely unbounded: a token holder could push 10 MB per
+  request for as long as their booking sat in `PENDING_APPROVAL` (a status nothing expires until the
+  appointment passes — T64), and every one of those requests would be answered "too many attempts"
+  while the file was quietly kept. Found by an adversarial review after the change was otherwise
+  complete, and after this entry, `design.md` and the spec had all three asserted the bound held.
+  The pre-check now runs before any byte is written; the transactional check stays for the race.
+
+**The confirmation page went from one query to two, and they are issued together.** The Mercado Pago
+presence check cannot be a Prisma `select` — `"mpAccessToken" IS NOT NULL` is not expressible as a
+projected column — and selecting the token to reduce it in the process was rejected for the reason
+B4 gave: it would bring a bearer credential into a route a stranger reaches without a session. So it
+is a raw statement, keyed by the same cancellation token, issued in parallel with the booking read.
+The page should therefore still read as one round trip rather than two.
+
+**Control measurement first (B6, 2026-08-23).** `/b/{slug}` — a page B6 did not touch, two queries —
+read **~1.18 s** on the preview against the live database (1256, 1153, 1132, 1186 ms, discarding a
+3585 ms cold first). B2 measured that same page at **~1.17 s** on 2026-08-15. The environment has
+not drifted, so every figure in this entry remains comparable with every other, which is the thing
+that had to be established before attributing anything to B6.
+
+Measurements must be taken the same way to be compared: browser timings include asset loading and
+render, and are not the page's server cost. Everything recorded here is a terminal request for the
+document alone.
+
+**A correction, because the first version of this paragraph was wrong.** It said the gate's 1018 ms
+was inflated by `maxUses: 1` — "setup the Worker does not repeat". The Worker *does* repeat it:
+`createPrismaClient` sets `maxUses: 1` too, deliberately, because workerd cannot reuse a socket
+across request contexts and a carried-over connection hangs until the read timeout. **Every request
+this application serves pays connection setup for every query it issues**, and that is a property of
+the runtime, not of the gate. The gate's figure was representative; the reasoning dismissing it was
+not.
+
+That reframes what `Promise.all` buys on this page. The two statements do not queue behind one
+round trip — they open **two connections concurrently**, so the page pays one setup in wall-clock
+time rather than two. It is still the right shape; it is just not the "one round trip instead of
+two" the paragraph above implies, because the round trip was never the dominant cost.
+
+**The confirmation page reads ~1.22 s** (1200, 1250, 1295, 1134 ms; 3284 ms cold, discarded) against
+the control's ~1.18 s. A difference of **38 ms**, with the two samples' ranges almost entirely
+overlapping — 1132–1256 for the control, 1134–1295 for the page.
+
+**The parallel statement is free in wall-clock terms.** Not "costs nothing" — four samples cannot
+resolve a difference this small, and the honest statement is that B6's second query costs less than
+the noise floor of this measurement. What it does not do is add a second connection setup in series,
+which is what the `Promise.all` was there to prevent and what a ~1.6 s reading would have exposed.
+
+Measured on the preview, 2026-08-23. Both figures taken the same way, minutes apart, on the same
+machine and network — which is the only reason the 38 ms is worth quoting at all.
+
+| Route | Queries | Response |
+| --- | --- | --- |
+| `/b/{slug}` (control, untouched by B6) | 2 | ~1.18 s |
+| `/b/{slug}/reserva/{token}` (B6: +1 statement, parallel) | 2 | ~1.22 s |
+| cold start, either | — | ~3.3–3.6 s |
+
+**The cold start is the number nobody has costed, and it is the largest one here.** Both pages take
+over three seconds on the first request after a Worker starts. That is outside this entry's scope —
+it is not a cache or a rate limit — but it is a worse first impression than anything this entry
+tracks, and it belongs to whoever looks at public-surface performance next.
+
 ### T49 — The public 404 page renders an empty body without JavaScript
 **Status:** accepted · **Effort:** unknown — see the cause · **Added:** B2 (2026-08-15, runtime verification) · **Origin:** B1
 
@@ -869,6 +948,33 @@ Measured rather than guessed. Deploying `main` — identical to what was already
 - **Trigger (unchanged in kind, closer in time):** the next story that adds a runtime dependency of any size — realistically **B5**. The lever is still Workers Paid (US$5/month, 10 MiB); there is no second `compilerBuild` trick to find.
 
 - **Trigger:** the next deploy rejection, or any story that adds more than ~400 KiB gzip. Payments (B5), email (N1) and the cron trigger (B7) are all still to come and all add dependencies.
+
+
+**B6 measured at 2924.08 KiB gzip (2026-08-22), leaving ~148 KiB of headroom.** Reported by
+`wrangler deploy --dry-run` on the branch carrying B5 + B6 together.
+
+**B5 never re-costed this entry, so the +177.56 KiB over B4's 2746.52 covers both stories and cannot
+be split between them.** That is a gap in the record, not an estimate to be invented: whoever wants
+B5's number alone can build its branch, and nobody should guess it from here.
+
+**The prediction in the B4 note above has come true.** It said "at ~138 KiB per story there are two
+more stories of room". Two stories later there is **less than one**, by that same measure. B6 was
+expected to be cheap — `@supabase/supabase-js` was already a dependency, so the storage adapter adds
+almost nothing — and the cost is in the surface area instead: a route, three repositories' worth of
+new methods, two application services, five components, a dashboard page and its actions.
+
+**B7 and N1 are both still to come, and N1 adds Resend**, a dependency this bundle has never carried.
+On the trend above, N1 alone is plausibly larger than the remaining margin.
+
+**And ~148 KiB is not 148 KiB of usable room.** B2 measured that Cloudflare's server-side check is
+stricter than wrangler's figure: a build reporting 3064.88 KiB — "fits by 7 KiB" — was rejected by
+the API. The dry-run can say "definitely too big"; it cannot say "this will fit". So the honest
+reading is "not rejected today, with a margin nobody should spend deliberately".
+
+- **Trigger (now, not on the next rejection):** the lever is unchanged — Workers Paid, US$5/month,
+  10 MiB, ~5 minutes of work and no code. B2 discovered its ceiling as a failed deploy in the middle
+  of a story. **The recommendation is to take the paid plan before starting N1** rather than
+  discovering it the same way a second time.
 
 ### T50 — The service step has no answer for a catalogue at its cap
 **Status:** accepted · **Effort:** ~2–4 h (grouping, or a filter, or search) · **Added:** B2 (2026-08-15)
@@ -1460,6 +1566,32 @@ this is a fact to know rather than a change to make.
   for the hold duration specifically — it is the first story that can measure how long uploading a
   transfer receipt actually takes.
 
+
+**B6 added a fourth, and could not do what this entry asked of it (2026-08-22).**
+`TRANSFER_HOLD_DURATION_MINUTES` = **45**, applied when a client commits to paying by transfer,
+declared beside the other three and under the same clamp.
+
+The trigger above named B6 as "the first story that can measure how long uploading a transfer
+receipt actually takes". **It cannot, and pretending otherwise would be the failure T45 recorded** —
+a probe that reports a number it was not really measuring. No real shop has used this product, so
+there is nothing to measure; 45 is a judgement about a sequence nobody has timed: authenticate into
+a banking app, register a destination (several Argentine banks gate that behind their own
+confirmation step), transfer, capture, return, upload.
+
+What B6 delivers instead is the constant, its home, and the reasoning — including why it is not 60.
+`MIN_BOOKING_LEAD_MINUTES` is 60, so a 60-minute hold would sit exactly on `holdExpiresAtFor`'s
+clamp for the nearest bookable appointment. **That clamp is no longer theoretical**: at three times
+the creation duration it is materially closer to being reached, and `b6-gate.ts` (11.6c) exercises
+it against a real row, where `holdExpiresAt` came back equal to `startTime` to the millisecond.
+
+The cost of being wrong is asymmetric in a way the other three are not. Too long holds a slot; too
+short leaves a client who has already transferred real money with **no row anywhere recording that
+they paid**, because unlike the Mercado Pago path there is no gateway to ask afterwards.
+
+- **Trigger (added):** the first real transfer. One shop's first week of `transfer.commit` and
+  `transfer.receipt` log lines is enough to replace all four of these guesses with measurements, and
+  this is the one where being wrong costs the most.
+
 ### T54 — A returning client's rename re-labels every booking they ever made
 **Status:** accepted — **decided, not discovered** · **Effort:** ~1 h now (a migration over an empty
 table), unknown later · **Added:** B4 (2026-08-17)
@@ -1526,6 +1658,22 @@ it unchanged. Two additions:
   multi-origin test from one machine trips Cloudflare's own edge protection with a `403` before the
   application throttle is ever consulted. Route tests and the preview run are where this is provable.
   Anyone re-attempting the production check will otherwise record a false failure, as B4's first pass did.
+
+
+**B6 adds a third throttled endpoint, and it is the most expensive one.**
+`POST /api/payments/transfer` carries both intents — the commitment and the multipart receipt — and
+shares `BookingThrottle` with the other two, so the per-isolate caveat above applies unchanged.
+
+What is different is the cost of a request that gets through. The booking write and the payment
+initiation are small JSON bodies; this one buffers up to 10 MB into an isolate with a hard memory
+bound and then spends a storage round trip. The route refuses on `Content-Length` **before reading
+the body** for exactly that reason, which is a memory guard rather than a formality.
+
+**The bound that actually holds here is `uploadCount` against `MAX_RECEIPT_UPLOADS_PER_BOOKING` (3),
+checked against the database** — the same shape as `MAX_LIVE_HOLDS_PER_CLIENT` backing the booking
+write. It cannot be spread across isolates because the row is shared, and it caps what a legitimate
+token holder can push into object storage. Verified in `b6-gate.ts` (11.7d): the fourth submission
+for one booking is refused.
 
 ### T56 — Guest personal data accumulates with no deletion path
 **Status:** accepted · **Effort:** unknown (a policy decision before an implementation) · **Added:**
@@ -1765,3 +1913,117 @@ pin a Worker request on a third party).
   that their turn is real. Solving the page refresh and the email together means deciding once how
   this product tells somebody their appointment exists, instead of twice in two stories with two
   different answers. B5 therefore closes with this open, deliberately.
+
+---
+
+### T63 — A storage policy depends on Prisma-owned tables, and Prisma never reports it as drift
+**Status:** accepted — mitigated by a gate probe, not removed · **Effort:** ~1 h to add a schema-drift check to CI, unbounded to remove the coupling · **Added:** B6 (2026-08-22)
+
+B6 gives an anonymous caller an insert grant on a storage bucket, which nothing in this product had
+done before. What confines it is not application code: it is `public.storage_can_accept_receipt()`,
+a `SECURITY DEFINER` predicate the bucket's insert policy calls, which resolves the object key
+against `Booking → Barber → Location → Owner` and admits the write only where it names a real
+booking, in a state still accepting a receipt, under that booking's real owner.
+
+That re-derives P1's guarantee — a write outside the owner's prefix refused by the database rather
+than by a promise in code — for a caller with no `auth.uid()` to compare against. It also creates a
+dependency that **nothing in the toolchain watches**:
+
+```
+"Booking"  . id, barberId, status, holdExpiresAt
+"Barber"   . id, locationId
+"Location" . id, ownerId
+"Owner"    . id, authUserId
+```
+
+Prisma owns those tables. The predicate lives in a function Prisma does not track, so `migrate
+status` and `migrate diff` are both silent about it. **Rename any of those eight columns and the
+predicate stops resolving** — and the failure is the quiet direction: it starts refusing every
+upload, so the bucket looks secure while B6 is dead.
+
+**Mitigated rather than accepted blind.** `scripts/b6-gate.ts` probes both directions: three inserts
+that must be refused **and one that must be admitted**. The positive probe is the one that matters
+here — without it, a predicate broken by a rename would pass every negative check.
+
+The residual risk is that the gate is run by hand. Nothing runs it on a schema change.
+
+- **Trigger:** the first rename of any column in that list, or CI gaining a step that can reach the
+  database. A cheap partial fix is a test that asserts those column names still exist, which would
+  fail in the suite rather than in the gate.
+
+---
+
+### T64 — An unreviewed receipt blocks its slot until the appointment passes
+**Status:** accepted — bounded by design, not eliminated · **Effort:** ~2 h (a reminder to the owner, or a shorter review deadline with a decided consequence) · **Added:** B6 (2026-08-22)
+
+`PENDING_APPROVAL` blocks availability and is deliberately **not** governed by `holdExpiresAt` —
+that column is the deadline for *uploading* a receipt, not for *answering* one. Releasing a slot
+underneath a transfer the owner is about to approve would sell it twice.
+
+B6 gives the status one terminal path: a booking whose `startTime` has passed becomes sweepable,
+because its time is unsellable by then and releasing it sells nothing twice. **That closes the
+permanent case and not the painful one.** A receipt uploaded for an appointment three weeks out
+blocks that slot for three weeks if nobody answers it.
+
+Shipping D2 in the same change makes this rarer rather than impossible: an owner on holiday blocks
+the calendar exactly as an absent review surface would. The queue is the only surface that shows a
+waiting receipt — D1's counter and N1's email are both later stories.
+
+Two clients can also do this deliberately: a valid booking plus a blank JPEG holds a slot until the
+appointment. Bounded by `MAX_LIVE_HOLDS_PER_CLIENT` and by the per-booking upload cap, so it is
+harassment rather than a denial of service, but it is not prevented.
+
+- **Trigger:** **D1** (a pending-receipt counter on the dashboard home makes an unanswered receipt
+  visible without opening the queue) or **N1** (an email tells the owner one is waiting). Whichever
+  lands first should carry this.
+
+---
+
+### T65 — Transfer receipts accumulate with no retention or deletion rule
+**Status:** accepted · **Effort:** ~3 h (a scheduled sweep, plus a decision about how long to keep an approved receipt) · **Added:** B6 (2026-08-22)
+
+A receipt is a bank document. It carries an account number, a full legal name, an amount, and —
+when it is a phone screenshot — whatever capture metadata the phone attached, including location.
+P1's images are downscaled and re-encoded in the browser, which strips that; **B6 does no such
+thing**, because a PDF cannot be downscaled and a rule applying to half the accepted types is a rule
+nobody can rely on.
+
+Nothing deletes them. Not the review, not the booking's cancellation, not time.
+
+**Two sources, and the second is a consequence of B6's own design.** Every reviewed receipt stays.
+And every *replacement* leaves its predecessor behind as a bounded orphan — at most two per booking,
+given the cap — because the anonymous uploader holds no delete grant and granting one would let
+anybody delete anybody's receipt. The displaced key is logged so a retention rule can find it.
+
+This is the same family as **T56** (guest personal data has no deletion path) and should probably be
+solved with it: one rule about how long this product keeps things about people, applied to both.
+
+- **Trigger:** T56, a storage bill, or the first client who asks for their data to be removed.
+
+---
+
+### T66 — Nothing verifies that a transfer actually happened, or that its amount was right
+**Status:** accepted — inherent to the payment method, disclosed rather than hidden · **Effort:** unbounded (a bank integration) · **Added:** B6 (2026-08-22)
+
+A receipt image is trivially fabricated and this product has no bank integration. **The owner must
+reconcile against their own bank, and nothing in the system can do it for them.**
+
+This is not a gap to be closed with more code at this scale; it is a property of accepting bank
+transfers without an API. What B6 does instead is refuse to imply otherwise:
+
+- The review page instructs the owner to check their bank, in the intro rather than in fine print:
+  *"El comprobante es una foto: no confirma que el dinero haya entrado."*
+- It renders the booking's **snapshotted deposit** beside the file, because that is the only thing
+  that makes the comparison possible at all — without it, approving is a guess.
+- A test fails if the rendered page contains "transferencia verificada", "pago confirmado" or
+  "validamos", and a second test forbids identifiers like `verifyPayment` or `confirmTransfer` in
+  `ReceiptReviewService`. The vocabulary is enforced so a later reader cannot infer from a name that
+  the system checks something it does not.
+
+**The residual risk is an owner approving without looking.** A client can upload a receipt for $1
+against a $3.000 deposit and it will be approved if nobody compares. The amount is on screen; the
+discipline is not something software here can supply.
+
+- **Trigger:** a bank API worth integrating (Argentina's interoperable transfer rails may expose
+  one), or the first owner who reports approving a wrong amount. If the second comes first, the
+  cheap mitigation is a confirmation that repeats the expected figure.
