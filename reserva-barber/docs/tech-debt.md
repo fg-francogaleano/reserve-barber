@@ -976,6 +976,39 @@ reading is "not rejected today, with a margin nobody should spend deliberately".
   of a story. **The recommendation is to take the paid plan before starting N1** rather than
   discovering it the same way a second time.
 
+**B7 hit the ceiling and did not deploy over it (2026-08-23).** This entry's prediction came true one
+story earlier than expected, and the story was restructured rather than the plan upgraded.
+
+B7 needs a `scheduled()` handler, which OpenNext's generated worker does not export, so it was first
+built as a committed entrypoint wrapping that worker. Measured with `wrangler deploy --dry-run`:
+
+| entrypoint | gzip | |
+| --- | --- | --- |
+| B6, before this story | 2924.08 KiB | |
+| wrapper, `scheduled` body stubbed out | 2924.23 KiB | the wrapper costs **0.15 KiB** |
+| wrapper importing the sweep | **3812.20 KiB** | **740 KiB over the ceiling** |
+
+**The +888 KiB was the Prisma query compiler bundled twice.** `--dry-run --outdir` held the same
+1.85 MB wasm under two names: `query_compiler_small_bg.wasm` and
+`src_generated_prisma_internal_query_compiler_small_bg_*.wasm`. Anything a custom entrypoint imports
+from `src/` is compiled by **wrangler's own esbuild pass**, separately from the copy the OpenNext
+build already placed inside `.open-next/server-functions/default/handler.mjs`.
+
+**This is the most reusable fact in this entry: a custom Worker entrypoint cannot import application
+code that reaches Prisma.** It is a structural consequence of two bundlers, not a quirk, and it
+applies to any future scheduled, queue or email handler considered for the app's Worker.
+
+The sweep moved to its own Worker (`wrangler.cron.jsonc`), which resolves it without spending
+anything: **app 2924.14 KiB** — B6's number restored — and **cron 878.62 KiB**, each against 3072.
+So B7 leaves the app's headroom exactly as it found it, at **~148 KiB**, and adds a second Worker
+with ~2.2 MiB of its own room for anything scheduled that comes later.
+
+- **Trigger (unchanged, and now with one more reason):** N1 adds Resend to the *app* Worker, where
+  the ~148 KiB has not moved since B6 — and B2 measured that Cloudflare's own check is stricter than
+  wrangler's figure. The paid plan remains the recommendation before N1. What B7 adds is a second
+  option that did not exist before: work that needs no request context can go in the cron Worker
+  instead, where the room is.
+
 ### T50 — The service step has no answer for a catalogue at its cap
 **Status:** accepted · **Effort:** ~2–4 h (grouping, or a filter, or search) · **Added:** B2 (2026-08-15)
 
@@ -1592,6 +1625,40 @@ they paid**, because unlike the Mercado Pago path there is no gateway to ask aft
   `transfer.receipt` log lines is enough to replace all four of these guesses with measurements, and
   this is the one where being wrong costs the most.
 
+
+**B7 added a fifth, and it is the first of the family that protects another path rather than sizing a
+client's patience (2026-08-23).** `EXPIRY_GRACE_MINUTES` = **10**: how long after a hold has lapsed
+the sweep waits before writing `EXPIRED`.
+
+It exists because `confirmIfSlotFree` — B5's guarantee that an approved payment still confirms a
+booking whose slot nobody took — is guarded on the booking still being `PENDING_PAYMENT`. A sweep
+with no grace would flip the row first, and every approval arriving just after the deadline would
+become an approved charge against an appointment that no longer exists. Mercado Pago's preference
+expiry is set to `holdExpiresAt`, so it refuses an attempt *begun* after the deadline; it does
+nothing about one begun thirty seconds before it and approved a minute after.
+
+**Unlike the other four, being too generous costs nothing at all**, and the first draft of this
+entry got that wrong — it claimed a client could "occupy a hold for `HOLD_DURATION_MINUTES +
+EXPIRY_GRACE_MINUTES`, bounded by `MAX_LIVE_HOLDS_PER_CLIENT`". **Both halves of that are false**,
+and an adversarial pass before archiving caught it. Availability released the slot when the hold
+lapsed, because it reads `holdExpiresAt` and not the status, so nothing is held during the grace.
+And `countLiveHoldsForClient` asks the same question — its predicate is `holdExpiresAt > now` — so
+the row stops counting against the client's cap at the deadline too, not at the cutoff.
+
+**What the grace actually delays is one thing only: the status write.** No slot, no cap, no client
+experience. That is precisely why it can be generous. Being too *short* costs a client their paid
+appointment, which is why the value leans long — the asymmetry is total, with a real cost on one
+side and none on the other.
+
+**This is the one of the five with a clear path to being measured**, and it needs no shop to be
+using the product for real money: the interval between a `payment.confirm` log line and the
+`holdExpiresAt` of the booking it names is the delivery latency, directly. A week of them replaces
+this guess with a distribution.
+
+- **Trigger:** the first `bookingUnavailable` outcome in production whose payment was approved
+  within an hour of the deadline. That is this constant being too short, and the log line already
+  carries everything needed to see it.
+
 ### T54 — A returning client's rename re-labels every booking they ever made
 **Status:** accepted — **decided, not discovered** · **Effort:** ~1 h now (a migration over an empty
 table), unknown later · **Added:** B4 (2026-08-17)
@@ -1977,6 +2044,24 @@ harassment rather than a denial of service, but it is not prevented.
   visible without opening the queue) or **N1** (an email tells the owner one is waiting). Whichever
   lands first should carry this.
 
+**B7 executed the half B6 could only specify (2026-08-23).** The `startTime` exit is now a job that
+runs: `ExpiredHoldSweepService` moves a `PENDING_APPROVAL` booking whose appointment has passed to
+`EXPIRED`, every five minutes, and `b7-gate.ts` proves both directions of the rule against real rows.
+Before this, the exit existed only as a clause in `blocksAvailability` — the slot stopped being
+blocked, but the row stayed `PENDING_APPROVAL` forever and appeared in the review queue as though an
+answer still mattered.
+
+**The painful half is untouched, and it is the one that hurts.** A receipt uploaded for an
+appointment three weeks out still blocks that slot for three weeks if nobody answers it. Nothing in
+B7 could change that: releasing the slot underneath a transfer the owner is about to approve would
+sell it twice, which is the reason the status is not governed by time in the first place. The sweep
+deliberately does not apply its grace window here either — a human's answer is the only thing that
+could confirm such a booking, and no delay makes that more likely.
+
+- **Trigger (narrowed):** still **D1** or **N1** — but now specifically for *visibility*, not for a
+  terminal state. B7 supplied the terminal state; what remains missing is any surface that tells the
+  owner a receipt is waiting before the appointment arrives.
+
 ---
 
 ### T65 — Transfer receipts accumulate with no retention or deletion rule
@@ -2027,3 +2112,36 @@ discipline is not something software here can supply.
 - **Trigger:** a bank API worth integrating (Argentina's interoperable transfer rails may expose
   one), or the first owner who reports approving a wrong amount. If the second comes first, the
   cheap mitigation is a confirmation that repeats the expected figure.
+
+---
+
+### T67 — The sweep's only instrument is a log line, and nothing tells the owner a hold expired
+**Status:** accepted — the visibility half of B7, deliberately not built · **Effort:** ~2 h (a counter on the dashboard home) · **Added:** B7 (2026-08-23)
+
+B7 writes `EXPIRED` and reports what it did. **Everything else about it is invisible.**
+
+Two distinct gaps, and they fail differently:
+
+**1. The owner never learns a slot came back.** An abandoned checkout expires, the calendar quietly
+regains an hour, and no surface in the product mentions it. This is mild today — the slot was already
+sellable the moment the hold lapsed, so nothing is lost by not knowing — but it means an owner
+watching a busy day cannot tell "nobody booked this" from "somebody held it and walked away", which
+is the difference between a quiet day and a broken checkout.
+
+**2. A dead job looks exactly like a healthy one.** This is the sharper of the two. If the cron is
+never registered, or the entrypoint stops exporting `scheduled`, or `DATABASE_URL` is unreadable from
+the scheduled context, then availability still works, every page still renders, and no client or
+owner experiences a symptom — the product simply stops writing terminal statuses. What B7 does about
+it is emit one structured summary per run **including runs that swept nothing**, so the absence of
+lines is the signal. That is a real instrument, and it is one nobody is watching: there is no alert,
+no dashboard and no check that a run happened at all.
+
+The mitigation available today costs nothing and is not code: a Cloudflare log filter on
+`operation = "booking.sweepExpiredHolds"` shows one line every five minutes, and a gap is the
+failure. Written here because the next person to wonder whether the sweep is alive should not have to
+work that out.
+
+- **Trigger:** **D1** — a dashboard home with counters is where an expiry becomes visible to the
+  owner, and where a "last swept at" would cost almost nothing to add beside them. For the second
+  gap, any of: the first time somebody asks whether the job is running, a Cloudflare alert being set
+  up for anything at all, or the first `EXPIRED` row that turns out to be days late.

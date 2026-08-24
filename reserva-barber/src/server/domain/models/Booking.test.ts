@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   blocksAvailability,
   holdExpiresAtFor,
+  holdSweepCutoff,
   transferHoldExpiresAtFor,
   type BlockingCandidate,
 } from './Booking';
+import { EXPIRY_GRACE_MINUTES } from './bookingHorizon';
 
 const NOW = new Date('2026-08-17T15:00:00.000Z');
 const AN_HOUR_AGO = new Date('2026-08-17T14:00:00.000Z');
@@ -197,5 +199,56 @@ describe('Booking - the transfer hold extension', () => {
     expect(transferHoldExpiresAtFor({ committedAt: at, startTime }).getTime()).toBeGreaterThan(
       holdExpiresAtFor({ createdAt: at, startTime }).getTime()
     );
+  });
+});
+
+describe('Booking - when a lapsed hold becomes sweepable', () => {
+  // The whole point of the grace: the slot is already sellable, and the row is
+  // kept only so a payment approved moments after the deadline can still find
+  // the `PENDING_PAYMENT` status its confirmation is guarded on.
+  const sweepable = (holdExpiresAt: Date): boolean =>
+    holdExpiresAt.getTime() < holdSweepCutoff(NOW).getTime();
+
+  it('should_not_be_sweepable_while_inside_the_grace_window', () => {
+    const lapsedThreeMinutesAgo = new Date(NOW.getTime() - 3 * 60_000);
+    expect(sweepable(lapsedThreeMinutesAgo)).toBe(false);
+  });
+
+  it('should_be_sweepable_once_the_grace_window_has_passed', () => {
+    const lapsedElevenMinutesAgo = new Date(NOW.getTime() - 11 * 60_000);
+    expect(sweepable(lapsedElevenMinutesAgo)).toBe(true);
+  });
+
+  // Stated rather than left to whoever reads the comparison next: a hold
+  // sitting exactly on the cutoff survives one more run. Holding one cycle
+  // longer costs nothing; expiring one instant early costs a paid appointment.
+  it('should_not_be_sweepable_at_the_cutoff_instant_itself', () => {
+    expect(sweepable(holdSweepCutoff(NOW))).toBe(false);
+  });
+
+  it('should_place_the_cutoff_exactly_one_grace_window_before_now', () => {
+    expect(NOW.getTime() - holdSweepCutoff(NOW).getTime()).toBe(EXPIRY_GRACE_MINUTES * 60_000);
+  });
+
+  // A hold that never lapsed cannot be swept by arithmetic alone, which is why
+  // the sweeper still asks `blocksAvailability` rather than trusting the bound.
+  it('should_not_be_sweepable_while_the_hold_is_still_live', () => {
+    expect(sweepable(IN_TEN_MINUTES)).toBe(false);
+    expect(
+      blocksAvailability(booking({ status: 'PENDING_PAYMENT', holdExpiresAt: IN_TEN_MINUTES }), NOW)
+    ).toBe(true);
+  });
+
+  // The grace delays the *record*, never the slot: availability released this
+  // time the moment the hold lapsed, well before the cutoff.
+  it('should_leave_the_slot_sellable_throughout_the_grace_window', () => {
+    const lapsedOneMinuteAgo = new Date(NOW.getTime() - 60_000);
+    expect(sweepable(lapsedOneMinuteAgo)).toBe(false);
+    expect(
+      blocksAvailability(
+        booking({ status: 'PENDING_PAYMENT', holdExpiresAt: lapsedOneMinuteAgo }),
+        NOW
+      )
+    ).toBe(false);
   });
 });

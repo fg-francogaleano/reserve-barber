@@ -14,6 +14,8 @@
     "provision-owner": "tsx scripts/provision-owner.ts",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "preview:cron": "wrangler dev -c wrangler.cron.jsonc --test-scheduled",
+    "deploy:cron": "wrangler deploy -c wrangler.cron.jsonc",
     "postinstall": "patch-package"
   },
   "dependencies": {

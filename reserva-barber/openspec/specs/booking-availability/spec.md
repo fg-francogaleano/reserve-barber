@@ -79,13 +79,13 @@ Every interval in availability — a working window, an absence, a booking, and 
 
 A booking SHALL block a slot when its status is `PENDING_APPROVAL` or `CONFIRMED`, or when its status is `PENDING_PAYMENT` **and** its `holdExpiresAt` has not passed. A `PENDING_PAYMENT` booking whose `holdExpiresAt` is in the past SHALL NOT block. `CANCELLED` and `EXPIRED` bookings SHALL NOT block.
 
-B7 — the scheduled job that expires abandoned holds — ships three stories later. A status-only filter would let every abandoned checkout remove a slot from sale permanently, with no surface anywhere in the product that would show the owner why.
+**The scheduled sweep now exists, and it does not change this rule — it settles behind it.** A row it has expired stops blocking because it is `EXPIRED`; the same row stopped blocking earlier, when its deadline passed, because the deadline clause reads `holdExpiresAt`. Both clauses SHALL be kept: the deadline clause is what makes an abandoned checkout's slot sellable immediately rather than at the next sweep, and the status clause is what keeps the answer correct once the row has been swept. Removing either — on the grounds that the other now covers it — reintroduces a defect this predicate was written twice to avoid.
 
 `PENDING_APPROVAL` is never treated as expired **while its appointment is still in the future**: a receipt has been uploaded and a human owes an answer, and releasing the slot underneath a transfer the owner is about to approve would sell it twice.
 
-**A `PENDING_APPROVAL` booking whose `startTime` has passed SHALL be eligible for expiry.** Its time cannot be sold to anyone any more, so releasing it sells nothing twice — and without this the state has no exit that does not depend on the owner being attentive. An owner on holiday blocks the calendar exactly as an absent reviewer would, so the review surface makes this case rarer rather than impossible. Expiry SHALL NOT be triggered by `holdExpiresAt` for this status, which is the deadline for uploading a receipt and not a deadline for answering one.
+**A `PENDING_APPROVAL` booking whose `startTime` has passed SHALL be eligible for expiry.** Its time cannot be sold to anyone any more, so releasing it sells nothing twice — and without this the state has no exit that does not depend on the owner being attentive. An owner on holiday blocks the calendar exactly as an absent reviewer would, so the review surface makes this case rarer rather than impossible. Expiry SHALL NOT be triggered by `holdExpiresAt` for this status, which is the deadline for uploading a receipt and not a deadline for answering one. **The job that acts on this eligibility now exists**; the rule stated here is what it obeys.
 
-This predicate SHALL be defined in one place, and **the booking write SHALL apply that same definition**. It is no longer documented as a rule a future story must share — the second caller now exists, and a disagreement between the two would offer a client a slot and then reject them while they pay.
+This predicate SHALL be defined in one place, and **the booking write SHALL apply that same definition**. It is no longer documented as a rule a future story must share — the second caller now exists, and a disagreement between the two would offer a client a slot and then reject them while they pay. **The sweep is a further caller and SHALL call it too**, rather than expressing eligibility in its own query.
 
 #### Scenario: An abandoned checkout releases its slot
 - **WHEN** a booking at 15:00 is `PENDING_PAYMENT` with a `holdExpiresAt` one hour in the past and no job has expired it
@@ -107,6 +107,10 @@ This predicate SHALL be defined in one place, and **the booking write SHALL appl
 - **WHEN** a booking at 15:00 is `CANCELLED`
 - **THEN** 15:00 is offered
 
+#### Scenario: A swept booking frees its slot for the same reason it already had
+- **WHEN** a booking at 15:00 whose hold lapsed is transitioned to `EXPIRED` by the sweep
+- **THEN** 15:00 was offered before the sweep and is offered after it
+
 #### Scenario: The predicate has one home
 - **WHEN** the availability code and the booking write are reviewed
 - **THEN** the blocking rule is expressed once and both the read and the write call it
@@ -114,7 +118,6 @@ This predicate SHALL be defined in one place, and **the booking write SHALL appl
 #### Scenario: The read and the write agree
 - **WHEN** a slot is offered by the availability read and submitted immediately
 - **THEN** the write does not refuse it on blocking grounds
-
 ### Requirement: How soon and how far ahead a client may book is bounded
 
 A start earlier than `now + MIN_BOOKING_LEAD_MINUTES` SHALL NOT be offered. A date beyond `today_local + MAX_BOOKING_HORIZON_DAYS`, or earlier than today in business local time, SHALL NOT be selectable and SHALL NOT reach an availability computation.
@@ -386,7 +389,9 @@ The date strip and the slot list SHALL each be a semantic list of controls with 
 
 A payment confirmation that would place a booking into the calendar after its hold has lapsed SHALL determine whether the slot is still free by calling the shared blocking predicate, and SHALL do so inside a transaction holding **the same per-barber advisory lock the booking write takes**.
 
-**Two further callers now exist and SHALL take the same lock: the transfer receipt write, which moves a booking from `PENDING_PAYMENT` to `PENDING_APPROVAL`, and the owner's approval, which moves it to `CONFIRMED`.** The sweeper remains named as a future caller.
+**Two further callers now exist and SHALL take the same lock: the transfer receipt write, which moves a booking from `PENDING_PAYMENT` to `PENDING_APPROVAL`, and the owner's approval, which moves it to `CONFIRMED`.**
+
+**The sweeper was named as a future caller and is settled the other way: it SHALL NOT take the lock.** Every caller listed above places a booking into a slot, and the lock exists so two of them cannot place one into the same slot. The sweep only ever *releases*, and a release cannot double-book — the reasoning the receipt rejection path already records. Its safety comes from a conditional update guarded on the status it expects, so a booking that moved underneath it matches zero rows. Taking the lock instead would serialize a maintenance job over every shop's barbers against the live booking write, for a guarantee it does not need.
 
 The lock binds only code that takes it. The booking write established it; the lapsed-hold confirmation was the first that *confirms* an existing booking rather than creating one, and the approval is the second. A caller that skipped the lock could place a booking into a slot a concurrent write is in the middle of taking, which is the same double-booking the write's transaction exists to prevent, arriving from the side nobody watches.
 
@@ -405,6 +410,10 @@ The predicate SHALL NOT be re-expressed for any of these callers. If a confirmin
 #### Scenario: The approval takes the lock
 - **WHEN** the owner approves a receipt and the booking moves to `CONFIRMED`
 - **THEN** the transaction holds the same per-barber advisory lock
+
+#### Scenario: The sweep takes no lock and is still safe
+- **WHEN** the sweep expires a booking while a write for the same barber is in flight
+- **THEN** no lock is taken, the update is guarded on the expected status, and no slot is double-booked
 
 #### Scenario: The confirming path reuses the predicate
 - **WHEN** the confirmation determines whether the slot is free

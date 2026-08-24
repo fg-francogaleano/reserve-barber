@@ -7,7 +7,11 @@
  * that belongs to a writer.
  */
 
-import { HOLD_DURATION_MINUTES, TRANSFER_HOLD_DURATION_MINUTES } from './bookingHorizon';
+import {
+  EXPIRY_GRACE_MINUTES,
+  HOLD_DURATION_MINUTES,
+  TRANSFER_HOLD_DURATION_MINUTES,
+} from './bookingHorizon';
 
 export const BOOKING_STATUSES = [
   'PENDING_PAYMENT',
@@ -126,6 +130,29 @@ export function holdExpiresAtFor(input: { createdAt: Date; startTime: Date }): D
  */
 export function transferHoldExpiresAtFor(input: { committedAt: Date; startTime: Date }): Date {
   return holdDeadline(input.committedAt, TRANSFER_HOLD_DURATION_MINUTES, input.startTime);
+}
+
+/**
+ * The instant a lapsed hold must predate before the sweeper may expire it:
+ * `now` less `EXPIRY_GRACE_MINUTES`.
+ *
+ * A `PENDING_PAYMENT` booking is sweepable when `holdExpiresAt < cutoff` —
+ * **strictly**, so a hold sitting exactly on the cutoff survives one more run.
+ * That is the same conservative direction `blocksAvailability` takes at the
+ * start instant: waiting one cycle longer costs nothing, and expiring one
+ * instant too early costs a client their paid appointment.
+ *
+ * The arithmetic lives here rather than at the sweeper's call site for the
+ * reason the deadline rules above give: this is a number the write side and the
+ * query bound must agree on, and two expressions of it are two chances to
+ * disagree. `bookingHorizon.ts` records what the grace protects and why it is
+ * free.
+ *
+ * It is **not** applied to `PENDING_APPROVAL`, which is swept on its own
+ * `startTime` and has no gateway whose confirmation could still be in flight.
+ */
+export function holdSweepCutoff(now: Date): Date {
+  return new Date(now.getTime() - EXPIRY_GRACE_MINUTES * 60_000);
 }
 
 /**
