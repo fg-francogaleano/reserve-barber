@@ -90,3 +90,36 @@ export const HOLD_DURATION_MINUTES = 15;
  * constant, its home beside the other three, and this note.
  */
 export const TRANSFER_HOLD_DURATION_MINUTES = 45;
+
+/**
+ * How long after a hold has lapsed the sweeper waits before expiring the row.
+ *
+ * The fifth judgement of the same kind as the four above, and the only one that
+ * exists to protect another path rather than to size a client's patience.
+ *
+ * **What it protects.** A Mercado Pago approval that arrives after the hold
+ * lapsed still confirms the booking when nobody took the slot — that is B5's
+ * late-payment guarantee, and `PrismaPaymentRepository.confirmIfSlotFree`
+ * implements it with an update **guarded on the booking still being
+ * `PENDING_PAYMENT`**. Expire the row at the instant its hold lapses and that
+ * same notification takes the `notPending` branch instead: the charge stands,
+ * the appointment does not, and a human arranges a refund. Preference expiry is
+ * set to `holdExpiresAt`, so Mercado Pago refuses an attempt *begun* after the
+ * deadline — it does nothing about one begun thirty seconds before it and
+ * approved a minute after.
+ *
+ * **Why it costs nothing.** Availability stopped counting the booking when the
+ * hold lapsed, ten minutes earlier. Nobody is denied the slot during the grace;
+ * the only thing still holding is a row nobody can see.
+ *
+ * It is not applied to `PENDING_APPROVAL`, which is swept on its own
+ * `startTime`: the grace exists for an in-flight gateway confirmation, and that
+ * path has no gateway. The only thing that could still confirm such a booking
+ * is a human, whose answer the passing of the appointment already made
+ * worthless.
+ *
+ * Ten minutes is a guess, like the others, and it is the one with the clearest
+ * path to being measured: the delivery latency of real notifications, once a
+ * real shop has produced some.
+ */
+export const EXPIRY_GRACE_MINUTES = 10;

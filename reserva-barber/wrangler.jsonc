@@ -1,6 +1,16 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "reserva-barber",
+  // The generated worker, unwrapped.
+  //
+  // B7 briefly pointed this at a committed entrypoint that wrapped the
+  // generated one in order to add a `scheduled()` handler. It worked and was
+  // abandoned on a measurement: anything such an entrypoint imports from `src/`
+  // is compiled by wrangler's own esbuild pass, separately from the copy inside
+  // `.open-next/server-functions/default/handler.mjs`, so the Prisma query
+  // compiler shipped **twice** and the bundle went from 2924 to 3812 KiB gzip —
+  // past the free plan's 3 MiB ceiling. The sweep lives in its own Worker
+  // instead; see `wrangler.cron.jsonc` and `worker/sweep.ts`.
   "main": ".open-next/worker.js",
   "compatibility_date": "2025-09-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -29,6 +39,9 @@
   "vars": {
     "APP_ORIGIN": "https://reserva-barber.franco-galeano.workers.dev"
   }
+  // No `triggers` here. B7's schedule belongs to the sweep Worker, configured
+  // in `wrangler.cron.jsonc` — a cron on this Worker would fire a `scheduled`
+  // handler that the generated entrypoint does not export.
   // Secrets (DATABASE_URL, PAYMENT_CREDENTIALS_KEY) are NOT defined here:
   // - local preview reads .dev.vars (git-ignored)
   // - production uses `wrangler secret put <NAME>`

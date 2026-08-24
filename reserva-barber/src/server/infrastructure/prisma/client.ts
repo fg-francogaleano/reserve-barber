@@ -1,29 +1,8 @@
 import { cache } from 'react';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@/generated/prisma/client';
+import type { PrismaClient } from '@/generated/prisma/client';
+import { createPrismaClient } from './createClient';
 
-const CONNECTION_TIMEOUT_MS = 10_000;
-const QUERY_TIMEOUT_MS = 10_000;
-
-/**
- * Creates a Prisma client backed by the pg driver adapter, connecting through
- * the Supabase Supavisor pooler (transaction mode). Required for the Cloudflare
- * workerd runtime — no native engine binary. See backend-standards.md → Database Patterns.
- */
-export function createPrismaClient(connectionString: string): PrismaClient {
-  const adapter = new PrismaPg({
-    connectionString,
-    connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
-    query_timeout: QUERY_TIMEOUT_MS,
-    statement_timeout: QUERY_TIMEOUT_MS,
-    // Supavisor transaction mode: no prepared statements across requests.
-    max: 5,
-    // Workers cannot reuse a socket across request contexts — retire each
-    // connection after a single use so none is ever carried over.
-    maxUses: 1,
-  });
-  return new PrismaClient({ adapter });
-}
+export { createPrismaClient };
 
 /**
  * Returns a Prisma client scoped to the current request. React `cache()` dedupes
@@ -32,6 +11,13 @@ export function createPrismaClient(connectionString: string): PrismaClient {
  * an earlier request context, which `workerd` cannot do — the query then hangs
  * until the read timeout. Fails fast with a clear English error when
  * DATABASE_URL is missing.
+ *
+ * **Unusable outside a request.** `cache()` needs a request store to memoize
+ * into, and `process.env` is populated per request by the adapter — neither
+ * holds in a scheduled invocation, where bindings arrive as an argument. Code
+ * on that path calls `createPrismaClient` directly, and imports it from
+ * `./createClient` rather than from here so that React does not follow it into
+ * a bundle that has no React in it.
  */
 export const getPrismaClient = cache((): PrismaClient => {
   const connectionString = process.env.DATABASE_URL;

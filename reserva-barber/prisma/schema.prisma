@@ -485,10 +485,27 @@ model Booking {
   // the migration; this comment exists so the schema file is not mistaken for
   // the whole truth.
 
+  // THIS TABLE ALSO CARRIES TWO INDEXES PRISMA CANNOT DECLARE:
+  //
+  //   CREATE INDEX "Booking_lapsed_hold_sweep"
+  //     ON "Booking" ("holdExpiresAt") WHERE status = 'PENDING_PAYMENT';
+  //   CREATE INDEX "Booking_unanswered_receipt_sweep"
+  //     ON "Booking" ("startTime") WHERE status = 'PENDING_APPROVAL';
+  //
+  // Added in migration 20260823120000_b7_expired_hold_indexes. They serve B7's
+  // two sweep predicates, which name no barber — so the index below, which
+  // leads with `barberId`, cannot serve either. Partial rather than full: a row
+  // leaves both the moment it is swept, and a full index would carry every
+  // confirmed booking in history for a query that can never match one.
+  //
+  // `prisma db push` and any schema-only reasoning will not see them. They live
+  // in the migration; this comment exists so the schema file is not mistaken
+  // for the whole truth — the same note the CHECK constraint above carries.
+
   // Serves both sides of this table's life: B3's "which bookings overlap this
-  // range for this barber" read, and B4's transactional no-overlap check. A
-  // partial index on the blocking statuses was considered and rejected as
-  // premature — it would optimize a predicate B7 may still refine.
+  // range for this barber" read, and B4's transactional no-overlap check. It
+  // leads with `barberId`, which is why the sweep needed its own two above:
+  // a maintenance query over every shop has no barber to lead with.
   //
   // The read also needs a LOWER bound on startTime to use this index at both
   // ends. Measured with EXPLAIN: with only `startTime < rangeEnd`, `endTime`

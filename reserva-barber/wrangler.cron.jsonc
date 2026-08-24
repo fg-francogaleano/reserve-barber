@@ -1,0 +1,71 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The scheduled sweep (B7), deployed as a Worker of its own.
+  //
+  //   npx wrangler deploy -c wrangler.cron.jsonc
+  //   npx wrangler secret put DATABASE_URL -c wrangler.cron.jsonc
+  //   npx wrangler dev -c wrangler.cron.jsonc --test-scheduled
+  //
+  // **Why it is separate** is recorded in full at the top of `worker/sweep.ts`,
+  // and it comes down to one measurement: a `scheduled()` handler added to the
+  // app's Worker has to import application code, wrangler's esbuild pass
+  // compiles that separately from the copy OpenNext already bundled, and the
+  // Prisma query compiler shipped twice — 3812 KiB gzip against a 3072 KiB
+  // ceiling. Here the same wasm is carried once, by a Worker that needs no
+  // Next.js build at all.
+  "name": "reserva-barber-cron",
+  "main": "worker/sweep.ts",
+  // Kept identical to the app's Worker on purpose: both run the same Prisma
+  // client against the same database, and a divergence in runtime behaviour
+  // between them would be invisible until one of them misbehaved.
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  // Five minutes is a data-freshness choice, not a correctness one: a lapsed
+  // hold stopped blocking its slot the instant it lapsed, because availability
+  // reads `holdExpiresAt` rather than the status. Nothing a client or an owner
+  // can see depends on how soon afterwards the row is swept. Every minute would
+  // spend twelve times the connections against a pooler capped at five and
+  // shared with the dashboard and the public booking write.
+  //
+  // **Deleting this Worker is the rollback for B7.** It does not un-expire
+  // anything, and does not need to: a swept row and an unswept lapsed row are
+  // indistinguishable to availability, to the booking write and to the
+  // confirmation page. The only path that can tell them apart is a late Mercado
+  // Pago approval, which is what `EXPIRY_GRACE_MINUTES` protects.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
+  // `DATABASE_URL` is a secret and is NOT defined here. It is set separately
+  // from the app Worker's — same value, two Workers, two `wrangler secret put`
+  // commands. Upload it as EXACT BYTES, piped from a file or a program's
+  // output, never through a shell echo: a byte-order mark or a trailing
+  // newline is invisible and surfaces as an unrelated connection error.
+  //
+  // **Use `secret bulk` with a JSON file. The interactive prompt cost an hour
+  // here.** B7's first two production runs, twenty minutes apart, both threw
+  // `Missing required environment variable: DATABASE_URL` while
+  // `wrangler secret list` reported the secret present — because `list` shows
+  // the name and never the value, and the guard that failed reads `!value`,
+  // which an empty string satisfies just as `undefined` does. The same
+  // 112-character string, uploaded from a JSON file instead of typed at the
+  // prompt, worked on the very next run.
+  //
+  // The S0 note on the app Worker says to pipe secrets from a file rather than
+  // echo them. This is that rule with an interactive prompt added to the list
+  // of things that can silently mangle a value:
+  //
+  //   npx wrangler secret bulk secret.json -c wrangler.cron.jsonc
+  //
+  // Write that file with something that emits UTF-8 without a BOM — PowerShell
+  // 5.1's `Set-Content -Encoding utf8` does not — and delete it afterwards.
+  // JSON is what makes it safe: the value is delimited by quotes, so trailing
+  // whitespace and partial pastes cannot pass unnoticed.
+  //
+  // There is no `APP_ORIGIN` and no `ASSETS` binding. This Worker renders
+  // nothing, serves nothing and is reachable by nobody — it has no `fetch`
+  // handler at all, which is the cheapest possible answer to "can a stranger
+  // reach the sweep".
+}
