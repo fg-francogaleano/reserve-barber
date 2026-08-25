@@ -47,6 +47,7 @@ function createTx() {
     booking: {
       findUnique: vi.fn().mockResolvedValue(heldBooking()),
       findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     payment: {
@@ -66,6 +67,7 @@ function createDb(tx = createTx()) {
     transferReceipt: {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
     },
     $transaction: vi.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
   };
@@ -388,6 +390,26 @@ describe('reject', () => {
   });
 });
 
+/**
+ * The predicate this queue is built on, as the tests expect to see it.
+ *
+ * **The `PENDING_APPROVAL` clause was added in D1 and this assertion changed
+ * with it.** The previous version of this test asserted the receipt status and
+ * the owner scope and nothing else, which meant it passed for a query that kept
+ * swept bookings in the queue for ever — the test was encoding the defect rather
+ * than catching it. Written out once here so the listing and the count are
+ * asserted against the same shape.
+ */
+const PENDING_WHERE = {
+  status: 'PENDING',
+  payment: {
+    booking: {
+      status: 'PENDING_APPROVAL',
+      barber: { location: { ownerId: OWNER } },
+    },
+  },
+};
+
 describe('findPendingForOwner', () => {
   it('asks for pending receipts of this owner only, oldest first', async () => {
     const { db, raw } = createDb();
@@ -396,14 +418,79 @@ describe('findPendingForOwner', () => {
 
     expect(raw.transferReceipt.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
-          status: 'PENDING',
-          payment: { booking: { barber: { location: { ownerId: OWNER } } } },
-        },
+        where: PENDING_WHERE,
         orderBy: { uploadedAt: 'asc' },
       })
     );
   });
+
+  // The sweep writes Booking.status and nothing else, so a receipt on an
+  // expired booking stays PENDING for ever. Without this clause it sat in the
+  // queue under an Aprobar control that could only answer noLongerPending.
+  it('excludes a receipt whose booking is no longer awaiting approval', async () => {
+    const { db, raw } = createDb();
+
+    await new PrismaTransferReceiptRepository(db).findPendingForOwner(OWNER);
+
+    const { where } = vi.mocked(raw.transferReceipt.findMany).mock.calls[0][0];
+    expect(where.payment.booking.status).toBe('PENDING_APPROVAL');
+  });
+
+  it('never offers a row the approval path would refuse', async () => {
+    const { db, raw } = createDb();
+
+    await new PrismaTransferReceiptRepository(db).findPendingForOwner(OWNER);
+
+    // `approve` guards its booking update on exactly this status. The queue and
+    // the guard must name the same one, or the page offers dead decisions.
+    const { where } = vi.mocked(raw.transferReceipt.findMany).mock.calls[0][0];
+    expect(where.payment.booking.status).toBe('PENDING_APPROVAL');
+  });
+});
+
+describe('countPendingForOwner', () => {
+  it('counts over exactly the predicate the listing uses', async () => {
+    const { db, raw } = createDb();
+
+    await new PrismaTransferReceiptRepository(db).countPendingForOwner(OWNER);
+
+    expect(raw.transferReceipt.count).toHaveBeenCalledWith({ where: PENDING_WHERE });
+  });
+
+  it('cannot disagree with the listing about which rows are waiting', async () => {
+    const { db, raw } = createDb();
+    const repository = new PrismaTransferReceiptRepository(db);
+
+    await repository.findPendingForOwner(OWNER);
+    await repository.countPendingForOwner(OWNER);
+
+    // One shared definition, asserted as one object rather than as two that
+    // happen to match today.
+    expect(vi.mocked(raw.transferReceipt.count).mock.calls[0][0].where).toEqual(
+      vi.mocked(raw.transferReceipt.findMany).mock.calls[0][0].where
+    );
+  });
+
+  it('is scoped to this owner', async () => {
+    const { db, raw } = createDb();
+
+    await new PrismaTransferReceiptRepository(db).countPendingForOwner(OWNER);
+
+    const { where } = vi.mocked(raw.transferReceipt.count).mock.calls[0][0];
+    expect(where.payment.booking.barber.location.ownerId).toBe(OWNER);
+  });
+
+  it('returns the count the database reports', async () => {
+    const { db, raw } = createDb();
+    raw.transferReceipt.count.mockResolvedValue(4);
+
+    await expect(
+      new PrismaTransferReceiptRepository(db).countPendingForOwner(OWNER)
+    ).resolves.toBe(4);
+  });
+});
+
+describe('findPendingForOwner - projection', () => {
 
   // The figure the owner compares against their bank statement. The driver
   // returns a stored 5000.50 as 5000.5.

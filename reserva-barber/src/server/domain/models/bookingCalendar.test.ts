@@ -5,6 +5,7 @@ import {
   dayBoundsOf,
   formatLocalDate,
   isWithinHorizon,
+  monthBoundsOf,
   parseLocalDate,
   weekdayOfLocalDate,
   workingIntervalsFor,
@@ -171,5 +172,77 @@ describe('bookingCalendar - the horizon', () => {
       month: 2,
       day: 29,
     });
+  });
+});
+
+/**
+ * 23:30 in Buenos Aires on the last day of August 2026 is 02:30 UTC on the 1st
+ * of September.
+ *
+ * The month-boundary twin of `SUNDAY_NIGHT_LOCAL`, and the instant that decides
+ * whether an income figure lands in the right month. A boundary built as
+ * `Date.UTC(2026, 8, 1)` sits three hours early, so this payment would be
+ * counted in September — a figure the owner cannot reconcile against a bank
+ * statement, wrong in the direction that flatters the newer month.
+ */
+const MONTH_END_NIGHT_LOCAL = new Date('2026-09-01T02:30:00.000Z');
+
+describe('bookingCalendar - month bounds in the business calendar', () => {
+  it('should_bound_a_month_from_its_own_first_local_midnight_to_the_next', () => {
+    const bounds = monthBoundsOf({ year: 2026, month: 8, day: 16 });
+
+    expect(bounds.start.toISOString()).toBe('2026-08-01T03:00:00.000Z');
+    expect(bounds.end.toISOString()).toBe('2026-09-01T03:00:00.000Z');
+  });
+
+  it('should_ignore_the_day_because_a_month_is_decided_by_year_and_month_alone', () => {
+    const fromFirst = monthBoundsOf({ year: 2026, month: 8, day: 1 });
+    const fromLast = monthBoundsOf({ year: 2026, month: 8, day: 31 });
+
+    expect(fromFirst).toEqual(fromLast);
+  });
+
+  it('should_place_the_last_evening_of_a_month_inside_that_month', () => {
+    const august = monthBoundsOf(businessToday(MONTH_END_NIGHT_LOCAL));
+
+    expect(businessToday(MONTH_END_NIGHT_LOCAL)).toEqual({ year: 2026, month: 8, day: 31 });
+    expect(MONTH_END_NIGHT_LOCAL.getTime()).toBeGreaterThanOrEqual(august.start.getTime());
+    expect(MONTH_END_NIGHT_LOCAL.getTime()).toBeLessThan(august.end.getTime());
+  });
+
+  it('should_exclude_the_last_evening_of_the_previous_month_from_this_one', () => {
+    const september = monthBoundsOf({ year: 2026, month: 9, day: 3 });
+
+    // The instant the naive UTC construction would wrongly admit.
+    expect(MONTH_END_NIGHT_LOCAL.getTime()).toBeLessThan(september.start.getTime());
+  });
+
+  it('should_be_half_open_so_the_first_instant_of_the_next_month_is_outside', () => {
+    const august = monthBoundsOf({ year: 2026, month: 8, day: 1 });
+    const september = monthBoundsOf({ year: 2026, month: 9, day: 1 });
+
+    expect(august.end.getTime()).toBe(september.start.getTime());
+    expect(august.end.getTime()).toBeGreaterThan(august.start.getTime());
+  });
+
+  it('should_carry_the_year_across_a_december_rollover', () => {
+    const december = monthBoundsOf({ year: 2026, month: 12, day: 25 });
+
+    expect(december.start.toISOString()).toBe('2026-12-01T03:00:00.000Z');
+    expect(december.end.toISOString()).toBe('2027-01-01T03:00:00.000Z');
+  });
+
+  it('should_size_february_from_the_calendar_rather_than_from_a_fixed_span', () => {
+    const leap = monthBoundsOf({ year: 2028, month: 2, day: 10 });
+    const common = monthBoundsOf({ year: 2026, month: 2, day: 10 });
+
+    const days = (bounds: { start: Date; end: Date }): number =>
+      (bounds.end.getTime() - bounds.start.getTime()) / 86_400_000;
+
+    expect(days(leap)).toBe(29);
+    expect(days(common)).toBe(28);
+    // The "add 30 days" version would answer 30 for both, and would be wrong
+    // for eight months of every year rather than for an edge case.
+    expect(days(monthBoundsOf({ year: 2026, month: 1, day: 1 }))).toBe(31);
   });
 });

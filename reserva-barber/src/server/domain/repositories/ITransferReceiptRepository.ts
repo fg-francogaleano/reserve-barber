@@ -161,8 +161,30 @@ export interface ITransferReceiptRepository {
    * Oldest first because the oldest is the one whose appointment is nearest to
    * becoming unanswerable — a `PENDING_APPROVAL` booking stops blocking once
    * its own start time has passed, and by then the answer is worth nothing.
+   *
+   * **"Pending" means the receipt is `PENDING` *and* its booking is still
+   * `PENDING_APPROVAL`.** The second half was missing until D1, and its absence
+   * was a defect rather than a simplification: the sweep expires a
+   * `PENDING_APPROVAL` booking once its appointment has passed and writes
+   * `Booking.status` and nothing else, so the receipt stays `PENDING` forever.
+   * Without the booking clause those rows sat in the queue under an approve
+   * control whose only reachable answer is `noLongerPending`, because `approve`
+   * is guarded on `PENDING_APPROVAL`. **This queue is a list of decisions the
+   * owner can still make**; a row that cannot be decided does not belong in it.
    */
   findPendingForOwner(ownerId: string): Promise<readonly PendingReceipt[]>;
+
+  /**
+   * How many receipts are waiting, over **the same predicate** the listing uses.
+   *
+   * The implementation SHALL build this from the one shared definition rather
+   * than restating the clauses. A counter that disagrees with the queue it
+   * summarizes is worse than no counter — the owner is told four are waiting,
+   * opens the page, finds three, and now distrusts both numbers. Two copies of
+   * a predicate that reads a status is exactly how they come to disagree, and
+   * the narrowing above is the second time this predicate has changed.
+   */
+  countPendingForOwner(ownerId: string): Promise<number>;
 
   /**
    * Approves: receipt `APPROVED`, payment `APPROVED`, booking `CONFIRMED`.
