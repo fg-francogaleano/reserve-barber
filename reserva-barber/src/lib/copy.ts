@@ -875,6 +875,76 @@ export const COPY = {
     infrastructureError:
       'No pudimos guardar los cambios. Recargá la página para ver qué quedó guardado.',
   },
+  dashboard: {
+    nav: 'Inicio',
+    heading: 'Inicio',
+
+    /**
+     * Every label names what its figure counts.
+     *
+     * This is the only thing that makes a number checkable by the person
+     * reading it, and it is why none of these is the obvious short word.
+     * "Turnos totales" would be a count of checkout attempts; "Ingresos" would
+     * be read as turnover and be wrong by the whole service price.
+     */
+    confirmedToday: 'Turnos confirmados hoy',
+    heldToday: (count: number) =>
+      count === 1 ? '1 reserva sin confirmar' : `${count} reservas sin confirmar`,
+    heldTodayHelp: 'Están reservando el horario pero todavía no pagaron la seña.',
+    cancelledToday: 'Cancelaciones de hoy',
+    confirmedAllTime: 'Turnos confirmados (histórico)',
+    pendingReceipts: 'Comprobantes por revisar',
+    monthIncome: 'Señas cobradas este mes',
+    /**
+     * The qualifier, and it is not fine print. This product never records the
+     * balance the client pays in the chair, so an owner reading this figure as
+     * their month's takings would be reading a number that is wrong by the
+     * whole service price. Same rule the receipt queue follows: a surface must
+     * not imply a fact the system does not have.
+     */
+    monthIncomeHelp: 'Solo las señas. No incluye lo que cada cliente paga en el local.',
+
+    /**
+     * A read that failed. Deliberately not a zero and deliberately not an
+     * alarm — a figure that could not load is not an incident, but it is also
+     * not a fact about the business.
+     */
+    countersFailed: 'No pudimos cargar los indicadores. Actualizá la página.',
+    recentFailed: 'No pudimos cargar las reservas recientes.',
+
+    recentHeading: 'Reservas recientes',
+    recentEmpty: 'Todavía no recibiste reservas.',
+    recentEmptyHelp: 'Compartí tu link de reservas para empezar a recibir turnos.',
+    recentEmptyLink: 'Ver mi link en Perfil',
+    /**
+     * A filtered-empty state that looked like a global-empty state would read
+     * as a broken dashboard, so it names the barber and offers the way back.
+     */
+    recentEmptyFiltered: (barber: string) => `${barber} todavía no tiene reservas.`,
+    clearFilter: 'Ver todas',
+
+    filterLabel: 'Filtrar por barbero',
+    filterAll: 'Todos los barberos',
+    filterSubmit: 'Filtrar',
+
+    clientLabel: 'Cliente',
+    depositLabel: 'Seña',
+
+    /**
+     * The five statuses, in the owner's words.
+     *
+     * `CANCELLED` and `EXPIRED` say different things on purpose: one is a
+     * decision somebody made and the other is a deadline that passed, and this
+     * list is the first surface in the product where an owner sees either.
+     */
+    status: {
+      PENDING_PAYMENT: 'Esperando pago',
+      PENDING_APPROVAL: 'Comprobante por revisar',
+      CONFIRMED: 'Confirmado',
+      CANCELLED: 'Cancelado',
+      EXPIRED: 'Sin confirmar a tiempo',
+    },
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

@@ -15,6 +15,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <div className="flex min-h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <nav className="flex items-center gap-4">
+          {/*
+            First, and the only one that had been missing: until D1 this header
+            linked to seven pages and to none of them was the dashboard's own
+            home, so the owner's landing page was unreachable from itself the
+            moment they navigated away.
+          */}
+          <Link href="/" className="text-sm font-medium underline-offset-4 hover:underline">
+            {COPY.dashboard.nav}
+          </Link>
           <Link
             href="/sucursales"
             className="text-sm font-medium underline-offset-4 hover:underline"

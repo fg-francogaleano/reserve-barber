@@ -1,4 +1,5 @@
 # Technical Debt & Deferred Work
+
 ## Reserva Barber
 
 > Known work that was **deliberately deferred**, each with the reason and the signal that should
@@ -13,6 +14,7 @@
 ## Open
 
 ### T1 — Client-side recovery from a missing Server Action
+
 **Status:** deferred · **Effort:** ~1–2 h · **Owner story:** none (cross-cutting)
 
 Pinning `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` keeps Server Action ids stable across deploys, so the
@@ -32,6 +34,7 @@ turning a dead end into a flicker.
   public booking flow — whichever comes first.
 
 ### T2 — Password policy is documented but not enforced
+
 **Status:** **needs a human** · **Effort:** ~2 min
 
 `docs/data-model.md` §1 requires a 12-character minimum. That rule lives in Supabase, not in this
@@ -41,6 +44,7 @@ Until then the provider's default (6) is what actually protects the only adminis
 - **Trigger:** now. Nothing depends on it, which is exactly why it will be forgotten.
 
 ### T3 — Login UI behaviours not covered by the component tests
+
 **Status:** partially closed by M1 · **Effort:** ~5 min in a browser
 
 M1 installed React Testing Library + jsdom (design D4), which now covers the equivalent
@@ -56,6 +60,7 @@ item cannot be covered by jsdom at all:
   added.
 
 ### T7 — The login form very likely clears the email on a failed attempt
+
 **Status:** **needs a decision** · **Effort:** ~20 min
 
 `openspec/specs/owner-authentication/spec.md` requires that after a failed login "the email value is
@@ -76,6 +81,7 @@ The fix is the one M1 applied: echo the submitted email back in the action's sta
   it is a bug against an existing requirement, not debt, and should be scheduled as its own change.
 
 ### T8 — Concurrent edits to the same location, barber, service or schedule silently overwrite each other
+
 **Status:** accepted · **Effort:** ~2 h if it becomes real · **Last evaluated:** M3 (2026-08-09)
 
 M1 ships no version column and no `updatedAt` precondition on the location update. M2 inherits the
@@ -89,7 +95,7 @@ account that would produce them. Adding optimistic concurrency control here woul
 failure it prevents.
 
 **Re-evaluated at M4 (2026-08-10) — re-accepted, but only after the premise nearly broke.**
-M4 introduces the first *set-valued* write, and the original reasoning ("costs a retyped name")
+M4 introduces the first _set-valued_ write, and the original reasoning ("costs a retyped name")
 would not have survived it. Under a naive replace — removals computed as `stored − checked` — a
 second tab would silently delete an assignment it never displayed, and the loss would be a service
 quietly becoming unbookable: no error, no badge the owner is looking at, no audit trail. That is
@@ -102,7 +108,7 @@ last-write-wins and is the same exposure M1–M3 already carry. So no version co
 
 **Extended at M5a1 (2026-08-11).** The entry never named **working hours**, which M5a added with a
 whole-week replacement: a stale tab reinstates its own snapshot of all seven days over whatever a
-second tab saved. This is *not* the collateral-deletion class M4 had to solve — the schedule form
+second tab saved. This is _not_ the collateral-deletion class M4 had to solve — the schedule form
 renders every day, so nothing is removed that was never displayed — it is plain last-write-wins on
 values, the same exposure the scalar forms carry. Re-accepted on the same reasoning, and named here
 so the next set-valued write does not have to rediscover which class it belongs to.
@@ -113,6 +119,7 @@ so the next set-valued write does not have to rediscover which class it belongs 
   being able to bound removals by what was displayed.
 
 ### T10 — No background utility resolves on an `<a>` element
+
 **Status:** **CLOSED at P1 (2026-08-12) — never a defect in this application** · **Resolution:** the three workarounds were deleted; see the closing note at the end of this entry
 
 Verified in the browser during M1: `bg-primary` and `bg-muted` paint a `<div>` and a `<span>`, and
@@ -168,7 +175,7 @@ What was measured, in `next dev`, on a real anchor:
 - Every other utility in the same string resolves: `h-9` gives 36px, `text-primary-foreground` gives
   the right colour.
 - **The decisive test.** Injecting `a.bg-primary{background-color:rgb(9,9,9)}` **unlayered** wins and
-  paints. The *same rule* inside `@layer utilities` loses and stays transparent.
+  paints. The _same rule_ inside `@layer utilities` loses and stays transparent.
 
 That is the whole mechanism: **something unlayered sets `background-color` on anchors, and unlayered
 CSS beats anything inside a cascade layer regardless of specificity.** Tailwind v4 emits every
@@ -196,7 +203,7 @@ unlayered anchor rule".
 a shrug. No fourth copy was added: P1's own editor uses real `<button>` elements and needed none.
 
 **Worth keeping regardless of the outcome:** any unlayered CSS — an extension, a user stylesheet, a
-third-party widget — silently defeats *every* Tailwind v4 utility, because they all live in a layer.
+third-party widget — silently defeats _every_ Tailwind v4 utility, because they all live in a layer.
 That is a general fragility of this stack, not a quirk of anchors.
 
 **CLOSING NOTE — P1 (2026-08-12). The check ran, and the answer is that the application was never
@@ -220,24 +227,25 @@ Three things this cost, and they are the reason the entry is worth reading rathe
   never the first step. The M3 evaluation finally said so, and it took five minutes when it ran.
 - **The failure is invisible to every automated check.** Tests pass, the class is in the CSS, the
   computed style is wrong only in one browser profile. Nothing but looking would have found it, and
-  nothing but looking *somewhere else* would have cleared it.
+  nothing but looking _somewhere else_ would have cleared it.
 
 Still true and worth carrying forward: unlayered CSS defeats every Tailwind v4 utility regardless of
 specificity. If a control ever renders unstyled again with its class present and the stylesheet
 intact, check a clean browser profile **before** touching the code.
 
 ### T11 — Cross-owner isolation has no executable proof
+
 **Status:** **needs a test when it becomes possible** · **Effort:** ~1 h
 
 Ownership scoping is the security boundary of the whole dashboard: `findByIdForOwner`, the scoped
 `update`, and every list query carry `ownerId` so another owner's row resolves as not-found. All of
-it is asserted **only by unit tests against a mocked Prisma client**, which verify the *shape of the
-call* — that `ownerId` appears in the `where` — not that Prisma actually honours a compound
+it is asserted **only by unit tests against a mocked Prisma client**, which verify the _shape of the
+call_ — that `ownerId` appears in the `where` — not that Prisma actually honours a compound
 predicate on `update`.
 
 It cannot be proven end-to-end today, and that is not an oversight: `data-persistence` → "Exactly one
 Owner" forbids a second `Owner` row, and no application path may create one. With a single owner
-there is no exposure — every row belongs to the only owner there is. The gap is in the *assurance*,
+there is no exposure — every row belongs to the only owner there is. The gap is in the _assurance_,
 not in the behaviour.
 
 **Narrowed at M3 (2026-08-09).** An adversarial pass ran the scoping predicate against the real
@@ -245,10 +253,10 @@ database rather than a mock: `update({ where: { id, ownerId } })` with a foreign
 and leaves the row untouched, `findFirst` with a foreign owner returns `null`, and the same update
 with the correct owner applies. Recorded in `docs/s0-versions-decision.md`. So **the mechanism is now
 proven** — Prisma does honour the extra scalar predicate. What remains unproven is isolation between
-two *real* owners, which is what this entry is actually about, and that still needs a second `Owner`.
+two _real_ owners, which is what this entry is actually about, and that still needs a second `Owner`.
 
 **Narrowed again at M4 (2026-08-10).** M4 introduces the first relation whose ownership rule the
-database *cannot* express — `BarberService` joins a `Barber` (ownership derived through `location`)
+database _cannot_ express — `BarberService` joins a `Barber` (ownership derived through `location`)
 to a `Service` (ownership stored), with no shared column for a composite key. `scripts/m4-gate.ts`
 probes D and E prove against the real database that the join predicate
 `barber.location.ownerId` genuinely filters: a foreign owner reads zero rows and deletes zero rows.
@@ -265,6 +273,7 @@ entire guarantee there, which is why it must remain the table's only writer.
   zero rows**.
 
 ### T12 — A double submit can report a successful creation as a duplicate
+
 **Status:** accepted — **now observed, no longer theoretical** · **Effort:** ~1 h if it becomes real
 
 Applies to **locations** (`(ownerId, name)`), **barbers** (`(locationId, displayName)`) and **services** (`(ownerId, name)`). The spec claims the second of two rapid submissions "does not present the successful outcome as a failure". Data integrity is never at risk — the constraint guarantees exactly one row. But when two identical creates race **before hydration** (so the disabled-submit state does not yet exist), one wins and the other is rejected by the constraint, rendering "Ya tenés una sucursal con ese nombre", "Ya tenés un barbero con ese nombre" or "Ya tenés un servicio con ese nombre." The owner created a row and may be told it already exists.
@@ -292,6 +301,7 @@ written: it makes "create" quietly idempotent, which is helpful here and would b
   stakes stop being cosmetic.
 
 ### T9 — Case-variant names can both survive a race
+
 **Status:** accepted · **Effort:** ~30 min per table
 
 Applies to **locations** (`(ownerId, name)` unique index), **barbers** (`(locationId, displayName)` unique index) and **services** (`(ownerId, name)` unique index). The case-insensitive duplicate pre-check runs in the application in a separate round trip (location design D2, barber design D9, service design D9). Two submissions of "Centro" and "centro", "Pedro" and "pedro", or "Corte" and "corte", interleaving closely enough can both be accepted.
@@ -303,6 +313,7 @@ is not drift.
 - **Trigger:** a second `Owner`, or any report of duplicate-looking rows in production.
 
 ### T18 — The barbers list overflows horizontally on a long unbroken name
+
 **Status:** **confirmed defect against a shipped requirement** · **Effort:** ~2 min · **Found:** M3 (2026-08-09)
 
 `openspec/specs/barber-management/spec.md` → "Long free text renders without breaking the layout"
@@ -339,6 +350,7 @@ check that was performed did not use an unbroken name.
   `sucursales` list, which was not measured.
 
 ### T4 — Owner email hardcoded in a committed migration
+
 **Status:** **needs a decision** · **Effort:** ~0 (accept) or ~30 min (parameterise)
 
 `prisma/migrations/*_add_owner_and_location_fk/migration.sql` contains the owner's real address, and
@@ -349,6 +361,7 @@ every commit — and changing it now needs a fresh migration because the row exi
   accepted.
 
 ### T5 — Development still runs on Windows
+
 **Status:** deferred · **Effort:** ~1 h
 
 OpenNext states plainly that Windows is not fully supported, and this project has already paid for it
@@ -364,6 +377,7 @@ matches how the code is actually built for production, which is Linux.
   filesystems makes installs and builds several times slower.
 
 ### T13 — Per-location barber cap is advisory, not guaranteed
+
 **Status:** accepted · **Effort:** ~1–2 h if it becomes real
 
 `BarberService` rejects a create when `count >= MAX_BARBERS_PER_LOCATION` (= 50). That count is read in a separate query from the insert (design D8), so two concurrent creates can both observe `count = 49` and both write, producing 51 barbers. The constraint that would prevent it — a `CHECK (count(*) <= 50)` deferrable constraint — cannot be expressed in Prisma schema, and requires a raw migration that wrangler's Prisma shadow-database setup makes harder to maintain.
@@ -373,6 +387,7 @@ Accepted because: 50 is a ceiling no real barbershop approaches; the advisory ch
 - **Trigger:** any confirmed report of a location exceeding 50 barbers, or the arrival of multi-owner tenancy where competing concurrent creates are a realistic scenario.
 
 ### T14 — Reassigning a barber retroactively rewrites derived booking history
+
 **Status:** deferred · **Effort:** unknown until booking model is defined
 
 `BarberService.updateBarber` allows moving a barber from one location to another. At zero bookings (the current state) this is harmless. Once bookings exist, a reassignment silently changes which location every past appointment is associated with through the barber row — breaking per-location statistics and any location-filtered booking history query.
@@ -382,6 +397,7 @@ The scope of the fix depends on what the booking model looks like: it may requir
 - **Trigger:** story B4 (barber booking history) or any story that queries bookings filtered by location, whichever comes first.
 
 ### T15 — Unqualified `P2002` violation translates as duplicate name, on two tables now
+
 **Status:** deferred · **Effort:** ~30 min · **Last evaluated:** M3 (2026-08-09)
 
 `BarberCatalogService.createBarber` catches `P2002` (unique constraint violation) and throws `DuplicateBarberNameError`; `ServiceCatalogService` does the same with `DuplicateServiceNameError`. Today each table carries exactly one unique constraint — `Barber(locationId, displayName)` and `Service(ownerId, name)` — so both translations are always correct. M4 adds `BarberService(barberId, serviceId)`, which touches **both** aggregates; from that point on, a violation on an unrelated constraint would produce "Ya tenés un barbero con ese nombre" or "Ya tenés un servicio con ese nombre" when the actual conflict is the assignment.
@@ -433,6 +449,7 @@ only mean one thing. The fix for them is now a known, demonstrated move rather t
   The M4 trigger is discharged.
 
 ### T19 — Per-owner service cap is advisory, not guaranteed
+
 **Status:** accepted · **Effort:** ~1–2 h if it becomes real · **Added:** M3 (2026-08-09)
 
 `ServiceCatalogService` rejects a create when `countActiveByOwner >= MAX_SERVICES_PER_OWNER` (= 50). The count is read in a separate round trip from the insert against a transaction-mode pooler (design D8), so two concurrent creates can both observe 49 and both write, producing 51 active services. Identical mechanism to T13; the fix is blocked for the same reason (Prisma cannot express a count constraint, and a raw migration would show as permanent drift).
@@ -442,6 +459,7 @@ The count deliberately excludes inactive rows. Counting every row would mean tha
 - **Trigger:** any confirmed report of an owner exceeding 50 active services, or multi-owner tenancy.
 
 ### T20 — Location and barber write paths still log raw driver error messages
+
 **Status:** **known gap, deliberately not closed in M3** · **Effort:** ~15 min · **Added:** M3 (2026-08-09)
 
 A PostgreSQL unique violation embeds the offending values in its message — `Key (ownerId, name)=(owner-root, Corte Clásico) already exists`. M3 added `toErrorLogContext()` (design D11), which logs the driver **code** and the operation for recognized constraint violations and never the message, so business data cannot reach the log stream and a name containing quotes or newlines cannot forge fields in structured log output. Unrecognized errors keep their message, because a failure stripped of its detail cannot be diagnosed.
@@ -453,6 +471,7 @@ A PostgreSQL unique violation embeds the offending values in its message — `Ke
 - **Trigger:** the next change that touches either actions file for any reason, or the first time logs are shipped anywhere they can be read by someone who should not see the owner's data.
 
 ### T21 — `skipDuplicates` becomes silent update-discarding if the assignment row ever gains a field
+
 **Status:** accepted · **Effort:** ~1 h when triggered · **Added:** M4 (2026-08-10)
 
 `PrismaBarberServiceRepository.setForBarber` inserts with `skipDuplicates: true`. Today that is
@@ -472,6 +491,7 @@ caller and imply the row has state it does not have.
 - **Trigger:** the first migration that adds any column to `BarberService` beyond `createdAt`.
 
 ### T22 — The assignment cap can lock an owner out of their own editor
+
 **Status:** accepted — **latent, becomes reachable at M6** · **Effort:** ~30 min · **Added:** M4 (2026-08-10, adversarial review)
 
 `barberServicesSchema` rejects a submission whose id list exceeds `MAX_SERVICES_PER_OWNER` (50). But that constant counts **active** services only (T19), while the editor renders `assignable = active ∪ already-assigned`. An owner sitting at 50 active services with any deactivated-but-still-assigned service therefore renders more than 50 baseline inputs, and their own form is rejected as `too_many` — **that barber can never be saved again, with no remedy anywhere in the application.**
@@ -483,6 +503,7 @@ Unreachable today because service deactivation does not exist. The requirement "
 - **Trigger:** M6 (service deactivation), or any change that lets total services exceed the active cap.
 
 ### T23 — The dashboard reports bookability per service, not per (service, location)
+
 **Status:** deferred — **decision closed (M4a), shape closed (B2), dashboard presentation open** · **Effort:** ~1 h · **Added:** M4 (2026-08-10, adversarial review) · **Half-closed:** M4a (2026-08-11) · **Shape fixed:** B2 (2026-08-15)
 
 **Closed at M4a: a closed branch now suppresses bookability.** The original question — whether a barber at a deactivated location should count — is answered **no**. The booking flow selects a location first (B2), so a barber at a closed branch is unreachable by any booking, and a dashboard that called such a service bookable was asserting revenue that could not be earned. `countActiveBarbersByService` now requires `barber.location.isActive`, the `service-catalog` requirement is normative rather than provisional, and `scripts/m4a-gate.ts` proves the predicate discriminates against the real database.
@@ -497,13 +518,14 @@ The remaining work is presentation against an aggregate whose shape is settled: 
 
 `countActiveBarbersByService` filters `barber.isActive` but not `barber.location.isActive`, so a service performed only by barbers at a **deactivated branch** is presented as bookable on the dashboard.
 
-This is an underspecification, not a contradiction: `data-model.md` §6 says "at least one assigned **active** barber" and is silent about the location. But M2 deliberately ruled that a barber may *remain* at an inactive location, so the state is live rather than hypothetical — and B2 will inherit whichever answer is frozen here.
+This is an underspecification, not a contradiction: `data-model.md` §6 says "at least one assigned **active** barber" and is silent about the location. But M2 deliberately ruled that a barber may _remain_ at an inactive location, so the state is live rather than hypothetical — and B2 will inherit whichever answer is frozen here.
 
 The question is a product one and has not been answered: **should a closed branch suppress bookability?** It is recorded as undecided rather than resolved by whichever behaviour the code happens to have.
 
 - **Trigger:** B2 (public service/barber selection) at the latest, or the first location deactivation with assigned barbers.
 
 ### T24 — The editor's empty state states something false when every service is inactive
+
 **Status:** accepted · **Effort:** ~15 min · **Added:** M4 (2026-08-10, adversarial review)
 
 `COPY.barberServices.emptyNoServices` reads "Antes de asignar servicios, creá al menos uno en el catálogo". It renders whenever the assignable set is empty — which includes the case where the owner **has** services and all of them are inactive and unassigned. The message then tells the owner to create something they already have.
@@ -513,6 +535,7 @@ Fix is to branch the empty state on "no services at all" versus "none currently 
 - **Trigger:** M6 (service deactivation).
 
 ### T25 — The assignment and schedule route parameters are decorative for the write
+
 **Status:** accepted · **Effort:** ~30 min · **Added:** M4 (2026-08-10, adversarial review)
 
 `setBarberServicesAction` reads `barberId` from a hidden form field, not from the route segment, so a payload can name a different barber than the URL displays. This is **not** a tenancy hole — `findByIdForOwner` still scopes it to the session owner — and it is the ordinary shape of a Server Action, which receives no route params.
@@ -524,6 +547,7 @@ What is unrecorded is whether that mismatch is intended. Today a crafted payload
 - **Trigger:** a second administrative user (which would make the mismatch a privilege question rather than a UX one), or any report of an edit landing on the wrong barber.
 
 ### T26 — The service duplicate-name pre-check can miss a row once services exceed the active cap
+
 **Status:** accepted · **Effort:** ~15 min · **Added:** M4 (2026-08-10, adversarial review) · **Origin:** M3
 
 `PrismaServiceRepository.existsByOwnerAndName` reads with `take: MAX_SERVICES_PER_OWNER`, but that constant counts active services only while the query is unfiltered by `isActive`. Once total services exceed 50, the pre-check can read a truncated set and miss a genuine duplicate.
@@ -534,7 +558,8 @@ Same root cause as T22: a cap that counts active rows being used to bound a quer
 
 - **Trigger:** M6 (service deactivation), together with T22.
 
-### T27 — One window per day cannot express a split shift *in the editor*
+### T27 — One window per day cannot express a split shift _in the editor_
+
 **Status:** accepted — **halved by B3, not closed** · **Effort:** ~2 h (the editor's second window) · **Added:** M5a (2026-08-11) · **Narrowed:** B3 (2026-08-16)
 
 The owner chose a single continuous window per weekday. The common local pattern is a split shift — 9–13 and 16–20 — and a barber who works one must enter 9–20. Slot generation will then offer appointments at 14:00 with the shop closed: the client books, pays a deposit, and nobody is there.
@@ -550,6 +575,7 @@ The defect surfaces in the availability story, not here, but it is created here 
 - **Trigger:** the first barber who works a split shift. The generator, the schema and the gate are already waiting for them.
 
 ### T28 — "Every day has 1440 minutes" is an assumption, not a fact
+
 **Status:** accepted · **Effort:** ~2 h if it becomes real · **Added:** M5a (2026-08-11)
 
 Working hours are stored as minutes from midnight, and all-day ranges are computed as local midnight to local midnight. Both are exact only while the business's timezone has no daylight saving. Argentina has observed none since 2009, so this is correct today rather than approximately correct.
@@ -561,19 +587,20 @@ M5b adds a second consumer: a whole-day absence is computed as local midnight to
 - **Trigger:** Argentina reinstating daylight saving, or a location outside the current timezone.
 
 ### T29 — Editing a schedule retroactively strands existing bookings
+
 **Status:** deferred · **Effort:** unknown until bookings can be created · **Added:** M5a (2026-08-11) · **Re-costed:** B3 (2026-08-16)
 
 Saving a schedule replaces the barber's week wholesale. Once bookings exist, narrowing or removing a window leaves confirmed appointments outside working hours, and nothing detects or reports it.
 
 Same shape as T14 (barber reassignment rewriting derived history): the fix depends on what the booking model looks like, and may be either a warning that names the affected appointments or a refusal to narrow a window that has bookings inside it.
 
-**B3 removed the sentence that made this safe to ignore.** The entry said "at zero bookings — the current state — this is harmless", and that was true only because the table did not exist. It exists now, with the index and the read that would find the stranded appointments. The count is still zero because nothing writes one until B4, so the *consequence* has not arrived — but the reason it could not arrive has.
+**B3 removed the sentence that made this safe to ignore.** The entry said "at zero bookings — the current state — this is harmless", and that was true only because the table did not exist. It exists now, with the index and the read that would find the stranded appointments. The count is still zero because nothing writes one until B4, so the _consequence_ has not arrived — but the reason it could not arrive has.
 
 Note what B3 does **not** create: a barber whose schedule shrank still shows the shrunken schedule to clients, so no new booking lands outside working hours. The exposure is entirely to appointments booked before the edit.
 
 **B4 closed the half it could and named the half it could not (2026-08-17).** The booking transaction
 re-asserts, under its lock and immediately before the insert, that the appointment still falls inside
-a working window and outside every absence. That closes the *race*: an owner narrowing a schedule
+a working window and outside every absence. That closes the _race_: an owner narrowing a schedule
 while a client is on the details step can no longer produce a booking outside working hours, which was
 the one path B4 itself could have opened.
 
@@ -588,7 +615,23 @@ already performs.
   rather than hypothetical. Also **D1**, whose dashboard is the first surface that could show an
   owner a stranded appointment at all.
 
+**D1 shipped and does not surface it (2026-08-24).** The trigger above named the dashboard as the
+first surface that _could_ show a stranded appointment. It can, and it does not: a `CONFIRMED`
+booking outside its barber's current working hours is counted by "turnos de hoy" and rendered in the
+recent list looking entirely ordinary, because nothing on that page compares a booking against the
+schedule it was made under. Detecting one means reading each booking's barber's current windows and
+absences — the read B4's transaction already performs, but per booking rather than per write, which
+is a different query and a different story.
+
+Recorded so the trigger is not read as satisfied by D1's existence. **The surface arrived; the check
+did not.**
+
+- **Trigger (unchanged):** the first schedule edit made against a barber who has bookings, or **D3**,
+  whose per-barber calendar renders appointments _against_ a schedule and is therefore the first
+  place where a stranded one looks wrong rather than merely being present.
+
 ### T30 — Per-barber absence cap is advisory, not guaranteed
+
 **Status:** accepted · **Effort:** ~1–2 h if it becomes real · **Added:** M5b (2026-08-11)
 
 `BarberTimeOffService` refuses a create once the barber has reached `MAX_TIME_OFF_PER_BARBER` (= 100). The count is read in a separate round trip from the insert against a transaction-mode pooler, so two concurrent creates can both observe 99 and both write. Identical mechanism to T13 and T19, blocked for the same reason: Prisma cannot express a count constraint, and a raw migration would show as permanent drift.
@@ -598,6 +641,7 @@ Unlike the service cap (T19), this one counts **every** row rather than only the
 - **Trigger:** any confirmed report of a barber exceeding 100 absences, or multi-owner tenancy.
 
 ### T31 — A failed absence removal tells the owner nothing
+
 **Status:** accepted · **Effort:** ~1 h · **Added:** M5b (2026-08-11, pre-archive review)
 
 `removeAbsenceAction` is a plain `<form action={fn}>` with no `useActionState`, so it has nowhere to put a message. An infrastructure failure is logged and swallowed; the only signal the owner gets is that the row is still there after the list refreshes.
@@ -609,6 +653,7 @@ The create path is unaffected: it carries form state and reports failures normal
 - **Trigger:** the first report of an absence that would not delete, or any change that gives the list rows client state for another reason.
 
 ### T32 — Unreferenced storage objects accumulate with no reclamation path
+
 **Status:** accepted · **Effort:** ~2–3 h (a sweep keyed on the owner prefix, or a `storagePath` column plus a scheduled job) · **Added:** P1 (2026-08-11)
 
 An image is uploaded **before** the database transaction opens, because storage is not transactional and a network round trip must not hold a transaction open on a pooled connection. When the transaction then fails, the uploaded object is referenced by nothing. It is logged with its key and left in place.
@@ -617,11 +662,12 @@ Replacement has the same shape from the other end: the previous object is delete
 
 Accepted because the accumulation is bounded and small: one owner, a client-side downscale that caps each object at roughly 500 KB, and one orphan per failed save. What does not exist is any process that reclaims them — the log is the only inventory.
 
-**Do not fix this before B6.** Transfer receipts add a second bucket with identical orphan semantics and a *private* audience; one entry covering both is worth more than one written now that B6 would rewrite.
+**Do not fix this before B6.** Transfer receipts add a second bucket with identical orphan semantics and a _private_ audience; one entry covering both is worth more than one written now that B6 would rewrite.
 
 - **Trigger:** B6 shipping (fix both buckets together), any measured storage growth that is not explained by real profile edits, or multi-owner tenancy.
 
 ### T33 — Changing the public slug breaks every link already shared
+
 **Status:** accepted — owner's explicit decision, **re-affirmed and now live** · **Effort:** ~3–4 h (slug history table, lookup fallback, redirect) · **Added:** P1 (2026-08-11) · **Last evaluated:** B1 (2026-08-15)
 
 `BusinessProfile.publicSlug` is editable. Changing it changes the public URL, and every link already handed out — WhatsApp messages, an Instagram bio, printed cards — stops resolving. There is no alias table and no redirect from a previous slug.
@@ -640,6 +686,7 @@ Two things B1 did add:
 - **Trigger:** the first slug change made now that B1 is live, any owner report of a shared link that stopped working, or a rise in the unresolved-slug log that correlates with a slug edit rather than with enumeration.
 
 ### T34 — A controlled `<select>` needs a manual write-back after React's post-action form reset
+
 **Status:** accepted — measured workaround, isolated to one component · **Effort:** ~1 h to revisit when React or the form shape changes · **Added:** P1 (2026-08-12)
 
 React 19 resets an uncontrolled form once its action resolves. Controlling a value is the documented answer, and for text inputs it is enough — React restores the DOM value on its own. **It is not enough for `<select>`.** The reset drops the element to its first option, React's `value` prop is unchanged from the previous render, so no DOM write is scheduled and the element keeps reporting `""`.
@@ -653,6 +700,7 @@ The cost is a piece of imperative DOM code inside an otherwise declarative form,
 - **Trigger:** a React upgrade that restores controlled selects after a form reset (delete the workaround and let the tests confirm), or the second `<select>` added to any action-backed form in this project — at which point this belongs in a shared component rather than copied.
 
 ### T16 — Session expiry during long free-text entry silently discards up to 500 characters
+
 **Status:** accepted · **Effort:** ~2–4 h (server-sent draft save or client-side autosave) · **Last evaluated:** M3 (2026-08-09)
 
 `requireOwner()` redirects to `/login?next=…` when the session expires. If the owner was mid-way through typing a 500-character barber bio **or service description**, the redirect discards it. React 19 resets uncontrolled forms on resolve, so even a rejected submit clears the field unless the action echoes it back — which it does, but an expired session never reaches the action.
@@ -664,6 +712,7 @@ Accepted because: the session lifetime is long relative to the time to type 500 
 - **Trigger:** a confirmed user complaint about lost bio text, or the arrival of a rich-text or multi-step form where the loss is more expensive.
 
 ### T17 — Unauthenticated Server Action POSTs are not rate-limited or metered
+
 **Status:** accepted · **Effort:** ~2–4 h (Cloudflare rate-limiting rule or middleware throttle) · **Last evaluated:** B1 (2026-08-15)
 
 `requireOwner()` short-circuits at `!user` and returns an error state without making any database call. This means the create and edit Server Action routes accept unlimited unauthenticated POSTs at zero database cost, but they still consume CPU and egress on the Worker. An attacker who discovers the action endpoint can submit it in a tight loop.
@@ -672,7 +721,7 @@ Accepted because: the session lifetime is long relative to the time to type 500 
 
 What still holds: Cloudflare Workers enforces a 10 ms CPU-time soft limit per request; the free tier's 100k daily requests provides implicit throttling; and no link has been shared yet, so the realistic traffic is zero. The mitigation was therefore **not** built at B1 — but the reasoning was corrected, because an accepted debt whose written justification is false is worse than one with no justification at all: the next reader treats it as still-evaluated (B1 design D12).
 
-Note the scope difference B1 introduces. This entry is about *Server Action POSTs*, which remain undiscoverable. The new public **read** surface is a different shape and is tracked separately in T47.
+Note the scope difference B1 introduces. This entry is about _Server Action POSTs_, which remain undiscoverable. The new public **read** surface is a different shape and is tracked separately in T47.
 
 **B4 arrived, and it changed the shape of this entry rather than closing it (2026-08-17).** The first
 publicly-linked write shipped — but as a **Route Handler**, not a Server Action, so the endpoint this
@@ -680,7 +729,7 @@ entry is about did not gain a new caller. What B4 added is its own throttle on `
 (`bookingThrottle.ts`), plus a per-client hold cap checked against the database.
 
 Two consequences worth stating. First, the dashboard's Server Action POSTs are still entirely
-unmetered, and are now the *only* unmetered write surface in the application — B4 did not widen this
+unmetered, and are now the _only_ unmetered write surface in the application — B4 did not widen this
 entry, it narrowed it by covering everything except this. Second, B4's own throttle is **per-isolate**
 and is documented as such: `workerd` offers no counter shared across isolates, so it blunts a naive
 loop and does not defeat a distributed one. That limitation is tracked separately in **T55**.
@@ -698,16 +747,17 @@ accounting. The notification handler additionally triggers an **outbound** call,
 orders its cheap `ref` lookup first (see T60) — an unresolvable notification must never spend one.
 
 ### T48 — The public profile has no loading state, because a skeleton costs its HTTP statuses
+
 **Status:** accepted — measured trade-off, statuses chosen over the skeleton · **Effort:** unknown; needs a way to stream a shell without committing the status early · **Added:** B1 (2026-08-15)
 
 `/b/[slug]` ships **no** `loading.tsx`. A client on a slow connection sees nothing until the server responds, rather than a skeleton.
 
 This is not an omission, and the alternative was built and measured before it was rejected. A `loading.tsx` opens a Suspense boundary; Next.js streams the shell and commits `200 OK` before the page has resolved anything, so `notFound()` and `permanentRedirect()` arrive too late to set a status:
 
-| Request | With `loading.tsx` | Without |
-| --- | --- | --- |
-| unknown slug | `200` (soft 404) | `404` |
-| non-canonical spelling | `200` + `<meta http-equiv="refresh">` | `308` |
+| Request                | With `loading.tsx`                    | Without |
+| ---------------------- | ------------------------------------- | ------- |
+| unknown slug           | `200` (soft 404)                      | `404`   |
+| non-canonical spelling | `200` + `<meta http-equiv="refresh">` | `308`   |
 
 Raising the outcome inside `generateMetadata` was also built and measured — **it does not work on this runtime**, the statuses stayed at `200`. Do not re-attempt it without new information.
 
@@ -718,6 +768,7 @@ The cost is bounded today: one query, no images blocking first paint. It grows t
 - **Trigger:** **B2 or B3**, whichever first makes this route wait on more than one query — at which point the missing loading state stops being a few milliseconds. Also: any Next.js or OpenNext release that lets a route stream a shell while deferring its status commit, and any measured complaint about the page appearing blank on a slow connection.
 
 ### T47 — The public surface has neither a cache nor a rate limit
+
 **Status:** accepted — deliberate bet on low traffic · **Effort:** ~2–4 h (a Cloudflare rate-limiting rule, or ISR backed by R2/KV, or a slug-keyed cache invalidated from the profile save) · **Added:** B1 (2026-08-15) · **Re-costed:** B2 (2026-08-15)
 
 `/b/[slug]` is `force-dynamic`, like every other page in this project. Unlike the others it is reachable **without a session**, so every request from anyone issues a database query through Supavisor. There is no cache in front of it and no rate limit on it.
@@ -731,11 +782,11 @@ The pool is still shared with the dashboard, so the saturation consequence is un
 
 **Measured on `workerd` against the live database** (B2 runtime verification), which turns the argument above into numbers:
 
-| Route | Queries | Response |
-| --- | --- | --- |
-| `/b/{unknown}/reservar` (short-circuits before the catalogue) | 1 | ~0.21 s |
-| `/b/{slug}/reservar` | 2 | ~0.97 s |
-| `/b/{slug}` | 2 | ~1.17 s |
+| Route                                                         | Queries | Response |
+| ------------------------------------------------------------- | ------- | -------- |
+| `/b/{unknown}/reservar` (short-circuits before the catalogue) | 1       | ~0.21 s  |
+| `/b/{slug}/reservar`                                          | 2       | ~0.97 s  |
+| `/b/{slug}`                                                   | 2       | ~1.17 s  |
 
 Roughly **0.35–0.40 s per Supavisor round trip** from this location. Two things follow. The profile page cost about 0.4 s when B2 added the bookability gate — a real regression on the busiest public page, accepted for the gate. And it confirms B2 design D10 was right to reject the three-query option, which would have landed near 1.5 s.
 
@@ -751,13 +802,14 @@ Fixed by routing all public-flow navigation through `src/components/booking/Step
 
   **Measured end to end on `workerd` against the live database** (B3 runtime verification, `opennextjs-cloudflare preview`, same location as the B2 row above):
 
-  | Step | Queries | Response |
-  | --- | --- | --- |
-  | branch / service / barber (unchanged by B3) | 2 | ~1.09–1.15 s |
-  | date step (adds the weekly schedule read) | 3 | ~1.40 s |
-  | slot step (adds the composed day read) | 3 | ~1.68 s |
+  | Step                                        | Queries | Response     |
+  | ------------------------------------------- | ------- | ------------ |
+  | branch / service / barber (unchanged by B3) | 2       | ~1.09–1.15 s |
+  | date step (adds the weekly schedule read)   | 3       | ~1.40 s      |
+  | slot step (adds the composed day read)      | 3       | ~1.68 s      |
 
   So B3 costs about **+0.28 s on the date step and +0.53 s on the slot step**, against a route that already sat near a second. Both are one round trip more than the step before them, which is the contract the spec sets — but the flow is now five steps deep on a phone, and the total time from opening the link to seeing times is the sum of all of them.
+
 - **`?fecha` multiplies the crawlable space by the horizon.** B2 left this route generating on the order of `L × S` URLs per shop. B3 makes it `L × S × B × 61`, and each distinct date is a real availability read rather than a repeat of a cached one. `MAX_BOOKING_HORIZON_DAYS` is what keeps that number finite at all — without it the parameter is unbounded — and the parameterized URLs still declare the bare path as canonical, which asks politely and enforces nothing.
 
 Router prefetch was the multiplier B2 removed, and B3 would have reintroduced it at a worse rate: the slot step renders on the order of a hundred links on one screen, each of whose prefetch payload is an availability computation. Both new steps route through `StepLink`, so the count stays at one request per navigation.
@@ -784,7 +836,7 @@ surface now **writes**. Three things follow that were not true when this entry w
 
 - **The details step adds a payment-configuration read**, and the write adds a catalogue read, an
   availability read, a client upsert and an interactive transaction. The transaction is the expensive
-  one: it *pins* a pooled connection for its duration rather than borrowing one per statement, and the
+  one: it _pins_ a pooled connection for its duration rather than borrowing one per statement, and the
   pool is shared with the owner's dashboard. A burst on one barber queues on the advisory lock while
   holding connections.
 - **A bad request now costs a slot, not a query.** That is a different kind of exposure, and it is why
@@ -805,11 +857,10 @@ The bet itself is unchanged: still no real traffic, still deliberate. What chang
 **Re-costed by B5 (2026-08-19), and one clause is now wrong.** This entry is written about a surface
 whose worst case is cost. B5 adds a public endpoint that a third party calls, and one whose handler
 performs an **outbound HTTPS request** to Mercado Pago per accepted notification. The amplification
-shape is therefore no longer "our database per request" but "our database *and* the owner's Mercado
+shape is therefore no longer "our database per request" but "our database _and_ the owner's Mercado
 Pago rate limit per request". A Cloudflare rate-limiting rule — still the mitigation this entry and
 T55 both defer to, still ~15 min and no code — now covers three surfaces rather than two, which makes
 it cheaper per unit of risk than at any previous costing.
-
 
 **Re-costed by B6 (2026-08-22), and the shape changes again — this time toward bandwidth.**
 B6 adds a fourth public endpoint, `POST /api/payments/transfer`, and it is unlike the three before
@@ -828,7 +879,7 @@ Three things bound it, and only the last is real:
   can still push 30 MB per booking.
 
   **This sentence was false when first written, and the correction is the point.** The cap lived
-  only inside the transaction that records the row — which runs *after* the upload. It therefore
+  only inside the transaction that records the row — which runs _after_ the upload. It therefore
   bounded rows and left object storage completely unbounded: a token holder could push 10 MB per
   request for as long as their booking sat in `PENDING_APPROVAL` (a status nothing expires until the
   appointment passes — T64), and every one of those requests would be answered "too many attempts"
@@ -854,7 +905,7 @@ render, and are not the page's server cost. Everything recorded here is a termin
 document alone.
 
 **A correction, because the first version of this paragraph was wrong.** It said the gate's 1018 ms
-was inflated by `maxUses: 1` — "setup the Worker does not repeat". The Worker *does* repeat it:
+was inflated by `maxUses: 1` — "setup the Worker does not repeat". The Worker _does_ repeat it:
 `createPrismaClient` sets `maxUses: 1` too, deliberately, because workerd cannot reuse a socket
 across request contexts and a carried-over connection hangs until the read timeout. **Every request
 this application serves pays connection setup for every query it issues**, and that is a property of
@@ -878,11 +929,11 @@ which is what the `Promise.all` was there to prevent and what a ~1.6 s reading w
 Measured on the preview, 2026-08-23. Both figures taken the same way, minutes apart, on the same
 machine and network — which is the only reason the 38 ms is worth quoting at all.
 
-| Route | Queries | Response |
-| --- | --- | --- |
-| `/b/{slug}` (control, untouched by B6) | 2 | ~1.18 s |
-| `/b/{slug}/reserva/{token}` (B6: +1 statement, parallel) | 2 | ~1.22 s |
-| cold start, either | — | ~3.3–3.6 s |
+| Route                                                    | Queries | Response   |
+| -------------------------------------------------------- | ------- | ---------- |
+| `/b/{slug}` (control, untouched by B6)                   | 2       | ~1.18 s    |
+| `/b/{slug}/reserva/{token}` (B6: +1 statement, parallel) | 2       | ~1.22 s    |
+| cold start, either                                       | —       | ~3.3–3.6 s |
 
 **The cold start is the number nobody has costed, and it is the largest one here.** Both pages take
 over three seconds on the first request after a Worker starts. That is outside this entry's scope —
@@ -890,19 +941,20 @@ it is not a cache or a rate limit — but it is a worse first impression than an
 tracks, and it belongs to whoever looks at public-surface performance next.
 
 ### T49 — The public 404 page renders an empty body without JavaScript
+
 **Status:** accepted · **Effort:** unknown — see the cause · **Added:** B2 (2026-08-15, runtime verification) · **Origin:** B1
 
 **Measured on `workerd`, on the deployed build**, across all three public routes:
 
-| Request | Status | `robots` | Rendered body text |
-| --- | --- | --- | --- |
-| `/b` | 404 | noindex | *(empty)* |
-| `/b/{unknown}` | 404 | noindex | *(empty)* |
-| `/b/{unknown}/reservar` | 404 | noindex | *(empty)* |
+| Request                 | Status | `robots` | Rendered body text |
+| ----------------------- | ------ | -------- | ------------------ |
+| `/b`                    | 404    | noindex  | _(empty)_          |
+| `/b/{unknown}`          | 404    | noindex  | _(empty)_          |
+| `/b/{unknown}/reservar` | 404    | noindex  | _(empty)_          |
 
 The Spanish copy — "No encontramos esta barbería" — is present **only inside the RSC flight payload**, so the visible page is assembled by client-side JavaScript. With scripts stripped, the `<body>` contains nothing but a suspense marker. The same extraction run against the success pages returns their full text, so this is the not-found path specifically, not a measurement artefact.
 
-**This is B1 behaviour, not B2's** — `/b` and `/b/{unknown}` are B1's routes and are unchanged by this story. It went unnoticed because B1's tests assert the *component* renders, which it does, under a test renderer that is not the streaming SSR path.
+**This is B1 behaviour, not B2's** — `/b` and `/b/{unknown}` are B1's routes and are unchanged by this story. It went unnoticed because B1's tests assert the _component_ renders, which it does, under a test renderer that is not the streaming SSR path.
 
 **What is not affected:** the parts B1 argued for. The status is a real `404`, `noindex` is emitted, and no English framework page is served. Crawlers and link-preview bots read the status, so the requirement that made B1 remove its `loading.tsx` still holds.
 
@@ -911,6 +963,7 @@ The Spanish copy — "No encontramos esta barbería" — is present **only insid
 - **Trigger:** T33 becoming real (an owner changes their slug and strands live links), or any decision to make the public surface work without JavaScript.
 
 ### T51 — The Worker is one story away from the free plan's size ceiling, and the build reports a size Cloudflare does not agree with
+
 **Status:** accepted — bought headroom, did not remove the ceiling · **Effort:** ~5 min (paid plan) · **Added:** B2 (2026-08-15, deploy failure)
 
 **B2's first deploy was rejected**, and the cause was not the code:
@@ -921,11 +974,11 @@ Your Worker exceeded the size limit of 3 MiB.
 
 Measured rather than guessed. Deploying `main` — identical to what was already live — was used as the control:
 
-| Build | reported gzip | outcome |
-| --- | --- | --- |
-| `main` (B1) | 3045.35 KiB | deployed |
-| B2, compiler `fast` | 3064.88 KiB | **rejected** |
-| B2, compiler `small` | 2588.18 KiB | deployed |
+| Build                | reported gzip | outcome      |
+| -------------------- | ------------- | ------------ |
+| `main` (B1)          | 3045.35 KiB   | deployed     |
+| B2, compiler `fast`  | 3064.88 KiB   | **rejected** |
+| B2, compiler `small` | 2588.18 KiB   | deployed     |
 
 **B1 had been sitting under ~20 KiB from the ceiling.** B2 adds ~19.5 KiB, so B2 is the proximate cause and not the real one — any story of any size would have tipped it, and B3 would not have fitted either.
 
@@ -948,7 +1001,6 @@ Measured rather than guessed. Deploying `main` — identical to what was already
 - **Trigger (unchanged in kind, closer in time):** the next story that adds a runtime dependency of any size — realistically **B5**. The lever is still Workers Paid (US$5/month, 10 MiB); there is no second `compilerBuild` trick to find.
 
 - **Trigger:** the next deploy rejection, or any story that adds more than ~400 KiB gzip. Payments (B5), email (N1) and the cron trigger (B7) are all still to come and all add dependencies.
-
 
 **B6 measured at 2924.08 KiB gzip (2026-08-22), leaving ~148 KiB of headroom.** Reported by
 `wrangler deploy --dry-run` on the branch carrying B5 + B6 together.
@@ -982,11 +1034,11 @@ story earlier than expected, and the story was restructured rather than the plan
 B7 needs a `scheduled()` handler, which OpenNext's generated worker does not export, so it was first
 built as a committed entrypoint wrapping that worker. Measured with `wrangler deploy --dry-run`:
 
-| entrypoint | gzip | |
-| --- | --- | --- |
-| B6, before this story | 2924.08 KiB | |
-| wrapper, `scheduled` body stubbed out | 2924.23 KiB | the wrapper costs **0.15 KiB** |
-| wrapper importing the sweep | **3812.20 KiB** | **740 KiB over the ceiling** |
+| entrypoint                            | gzip            |                                |
+| ------------------------------------- | --------------- | ------------------------------ |
+| B6, before this story                 | 2924.08 KiB     |                                |
+| wrapper, `scheduled` body stubbed out | 2924.23 KiB     | the wrapper costs **0.15 KiB** |
+| wrapper importing the sweep           | **3812.20 KiB** | **740 KiB over the ceiling**   |
 
 **The +888 KiB was the Prisma query compiler bundled twice.** `--dry-run --outdir` held the same
 1.85 MB wasm under two names: `query_compiler_small_bg.wasm` and
@@ -1003,13 +1055,14 @@ anything: **app 2924.14 KiB** — B6's number restored — and **cron 878.62 KiB
 So B7 leaves the app's headroom exactly as it found it, at **~148 KiB**, and adds a second Worker
 with ~2.2 MiB of its own room for anything scheduled that comes later.
 
-- **Trigger (unchanged, and now with one more reason):** N1 adds Resend to the *app* Worker, where
+- **Trigger (unchanged, and now with one more reason):** N1 adds Resend to the _app_ Worker, where
   the ~148 KiB has not moved since B6 — and B2 measured that Cloudflare's own check is stricter than
   wrangler's figure. The paid plan remains the recommendation before N1. What B7 adds is a second
   option that did not exist before: work that needs no request context can go in the cron Worker
   instead, where the room is.
 
 ### T50 — The service step has no answer for a catalogue at its cap
+
 **Status:** accepted · **Effort:** ~2–4 h (grouping, or a filter, or search) · **Added:** B2 (2026-08-15)
 
 `MAX_SERVICES_PER_OWNER` is 50, and every one of them can legitimately be bookable at a branch. The service step renders them as a flat list of cards, which at a 360-pixel viewport is a long scroll with no way to jump, filter or group.
@@ -1021,6 +1074,7 @@ The layout **holds** — that is required and tested. What it does not do is sta
 - **Trigger:** the first owner whose catalogue passes roughly 15 services at one branch, or any request for categories.
 
 ### T46 — The deposit effect preview will list services nobody can book
+
 **Status:** accepted — **dormant until M6** · **Effort:** ~30 min · **Added:** PC3 (2026-08-15)
 
 `PrismaServiceRepository.findAllByOwner` selects every service of the owner with no `isActive`
@@ -1053,6 +1107,7 @@ and surfacing in another is exactly what gets lost.
   starting with `PaymentConfigService.previewPolicy`.
 
 ### T45 — ~~`MIN_DEPOSIT_AMOUNT` is a placeholder, not a measured limit~~ — **CLOSED (B5, 2026-08-19)**
+
 **Status:** accepted · **Effort:** ~30 min (one lookup, one constant) · **Added:** PC3 (2026-08-15)
 
 `src/server/domain/models/depositPolicy.ts` floors every computed deposit at `MIN_DEPOSIT_AMOUNT`,
@@ -1081,12 +1136,12 @@ under a peso, and the owner is warned by name at configuration time when that ha
 Read from Mercado Pago's `/v1/payment_methods` against a real Argentine account. Sixteen active
 methods, in four bands:
 
-| band | `min_allowed_amount` |
-| --- | --- |
-| prepaid cards (Visa, Mastercard, Cabal) | 1 ARS |
-| debit, and Visa / Mastercard / Amex credit | 3 ARS |
-| Diners, Naranja, Argencard, Cabal credit | 15 ARS |
-| Rapipago, Pago Fácil (cash tickets) | 50 ARS |
+| band                                       | `min_allowed_amount` |
+| ------------------------------------------ | -------------------- |
+| prepaid cards (Visa, Mastercard, Cabal)    | 1 ARS                |
+| debit, and Visa / Mastercard / Amex credit | 3 ARS                |
+| Diners, Naranja, Argencard, Cabal credit   | 15 ARS               |
+| Rapipago, Pago Fácil (cash tickets)        | 50 ARS               |
 
 **15 was chosen because it is the point at which every card method works**, and cards are what this
 product charges with. Both alternatives were rejected in writing. **1** is the literal floor — below
@@ -1099,7 +1154,7 @@ product has never offered.
 **How the number was reached matters as much as the number**, because the first attempt was wrong in
 the direction this entry warns about. The gate originally created preferences at descending amounts
 and reported the smallest accepted — and accepted every one, down to **0.01 ARS**. A preference is a
-checkout *link*; Mercado Pago validates the charge when somebody pays, not when the link is made. The
+checkout _link_; Mercado Pago validates the charge when somebody pays, not when the link is made. The
 probe had found nothing, and `0.01` would have closed this entry with a figure that looked measured
 and was not — the exact failure described above, committed by the story sent to fix it. The result
 was too clean to believe, which is the only reason it was caught.
@@ -1111,6 +1166,7 @@ a test that asserts the value rather than only its shape, so it cannot drift bac
 offers the client fewer payment methods than a larger one, and nothing says so.
 
 ### T6 — Platform decision: Cloudflare vs Vercel
+
 **Status:** **decided — stay on Cloudflare**, revisit on trigger
 
 Evaluated on 2026-08-05 after repeated infrastructure friction. Staying, because the strongest argument
@@ -1133,6 +1189,7 @@ That last one is the honest criterion: for a solo developer, velocity is the sca
 ## Closed
 
 ### T18 — The barbers list overflows horizontally on a long unbroken name
+
 **Closed:** M4 (2026-08-10) · **Was:** confirmed defect against a shipped requirement
 
 Fixed exactly as the entry prescribed — `min-w-0` on both `CardTitle` and its inner `<span>` in
@@ -1145,6 +1202,7 @@ The `sucursales` list named at the end of that entry was **not** measured and re
 carried forward as the remaining scope, not silently closed with the rest.
 
 ### T20 — Location and barber write paths still log raw driver error messages
+
 **Closed for barbers:** M4 (2026-08-10) · **Still open for locations**
 
 `app/(dashboard)/barberos/actions.ts` now logs through `toErrorLogContext(operation, error)`, so a
@@ -1157,6 +1215,7 @@ open that file, and editing a closed change's behaviour without touching its art
 forbids. **The original trigger still stands for it.**
 
 ### T43 — No account-switch warning when Mercado Pago is unreachable
+
 **Status:** accepted · **Effort:** ~2 h · **Added:** PC2 (2026-08-13)
 
 Replacing Mercado Pago credentials with a **stranger's** — valid, live, but belonging to someone
@@ -1183,6 +1242,7 @@ migration, which PC2 otherwise avoided entirely.
   payments arriving in an unexpected account.
 
 ### T42 — Nothing warns an owner who ships with test credentials
+
 **Status:** accepted · **Effort:** ~2 h · **Added:** PC2 (2026-08-13)
 
 PC2 set out to render a persistent banner whenever the stored Mercado Pago credentials were test
@@ -1193,7 +1253,7 @@ Mercado Pago's "Tus integraciones" panel issues the `APP_USR-` prefix for **test
 alike** — confirmed against a real account during verification. Only the legacy `TEST-` prefix
 identifies a test credential, and current accounts do not produce it.
 
-What was removed is the *claim*: the page previously printed `Entorno: Producción` for every
+What was removed is the _claim_: the page previously printed `Entorno: Producción` for every
 `APP_USR-` credential, which was false for test ones and read as confirmation. It now shows the
 account id, which is a fact, and says nothing about the environment it cannot determine.
 
@@ -1206,7 +1266,7 @@ and the credential string does not carry it. The two candidates, neither taken:
   undocumented. A safety banner resting on that can vanish without notice.
 
 What partially covers it today is **D6a**: switching from test to production credentials changes the
-Mercado Pago account, and the confirmation states that prominently. That catches the *transition*,
+Mercado Pago account, and the confirmation states that prominently. That catches the _transition_,
 not the steady state of having shipped with the wrong ones.
 
 **A lead worth following, found after this entry was written.** During the live verification, Mercado
@@ -1215,7 +1275,7 @@ nothing about the environment — but the **account nickname does**, explicitly,
 
 That is a real signal and it costs nothing: the verifier already makes that call and already reads
 `nickname`. It carries the same caveat as everything else resting on `/users/me` — undocumented, so
-it may change without notice — which makes it usable as a *hint that raises a warning*, never as the
+it may change without notice — which makes it usable as a _hint that raises a warning_, never as the
 thing a "you are safe to launch" claim depends on. Consider it evidence to confirm rather than a
 mechanism to adopt untested: the pattern to check is whether test accounts reliably carry a
 recognisable marker, against more than one account.
@@ -1247,7 +1307,7 @@ public, so **real money can now move**: anyone who reaches the shop's link can b
 and there is still no warning anywhere in the dashboard saying which environment is configured.
 
 The entry's original fear was an owner shipping test credentials and taking bookings that never
-charge. The live fear is now its mirror — an owner *testing* against a production credential and
+charge. The live fear is now its mirror — an owner _testing_ against a production credential and
 charging somebody by accident — and **the same missing signal causes both**. Neither direction is
 detectable today, because Mercado Pago stopped issuing the `TEST-` prefix and `APP_USR-` says
 nothing. That is what makes this entry worth more than it looks: it is not a nicety about a label,
@@ -1280,6 +1340,7 @@ T43 already records as decoration rather than authority.
   reverse.
 
 ### T38 — No key-rotation or re-encryption tooling
+
 **Status:** accepted · **Effort:** ~3 h · **Added:** PC2 (2026-08-13)
 
 `PAYMENT_CREDENTIALS_KEY` encrypts `PaymentConfig.mpAccessToken`. The stored envelope carries a `v1`
@@ -1295,10 +1356,11 @@ the project's most sensitive column.
   if it adds one.
 
 ### T39 — A lost key is unrecoverable, and only the dashboard says so
+
 **Status:** accepted · **Effort:** ~0 (documented, not fixed) · **Added:** PC2 (2026-08-13)
 
 If the key is lost, or rotated without T38's re-encryption, every stored Mercado Pago credential is
-permanently unreadable. The recovery *is* re-pasting them, which is acceptable — the credentials
+permanently unreadable. The recovery _is_ re-pasting them, which is acceptable — the credentials
 still exist in the owner's Mercado Pago panel.
 
 What was built is the reporting: the dashboard decrypts on load and renders an **Unreadable** state
@@ -1313,15 +1375,16 @@ The gap: **only that page reports it.** Nothing checks proactively, so an owner 
   the same distinction rather than treating an unreadable credential as an absent one.
 
 ### T40 — The public key cannot be proven to belong to the verified account
+
 **Status:** accepted · **Effort:** unknown — may not be possible · **Added:** PC2 (2026-08-13)
 
 PC2 verifies the **access token** against Mercado Pago and shows the owner which account it belongs
-to. It does **not** prove the *public key* belongs to that same account: no available call ties the
+to. It does **not** prove the _public key_ belongs to that same account: no available call ties the
 two, and the public key's body is an opaque UUID that encodes nothing.
 
 Three checks narrow it — shape validation that rejects each credential in the other's field
 (design D9), the environment-consistency rule (D8), and the account-identity confirmation (D6) — so
-the plausible mistakes are covered. The residual case is a well-formed public key from a *different*
+the plausible mistakes are covered. The residual case is a well-formed public key from a _different_
 account of the owner's own, which would produce a checkout that initializes against one account while
 charges are created on another.
 
@@ -1329,6 +1392,7 @@ charges are created on another.
   any Mercado Pago API change that exposes the public key's owner.
 
 ### T41 — `intent` values are not namespaced per form
+
 **Status:** ~~accepted~~ · **Effort:** ~30 min · **Added:** PC2 (2026-08-13)
 
 Both PC1's and PC2's editors carry the owner's confirmation answer on the pressed button as `intent`,
@@ -1357,6 +1421,7 @@ Two `intent` reads deliberately left alone, because neither is a submitted confi
 and `/perfil`'s image-removal intent belongs to P1's own form on its own page.
 
 ### T35 — No audit trail for changes to the transfer destination
+
 **Status:** accepted · **Effort:** ~3 h · **Added:** PC1 (2026-08-13) · **Re-scoped:** PC2 (2026-08-13)
 
 `PaymentConfig.updatedAt` is overwritten on every save, so there is no record of what the CBU/alias
@@ -1376,8 +1441,8 @@ months later has nothing to read.
 **PC2 re-scoped this rather than closing it.** The same table now holds Mercado Pago credentials, and
 its trigger named that case. PC2 applied the same treatment instead of building the audit table: each
 successful credential write logs `previousTokenLastFour` alongside `tokenLastFour`, plus the
-environment and whether Mercado Pago verified the pair — enough to reconstruct *when the account
-changed* from the log stream, and never enough to expose a credential.
+environment and whether Mercado Pago verified the pair — enough to reconstruct _when the account
+changed_ from the log stream, and never enough to expose a credential.
 
 Credential rotation is in one way better covered than the transfer destination: the account id is
 recoverable from the token itself, so a switch between Mercado Pago accounts is stated to the owner
@@ -1402,6 +1467,7 @@ The retention gap is unchanged and now covers all three.
   becomes work rather than debt.
 
 ### T36 — Two tabs editing the transfer destination is last-write-wins
+
 **Status:** accepted · **Effort:** ~1 h · **Added:** PC1 (2026-08-13)
 
 The save carries no concurrency token, so two tabs editing the destination resolve by whichever
@@ -1420,7 +1486,8 @@ just saved in the other tab.
   access. At that point the fix is an `updatedAt` token in a hidden field, compared at write time.
 
 ### T44 — The no-JavaScript promise is false for every dashboard form
-**Status:** **needs a decision** · **Effort:** unknown — see the two causes · **Added:** PC2 (2026-08-14)
+
+**Status:** **needs a decision** · **Effort:** unknown — see the two causes · **Added:** PC2 (2026-08-14) · **Scope widened:** D1 (2026-08-24)
 
 `docs/frontend-standards.md` states "the house promise that the form submits correctly before
 hydration and with JavaScript disabled". **That promise does not hold anywhere in the dashboard.**
@@ -1444,6 +1511,7 @@ Cause 2 makes fixing cause 1 pointless on its own, which is why nothing was chan
 loading skeletons across ten routes would buy a form that renders and still says nothing.
 
 Options, none taken:
+
 - **Accept it and amend `frontend-standards.md`**, so the project stops claiming something untrue.
   Cheapest, and honest. The claim currently misleads every future story that reads the standard.
 - **Supply `permalink` to `useActionState`** on the forms that matter, and drop the group-level
@@ -1499,7 +1567,43 @@ shape B4 just proved out, which is now a validated precedent rather than a hypot
 - **Trigger:** the next dashboard story that adds or meaningfully touches a form, or any report of a
   no-JavaScript dashboard submission producing no feedback — whichever comes first. Not B4 again.
 
+**D1 widened Cause 1, and the widening is the finding (2026-08-24).** D1 added no form and no client
+component — its barber filter is a `<form method="get">` with a native `<select>`, in a page that
+ships **no client JavaScript at all**. It was written up as the first dashboard page whose only
+interaction works with JavaScript disabled. Driving the production build on `workerd` with JavaScript
+off proved that false, and not in the way this entry predicted:
+
+> Cause 1 says the page "renders its heading and its server-rendered cards, and the `<form>` is
+> simply absent". On `/` **nothing renders**. The skeleton is served and never resolves — no heading,
+> no counters, no filter.
+
+The mechanism is the same streamed boundary; the scope is larger than measured. PC2 was looking at
+pages whose shell renders outside the boundary and whose _client components_ fall inside it. D1's page
+is `force-dynamic` with its entire body awaiting a database read, so **everything** is inside, and
+what fails is not "client components do not attach" but "the fallback is the whole response".
+
+Two consequences worth carrying:
+
+- **A page of pure Server Components is not immune.** Writing a route with no client JavaScript is not
+  a route around this entry — which is exactly the mistake D1's design made. Any dashboard route
+  behind a `loading.tsx` is affected regardless of what it is built from.
+- **The per-route escape does not exist.** D1 put its skeleton in a `(home)` route group to avoid
+  giving the create/edit forms a counter-grid fallback. Deleting that file does not restore the page:
+  it inherits `app/(dashboard)/loading.tsx` instead, which has covered `/` since A1. Cause 1 already
+  said "removing only the per-route one does nothing", and D1 is the case that confirms it.
+
+**Nothing was changed in D1**, on the reasoning this entry has carried since PC3: fixing one page
+while ten forms stay silent buys little, and the fix is a decision about the whole dashboard's loading
+architecture. What D1 changed is the **claim** — the design note, the spec requirement and the roadmap
+entry were corrected to state that the page adds no client JavaScript and to stop asserting it works
+without it.
+
+- **Trigger (unchanged, with one addition):** as above, **or** the first time a story is tempted to
+  claim no-JavaScript support for a dashboard route on the grounds that it contains no client
+  components. That reasoning is now known to be wrong.
+
 ### T37 — The transfer editor's no-JavaScript path is reasoned, not verified
+
 **Status:** accepted · **Effort:** ~20 min · **Added:** PC1 (2026-08-13)
 
 `frontend-standards.md` requires that forms submit correctly before hydration and with JavaScript
@@ -1538,6 +1642,7 @@ form, and the remedy is a decision about the whole dashboard. It moves to **T44*
 ---
 
 ### T52 — A day with working hours but no free time looks selectable until you tap it
+
 **Status:** accepted — **deliberate, and the cheaper of two honest answers** · **Effort:** ~2 h (a per-day availability summary, or a cached one) · **Added:** B3 (2026-08-16)
 
 The date strip marks a day the barber does not work at all, because that costs nothing: the seven
@@ -1569,6 +1674,7 @@ what changed is that the entry now describes something that happens.
   empty day. Also: whenever T47 gets a cache, since that is what makes the honest version affordable.
 
 ### T53 — The lead time and the booking horizon are guesses, and they are per-product not per-shop
+
 **Status:** accepted · **Effort:** ~3 h (per-owner settings, with the dashboard UI) · **Added:** B3 (2026-08-16)
 
 `MIN_BOOKING_LEAD_MINUTES` is 60 and `MAX_BOOKING_HORIZON_DAYS` is 60. Both are judgements made
@@ -1591,14 +1697,13 @@ abandoned checkout hold a slot four times an hour, which is what makes the per-c
 (`BookingCreationService.MAX_LIVE_HOLDS_PER_CLIENT`, itself a fourth guess of the same kind).
 
 One interaction to note before lowering the lead time: `holdExpiresAtFor` clamps the hold at
-`startTime`, and that clamp is currently unreachable *only* because the lead time is 60 minutes.
+`startTime`, and that clamp is currently unreachable _only_ because the lead time is 60 minutes.
 Lowering it below the hold duration makes the clamp live. It is written into the rule and tested, so
 this is a fact to know rather than a change to make.
 
 - **Trigger:** the first owner who asks for any of them, which is likely to be the first owner. **B6**
   for the hold duration specifically — it is the first story that can measure how long uploading a
   transfer receipt actually takes.
-
 
 **B6 added a fourth, and could not do what this entry asked of it (2026-08-22).**
 `TRANSFER_HOLD_DURATION_MINUTES` = **45**, applied when a client commits to paying by transfer,
@@ -1625,7 +1730,6 @@ they paid**, because unlike the Mercado Pago path there is no gateway to ask aft
   `transfer.receipt` log lines is enough to replace all four of these guesses with measurements, and
   this is the one where being wrong costs the most.
 
-
 **B7 added a fifth, and it is the first of the family that protects another path rather than sizing a
 client's patience (2026-08-23).** `EXPIRY_GRACE_MINUTES` = **10**: how long after a hold has lapsed
 the sweep waits before writing `EXPIRED`.
@@ -1634,7 +1738,7 @@ It exists because `confirmIfSlotFree` — B5's guarantee that an approved paymen
 booking whose slot nobody took — is guarded on the booking still being `PENDING_PAYMENT`. A sweep
 with no grace would flip the row first, and every approval arriving just after the deadline would
 become an approved charge against an appointment that no longer exists. Mercado Pago's preference
-expiry is set to `holdExpiresAt`, so it refuses an attempt *begun* after the deadline; it does
+expiry is set to `holdExpiresAt`, so it refuses an attempt _begun_ after the deadline; it does
 nothing about one begun thirty seconds before it and approved a minute after.
 
 **Unlike the other four, being too generous costs nothing at all**, and the first draft of this
@@ -1646,7 +1750,7 @@ And `countLiveHoldsForClient` asks the same question — its predicate is `holdE
 the row stops counting against the client's cap at the deadline too, not at the cutoff.
 
 **What the grace actually delays is one thing only: the status write.** No slot, no cap, no client
-experience. That is precisely why it can be generous. Being too *short* costs a client their paid
+experience. That is precisely why it can be generous. Being too _short_ costs a client their paid
 appointment, which is why the value leans long — the asymmetry is total, with a real cost on one
 side and none on the other.
 
@@ -1660,6 +1764,7 @@ this guess with a distribution.
   carries everything needed to see it.
 
 ### T54 — A returning client's rename re-labels every booking they ever made
+
 **Status:** accepted — **decided, not discovered** · **Effort:** ~1 h now (a migration over an empty
 table), unknown later · **Added:** B4 (2026-08-17)
 
@@ -1687,7 +1792,36 @@ moment the table is not empty.
   booking, and therefore the first place anyone can see this. Fix it before the table has meaningful
   volume, because the migration is the whole cost and the migration only gets more expensive.
 
+**D1 arrived, decided against fixing it here, and the entry's cost is no longer what it says
+(2026-08-24).** The paragraph above prices this at "a migration over a table with **zero rows**" and
+calls that "the cheapest this fix will ever be". `Booking` has had a writer since B4 and the table is
+no longer empty, so that sentence is now false — and this entry itself warns that an accepted debt
+whose written justification is false is worse than one with no justification, because the next reader
+treats it as still-evaluated. Correcting it is the point of this note.
+
+**Why not in D1**, stated so the deferral is a decision rather than an omission:
+
+- **D1 barely exposes it.** The recent-bookings list is ten rows ordered by `createdAt`. The failure
+  this entry describes — a booking from March showing the name entered in September — needs distance
+  between the booking and the rename, and ten recent rows rarely have any. **D4's client table and
+  D3's calendar are where it bites**, and both render history by design rather than by accident.
+- **The fix is a write-path change and D1 contains no writes.** Snapshotting `clientName` and
+  `clientPhone` means two columns _and_ an edit to B4's booking transaction — the concurrency-critical
+  one. Riding that into a read-only story is the same objection B4 used to decline it in the first
+  place, pointed the other way.
+
+**Revised cost:** still a migration plus a write-path edit, but now over a table with rows, so it
+needs a **backfill decision** the original never had to make: existing bookings have no snapshot, and
+either they are backfilled from the current `Client` row (which stamps today's possibly-wrong name
+onto history permanently) or the columns are nullable and every reader falls back to the join. The
+second is correct and is more work than the entry has ever priced.
+
+- **Trigger (narrowed):** **D4**. D1 has passed and is spent as a trigger. Decide the backfill
+  question when D4 renders the client table, because that is the surface that makes the wrong answer
+  visible.
+
 ### T55 — The booking write's throttle is per-isolate and does not defeat a distributed attempt
+
 **Status:** accepted · **Effort:** ~2 h (a Cloudflare rate-limiting rule, shared with T47) · **Added:**
 B4 (2026-08-17)
 
@@ -1726,7 +1860,6 @@ it unchanged. Two additions:
   application throttle is ever consulted. Route tests and the preview run are where this is provable.
   Anyone re-attempting the production check will otherwise record a false failure, as B4's first pass did.
 
-
 **B6 adds a third throttled endpoint, and it is the most expensive one.**
 `POST /api/payments/transfer` carries both intents — the commitment and the multipart receipt — and
 shares `BookingThrottle` with the other two, so the per-isolate caveat above applies unchanged.
@@ -1743,6 +1876,7 @@ token holder can push into object storage. Verified in `b6-gate.ts` (11.7d): the
 for one booking is refused.
 
 ### T56 — Guest personal data accumulates with no deletion path
+
 **Status:** accepted · **Effort:** unknown (a policy decision before an implementation) · **Added:**
 B4 (2026-08-17)
 
@@ -1771,6 +1905,7 @@ it is worth deciding before it is not.
   stored.
 
 ### T57 — An optional constructor dependency is a hole the type system stops guarding
+
 **Status:** accepted — **one instance fixed, the pattern is not** · **Effort:** ~1 h (a composition-root
 test per public route) · **Added:** B4 (2026-08-18, found in runtime verification)
 
@@ -1796,6 +1931,7 @@ returning a hand-wired object graph, and any dependency any of them takes option
 the same way. B5 (Mercado Pago client), B6 (Supabase Storage) and N1 (Resend) each add one.
 
 Two candidate fixes, neither taken yet:
+
 - **A composition-root test per route**, asserting the graph it builds — cheap, and the shape B4 used.
 - **Make the dependency required and pass an explicit null object** for the profile page, so omission
   is a type error rather than a silent default. Stronger, and it costs a null implementation.
@@ -1804,6 +1940,7 @@ Two candidate fixes, neither taken yet:
   root, and therefore the first chance to repeat the defect exactly.
 
 ### T58 — A mock can certify a call that cannot work against the real database
+
 **Status:** **fixed for this instance, open as a pattern** · **Effort:** ~2 h (audit the raw-SQL call
 sites) · **Added:** B4 (2026-08-18, found in runtime verification)
 
@@ -1837,6 +1974,7 @@ raw SQL — it is the only thing that tests it.
   the same change rather than after it.
 
 ### T59 — A repeat submission over a CONFIRMED booking is reported as a live hold
+
 **Status:** accepted — **unreachable today, reachable the moment B5 lands** · **Effort:** ~1 h ·
 **Added:** B4 (2026-08-18, adversarial review)
 
@@ -1863,17 +2001,18 @@ after costs a bug report from someone who paid.
 exactly what is missing today. So this needs no new work in B5 — it needs whoever writes 9.2 to know
 that the `alreadyHeld` path reaches that state too, not only a client returning from checkout.
 
-- **Trigger:** **B5 task 9.2**, before it merges. Verify the confirmed state is reached by a *repeat
-  submission* as well as by a successful return from Mercado Pago; the two paths arrive at the same
+- **Trigger:** **B5 task 9.2**, before it merges. Verify the confirmed state is reached by a _repeat
+  submission_ as well as by a successful return from Mercado Pago; the two paths arrive at the same
   page from opposite directions, and only the second is obvious.
 
 ### T60 — The Mercado Pago webhook is authenticated by re-fetch, not by signature
+
 **Status:** accepted — **deliberate, and the alternative is worse than the gap** · **Effort:** ~half a
 day (column, cipher purpose, PC2 field, handler branch) · **Added:** B5 (2026-08-19)
 
 `/api/webhooks/mercadopago` performs **no signature validation**. Mercado Pago's `x-signature` is an
 HMAC keyed by a **per-integration webhook secret** issued in their dashboard, and this product is
-multi-tenant against Mercado Pago: every owner brings their own account. Choosing *which* owner's
+multi-tenant against Mercado Pago: every owner brings their own account. Choosing _which_ owner's
 secret to validate with requires resolving the notification first, and no such secret is stored.
 
 **What authenticates a notification instead.** The `notification_url` carries `?ref={payment.id}` —
@@ -1906,18 +2045,19 @@ the honest absence recorded here.
   precisely so that this trigger is observable rather than hypothetical.
 
 ### T61 — A low deposit silently removes payment methods, and nothing says so
+
 **Status:** accepted · **Effort:** ~1–2 h (a band table and a line in the deposit editor) ·
 **Added:** B5 (2026-08-19)
 
 Mercado Pago's payment methods do not share a minimum. Measured against a real Argentine account
 while closing **T45**:
 
-| band | `min_allowed_amount` |
-| --- | --- |
-| prepaid cards | 1 ARS |
-| debit, and Visa / Mastercard / Amex credit | 3 ARS |
-| Diners, Naranja, Argencard, Cabal credit | 15 ARS |
-| Rapipago, Pago Fácil (cash tickets) | 50 ARS |
+| band                                       | `min_allowed_amount` |
+| ------------------------------------------ | -------------------- |
+| prepaid cards                              | 1 ARS                |
+| debit, and Visa / Mastercard / Amex credit | 3 ARS                |
+| Diners, Naranja, Argencard, Cabal credit   | 15 ARS               |
+| Rapipago, Pago Fácil (cash tickets)        | 50 ARS               |
 
 `MIN_DEPOSIT_AMOUNT` is 15, so every **card** works at any deposit this product will produce. But a
 deposit between **15 and 50 ARS is payable while offering no cash option at all** — Rapipago and
@@ -1944,6 +2084,7 @@ which payment methods the client will actually be offered belongs.
   notice that Mercado Pago's own cash methods were being dropped silently all along.
 
 ### T62 — The confirmation moment ends with "please refresh", and that is the normal path
+
 **Status:** accepted · **Effort:** ~1 h · **Added:** B5 (2026-08-21, observed in runtime verification)
 
 When a client returns from Mercado Pago, the confirmation page reads live state and renders one of
@@ -1984,6 +2125,7 @@ pin a Worker request on a third party).
 ---
 
 ### T63 — A storage policy depends on Prisma-owned tables, and Prisma never reports it as drift
+
 **Status:** accepted — mitigated by a gate probe, not removed · **Effort:** ~1 h to add a schema-drift check to CI, unbounded to remove the coupling · **Added:** B6 (2026-08-22)
 
 B6 gives an anonymous caller an insert grant on a storage bucket, which nothing in this product had
@@ -2021,10 +2163,11 @@ The residual risk is that the gate is run by hand. Nothing runs it on a schema c
 ---
 
 ### T64 — An unreviewed receipt blocks its slot until the appointment passes
+
 **Status:** accepted — bounded by design, not eliminated · **Effort:** ~2 h (a reminder to the owner, or a shorter review deadline with a decided consequence) · **Added:** B6 (2026-08-22)
 
 `PENDING_APPROVAL` blocks availability and is deliberately **not** governed by `holdExpiresAt` —
-that column is the deadline for *uploading* a receipt, not for *answering* one. Releasing a slot
+that column is the deadline for _uploading_ a receipt, not for _answering_ one. Releasing a slot
 underneath a transfer the owner is about to approve would sell it twice.
 
 B6 gives the status one terminal path: a booking whose `startTime` has passed becomes sweepable,
@@ -2058,13 +2201,40 @@ sell it twice, which is the reason the status is not governed by time in the fir
 deliberately does not apply its grace window here either — a human's answer is the only thing that
 could confirm such a booking, and no delay makes that more likely.
 
-- **Trigger (narrowed):** still **D1** or **N1** — but now specifically for *visibility*, not for a
+- **Trigger (narrowed):** still **D1** or **N1** — but now specifically for _visibility_, not for a
   terminal state. B7 supplied the terminal state; what remains missing is any surface that tells the
   owner a receipt is waiting before the appointment arrives.
+
+**D1 closed the visibility half, and found that the queue had been over-reporting (2026-08-24).**
+The counter this entry asked for exists. Building it surfaced something the two halves above had
+hidden between them: **B7's terminal state and D2's queue never agreed.** `expire()` writes
+`Booking.status` and nothing else — deliberately, so a late notification can still complete a
+payment's own history — and `findPendingForOwner` filtered on `TransferReceipt.status = 'PENDING'`
+alone. So a receipt whose booking the sweep had expired stayed `PENDING` forever and kept its place
+in the queue, under an **Aprobar** control whose only reachable answer was `noLongerPending`, because
+the approval is guarded on `PENDING_APPROVAL`.
+
+That was invisible while the queue was the only surface: an owner would meet it as one stale row and
+move on. A counter makes it structural — the figure climbs and never returns to zero, which destroys
+the one property that makes a counter worth putting on a page.
+
+The fix is a read-side narrowing, `payment.booking.status = 'PENDING_APPROVAL'`, expressed once and
+shared by the listing and the count. **The alternative — having the sweep also reject the receipt —
+was rejected**: `IExpiredHoldRepository.expire` states it writes one column to one value, and
+`REJECTED` is a word that means a human looked at something.
+
+**The painful half is still untouched**, and it is worth restating that no counter could touch it. A
+receipt uploaded for an appointment three weeks out still blocks that slot for three weeks. What D1
+changes is that the owner now sees the number without opening the queue; what it does not change is
+that answering is still the only thing that resolves it.
+
+- **Trigger (unchanged for what remains):** **N1**, or the first owner who reports a slot they could
+  not sell because a receipt sat unanswered. The visibility trigger is spent.
 
 ---
 
 ### T65 — Transfer receipts accumulate with no retention or deletion rule
+
 **Status:** accepted · **Effort:** ~3 h (a scheduled sweep, plus a decision about how long to keep an approved receipt) · **Added:** B6 (2026-08-22)
 
 A receipt is a bank document. It carries an account number, a full legal name, an amount, and —
@@ -2076,7 +2246,7 @@ nobody can rely on.
 Nothing deletes them. Not the review, not the booking's cancellation, not time.
 
 **Two sources, and the second is a consequence of B6's own design.** Every reviewed receipt stays.
-And every *replacement* leaves its predecessor behind as a bounded orphan — at most two per booking,
+And every _replacement_ leaves its predecessor behind as a bounded orphan — at most two per booking,
 given the cap — because the anonymous uploader holds no delete grant and granting one would let
 anybody delete anybody's receipt. The displaced key is logged so a retention rule can find it.
 
@@ -2088,6 +2258,7 @@ solved with it: one rule about how long this product keeps things about people, 
 ---
 
 ### T66 — Nothing verifies that a transfer actually happened, or that its amount was right
+
 **Status:** accepted — inherent to the payment method, disclosed rather than hidden · **Effort:** unbounded (a bank integration) · **Added:** B6 (2026-08-22)
 
 A receipt image is trivially fabricated and this product has no bank integration. **The owner must
@@ -2097,7 +2268,7 @@ This is not a gap to be closed with more code at this scale; it is a property of
 transfers without an API. What B6 does instead is refuse to imply otherwise:
 
 - The review page instructs the owner to check their bank, in the intro rather than in fine print:
-  *"El comprobante es una foto: no confirma que el dinero haya entrado."*
+  _"El comprobante es una foto: no confirma que el dinero haya entrado."_
 - It renders the booking's **snapshotted deposit** beside the file, because that is the only thing
   that makes the comparison possible at all — without it, approving is a guess.
 - A test fails if the rendered page contains "transferencia verificada", "pago confirmado" or
@@ -2116,6 +2287,7 @@ discipline is not something software here can supply.
 ---
 
 ### T67 — The sweep's only instrument is a log line, and nothing tells the owner a hold expired
+
 **Status:** accepted — the visibility half of B7, deliberately not built · **Effort:** ~2 h (a counter on the dashboard home) · **Added:** B7 (2026-08-23)
 
 B7 writes `EXPIRED` and reports what it did. **Everything else about it is invisible.**
@@ -2145,3 +2317,91 @@ work that out.
   owner, and where a "last swept at" would cost almost nothing to add beside them. For the second
   gap, any of: the first time somebody asks whether the job is running, a Cloudflare alert being set
   up for anything at all, or the first `EXPIRED` row that turns out to be days late.
+
+**D1 closed gap 1 and left gap 2 exactly where it was (2026-08-24).** The dashboard home gives the
+owner two surfaces that mention an expiry: the recent-bookings list renders `EXPIRED` rows with their
+own badge, distinct from `CANCELLED`, and a "reservas sin confirmar hoy" figure sits beneath today's
+confirmed count. Between them an owner watching a quiet day can now tell "nobody booked this" from
+"somebody held it and walked away", which is what gap 1 asked for.
+
+**Gap 2 is untouched, and the "last swept at" line this entry suggested was considered and not
+built.** The reason is worth recording, because the suggestion reads cheap: nothing in the schema
+records when a sweep ran. `expire()` writes `Booking.status` and the sweep keeps no run log, so the
+line would need either a new table or a query against Cloudflare's log stream — neither of which is
+"almost nothing beside a counter", and both of which are a different story from a page of figures.
+
+**What must not be inferred from gap 1 closing:** no counter on the dashboard home changes when the
+sweep stops running. An unswept lapsed hold and a swept one are indistinguishable to availability, to
+the booking write and to every figure on that page — which was B7's own design property, restated
+here because a page that now shows expiries looks like it would notice their absence, and it would
+not. The log filter on `operation = "booking.sweepExpiredHolds"` remains the only instrument.
+
+- **Trigger (narrowed to gap 2):** the first time somebody asks whether the job is running, a
+  Cloudflare alert being set up for anything at all, or the first `EXPIRED` row that turns out to be
+  days late.
+
+---
+
+### T68 — The development machine cannot receive a database response larger than ~1.4 KB
+
+**Status:** open — **an environment fault, not a product defect** · **Effort:** unknown (a network
+diagnosis, not code) · **Added:** D1 (2026-08-24)
+
+`scripts/d1-gate.ts` could not complete from the development machine. Every probe that returned a
+small result passed; the one returning ten rows of seven columns timed out at `query_timeout`, and
+with the timeout removed it hung **indefinitely**.
+
+**It is not the query, and the bisection is worth keeping because the query looks guilty.** The
+failure was chased through four wrong suspects before the real one:
+
+| suspect                                        | ruled out by                                             |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| Prisma relation loading                        | raw SQL with explicit joins fails identically            |
+| the four joins                                 | the same four joins with fewer columns return in ~310 ms |
+| a column type (enum, `Decimal`, `Timestamptz`) | each returns fine alone; `status::text` fails too        |
+| pool exhaustion (`max: 5`, `maxUses: 1`)       | reproduces with `max: 20` and with `maxUses` removed     |
+
+The actual boundary has nothing to do with the schema:
+
+```
+SELECT repeat('x', 1200) →  303 ms
+SELECT repeat('x', 1400) →  never returns
+```
+
+One row, one column, no table. **The threshold is the size of the response in bytes**, right at the
+payload of a single ~1500-byte Ethernet frame. That is the signature of a **path-MTU black hole**:
+the first full-size packet is dropped and the ICMP "fragmentation needed" that would tell the sender
+to back off never arrives, so the connection waits for data that will never come. Common causes are a
+VPN, a tunnel, or a router on the path that drops ICMP.
+
+**Why this is not a product defect.** Cloudflare Workers reach Supavisor over an entirely different
+network path, and nothing about the application's queries depends on response size. The dashboard's
+own reads are small — five scalars and ten rows — and were correct in every probe that could return.
+
+**What it costs, and it is not nothing:**
+
+- **The D1 gate cannot fully pass from this machine.** Fourteen probes pass, including every counting
+  rule, both money rules and both directions of cross-owner isolation. The recent-bookings read and
+  anything downstream of it cannot be verified locally.
+- **Every future gate inherits this.** D3's calendar, D4's client table and D5's statistics all return
+  more rows than this ceiling admits. A gate is this project's answer to T58 — "a mock can certify a
+  call that cannot work" — and that answer is unavailable for any read that returns real volume.
+- **It cost most of a day and produced one reverted commit.** `findRecentForOwner` was rewritten to
+  raw SQL on the misdiagnosis and reverted once the cause was found. The comment on that method now
+  records the reversal, so the next reader does not re-accuse the query.
+
+**How to confirm it in one command**, without any of this repository involved:
+
+```
+npx tsx -e "…SELECT repeat('x', 1400)…"     # hangs on the affected path
+```
+
+Or outside Node entirely: `ping -f -l 1400 aws-1-sa-east-1.pooler.supabase.com` on Windows, which
+should report that the packet needs fragmenting.
+
+- **Likely fixes** (all outside this repository): disable a VPN or split-tunnel the database host;
+  lower the interface MTU (`netsh interface ipv4 set subinterface "<name>" mtu=1400 store=persistent`);
+  or run the gates from a different network. Verifying with a phone hotspot is the cheapest first test.
+- **Trigger:** the next gate that must return more than a handful of rows — **D3, D4 or D5**, whichever
+  comes first. Until then, `readSummary`-shaped probes still work and the gates keep most of their
+  value.

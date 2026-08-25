@@ -68,6 +68,42 @@ export function dayBoundsOf(date: LocalDate): Interval {
 }
 
 /**
+ * The half-open instant range covering a local **month**: `[first, next first)`.
+ *
+ * The `day` field of the argument is ignored — a month is decided by its year
+ * and month alone — so the caller can hand it today's date without trimming it.
+ *
+ * This is what bounds a monthly income figure, and both shorter versions of it
+ * are wrong:
+ *
+ * - `new Date(y, m, 1)` (or `Date.UTC`) builds the boundary in the **runtime's**
+ *   zone, which is UTC. The business's month begins at 03:00 UTC, so a payment
+ *   approved at 23:30 on the 31st would fall inside the *next* month's range —
+ *   an income figure the owner cannot reconcile against a bank statement, wrong
+ *   in the direction that flatters the newer month. It is the month-scale twin
+ *   of the defect `dayBoundsOf` exists to prevent.
+ * - Adding a fixed span is wrong for eight months of every year, and adding
+ *   "30 days" is not even right for February.
+ *
+ * Like `dayBoundsOf`, it is computed from **both** boundaries rather than from
+ * one plus a duration, so a month that is not a whole number of 24-hour days
+ * stays correct if Argentina ever restores daylight saving (`docs/tech-debt.md`
+ * T28).
+ */
+export function monthBoundsOf(date: LocalDate): Interval {
+  const first: LocalDate = { year: date.year, month: date.month, day: 1 };
+  const nextFirst: LocalDate =
+    date.month === 12
+      ? { year: date.year + 1, month: 1, day: 1 }
+      : { year: date.year, month: date.month + 1, day: 1 };
+
+  return {
+    start: localToInstant({ ...first, minuteOfDay: 0 }),
+    end: localToInstant({ ...nextFirst, minuteOfDay: 0 }),
+  };
+}
+
+/**
  * A day's working windows as instants, chronologically.
  *
  * Windows are stored as wall-clock minutes and are never converted at rest

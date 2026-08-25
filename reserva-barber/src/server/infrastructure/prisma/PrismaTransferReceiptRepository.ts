@@ -53,6 +53,42 @@ interface TxLike {
   };
 }
 
+/**
+ * What "waiting for the owner's answer" means, in exactly one place.
+ *
+ * **Both clauses are load-bearing and the second was missing until D1.** A
+ * receipt is `PENDING` until somebody reviews it, and the sweep never reviews
+ * anything — `IExpiredHoldRepository.expire` writes `Booking.status` and nothing
+ * else, deliberately, so a late notification can still complete a payment's own
+ * history. So a receipt whose booking was expired once its appointment passed
+ * stays `PENDING` for ever. Filtering on the receipt alone left those rows in
+ * the queue beneath an **Aprobar** control that could only ever answer
+ * `noLongerPending`, because `approve` is guarded on `PENDING_APPROVAL`.
+ *
+ * **It is a function rather than two copies of an object literal**, and that is
+ * the whole point of the extraction: the queue and its counter must never be
+ * able to disagree about how many receipts are waiting. This predicate has now
+ * changed once; the next change must reach both callers or neither.
+ *
+ * The scope reaches the owner through barber → location, which is the only path
+ * — a booking's location is deliberately not duplicated onto the row.
+ *
+ * **The alternative was to have the sweep reject the receipt**, and it was
+ * rejected: `expire` states it writes one column to one value, and `REJECTED`
+ * is a word that means a human looked at something.
+ */
+function pendingForOwner(ownerId: string) {
+  return {
+    status: 'PENDING',
+    payment: {
+      booking: {
+        status: 'PENDING_APPROVAL',
+        barber: { location: { ownerId } },
+      },
+    },
+  } as const;
+}
+
 export class PrismaTransferReceiptRepository implements ITransferReceiptRepository {
   constructor(private readonly db: PrismaClient) {}
 
@@ -302,10 +338,7 @@ export class PrismaTransferReceiptRepository implements ITransferReceiptReposito
    */
   async findPendingForOwner(ownerId: string): Promise<readonly PendingReceipt[]> {
     const rows = await this.db.transferReceipt.findMany({
-      where: {
-        status: 'PENDING',
-        payment: { booking: { barber: { location: { ownerId } } } },
-      },
+      where: pendingForOwner(ownerId),
       orderBy: { uploadedAt: 'asc' },
       select: {
         id: true,
@@ -347,6 +380,17 @@ export class PrismaTransferReceiptRepository implements ITransferReceiptReposito
         locationName: booking.barber.location.name,
       };
     });
+  }
+
+  /**
+   * How many receipts are waiting, over the same predicate the listing uses.
+   *
+   * A `count` rather than the listing's length: the page that shows this number
+   * does not want the rows, and the queue's projection carries a client name and
+   * an appointment per row.
+   */
+  async countPendingForOwner(ownerId: string): Promise<number> {
+    return this.db.transferReceipt.count({ where: pendingForOwner(ownerId) });
   }
 
   /**
