@@ -48,10 +48,14 @@ import type { DashboardSummary, FilterableBarber, RecentBooking } from '../model
  */
 export interface IDashboardSummaryRepository {
   /**
-   * The six figures, from **one statement**.
+   * The five booking-and-payment figures, from **one statement**.
    *
-   * One rather than six for two independent reasons, and the second is not
-   * about speed: six queries answer from six different instants, so a booking
+   * The dashboard shows a sixth — the pending-receipt count — which this port
+   * deliberately does not provide: its predicate belongs to the review queue,
+   * which requires it expressed once and shared with the listing.
+   *
+   * One rather than five for two independent reasons, and the second is not
+   * about speed: separate queries answer from different instants, so a booking
    * confirmed mid-render is counted by one figure and not another, and the
    * owner is shown two numbers that cannot both be true.
    *

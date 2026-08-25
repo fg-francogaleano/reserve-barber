@@ -1,4 +1,10 @@
-## ADDED Requirements
+# dashboard-home Specification
+
+## Purpose
+
+The owner's landing page: six figures summarising the business, and a recent-bookings list filterable by barber. Every counter is defined as a predicate over named columns rather than as a label, because "today's bookings" has several defensible readings that differ by more than a rounding error.
+
+## Requirements
 
 ### Requirement: The dashboard home is the owner's summary, and every counter is defined as a predicate
 
@@ -36,7 +42,6 @@ The six counters are:
 - **WHEN** the owner has a `CONFIRMED` booking whose appointment was last month
 - **THEN** it is counted by "Turnos confirmados (histórico)" and not by "Turnos de hoy"
 
----
 
 ### Requirement: Today and this month are the business's, never the runtime's
 
@@ -61,7 +66,6 @@ Month bounds SHALL be produced by a **new domain function** that converts the fi
 - **WHEN** the month-bounds function is reviewed
 - **THEN** it converts the first of this month and the first of next month through the business-time module, and adds no fixed number of days
 
----
 
 ### Requirement: An expired hold is never reported as a cancellation
 
@@ -84,7 +88,6 @@ A booking in status `EXPIRED` SHALL NOT be counted as a cancellation under any c
 - **WHEN** a booking whose appointment was last month is cancelled today
 - **THEN** it is counted by "Cancelaciones de hoy" and appears in no other counter
 
----
 
 ### Requirement: The historical total counts confirmations, and its label says so
 
@@ -102,7 +105,6 @@ Counting every booking row makes the dashboard's headline number a count of chec
 - **WHEN** the historical counter is rendered
 - **THEN** its label states that it counts confirmed appointments
 
----
 
 ### Requirement: Income joins through the booking, is bounded by approval, and is named as deposits
 
@@ -144,7 +146,6 @@ The sum SHALL cross the repository boundary as a canonical decimal string and SH
 - **WHEN** the income card is rendered
 - **THEN** it states that the figure is deposits collected
 
----
 
 ### Requirement: Every counter is scoped to the owner through the barber relation
 
@@ -169,7 +170,6 @@ Cross-owner isolation SHALL be proven by test against a fixture containing two o
 - **WHEN** the aggregate repository's tests are reviewed
 - **THEN** they run against a two-owner fixture and assert the other owner's rows are absent from every counter
 
----
 
 ### Requirement: The recent-bookings list shows every status, bounded and narrowly projected
 
@@ -196,7 +196,6 @@ The read SHALL be bounded by a limit. An unbounded list read on the most-visited
 - **WHEN** the recent-bookings projection is reviewed
 - **THEN** it contains no client email and no client telephone field
 
----
 
 ### Requirement: The barber filter lives in the URL, adds no client JavaScript, and is matched rather than parsed
 
@@ -239,7 +238,6 @@ The option list SHALL include barbers who are inactive but have bookings, so tha
 - **WHEN** a barber with bookings has been deactivated
 - **THEN** they remain selectable in the filter
 
----
 
 ### Requirement: A counter that could not load is never rendered as a zero
 
@@ -266,7 +264,6 @@ Failures SHALL be logged through the project's structured error-context helper a
 - **WHEN** the owner has no bookings at all
 - **THEN** every counter renders zero and no failure state is shown
 
----
 
 ### Requirement: The page is uncached, unindexed, guarded, and free of client JavaScript
 
@@ -293,15 +290,18 @@ It SHALL ship **no client JavaScript**: every component in this capability is a 
 - **WHEN** an unauthenticated request reaches the page
 - **THEN** the owner resolution redirects before any database read is issued
 
----
 
-### Requirement: The page costs at most four concurrent database round trips, and the booking figures share one snapshot
+### Requirement: The page costs four reads in two waves, and the booking figures share one snapshot
 
-The **five booking-and-payment figures** SHALL be computed by one statement. The pending-receipt count, the recent-bookings list and the barber options are each one further read. All four SHALL be issued concurrently, so the page's wall-clock cost is one round trip rather than four.
+The **five booking-and-payment figures** SHALL be computed by one statement. The pending-receipt count, the recent-bookings list and the barber options are each one further read — four in total.
+
+They SHALL be issued in **two waves, not one**. The barber options are read first and awaited, because the submitted filter is _matched_ against them and an unresolved value must never reach the list query; the remaining three are then issued concurrently. The page's wall-clock cost is therefore **two round trips**, not one.
+
+The ordering is a correctness constraint rather than an optimisation: collapsing all four into a single concurrent batch would mean issuing the list read before the filter had been validated against the owner's own barbers.
 
 Two reasons for the single statement, and the second is not a performance concern. A round trip to the pooler from this deployment has been measured at roughly a third of a second, so seven _serial_ reads would make the owner's landing page the slowest in the product. And separate counter queries would produce their figures from different instants, so a booking confirmed mid-render could be counted by one card and not another.
 
-**The pending-receipt count is deliberately excluded from that statement.** Its predicate belongs to the `transfer-receipt-review` capability, which requires it to be expressed once and shared by the listing and the count. A reporting statement cannot share a query fragment with that repository, so folding the receipt count in would create a second copy of exactly the predicate this change exists to unify — and the next narrowing of the queue would silently desynchronise the counter again. **Sharing the predicate is worth more than saving a round trip**, and because the reads are concurrent the fourth costs approximately nothing in wall-clock terms.
+**The pending-receipt count is deliberately excluded from that statement.** Its predicate belongs to the `transfer-receipt-review` capability, which requires it to be expressed once and shared by the listing and the count. A reporting statement cannot share a query fragment with that repository, so folding the receipt count in would create a second copy of exactly the predicate this change exists to unify — and the next narrowing of the queue would silently desynchronise the counter again. **Sharing the predicate is worth more than saving a round trip**, and because it rides in the same wave as the other two it costs approximately nothing in wall-clock terms.
 
 The cost SHALL be measured against the live database rather than assumed.
 
@@ -315,12 +315,16 @@ The cost SHALL be measured against the live database rather than assumed.
 - **WHEN** the aggregate statement is reviewed
 - **THEN** it contains no predicate over transfer receipts, and the count is obtained from the receipt repository
 
-#### Scenario: The reads do not run in sequence
+#### Scenario: The filter options are resolved before the list is queried
+
+- **WHEN** the page's reads are reviewed
+- **THEN** the barber options are awaited first, and the remaining three reads are issued concurrently after the submitted filter has been matched against them
+
+#### Scenario: The three remaining reads do not run in sequence
 
 - **WHEN** the page's reads are reviewed
 - **THEN** all four are issued concurrently
 
----
 
 ### Requirement: The dashboard home is reachable from the dashboard
 
@@ -331,7 +335,6 @@ The dashboard shell SHALL link to the home route. It currently links to seven pa
 - **WHEN** the owner is on any dashboard page
 - **THEN** a link to the dashboard home is present in the shell
 
----
 
 ### Requirement: Every user-facing string this capability introduces is Spanish and lives in the copy module
 
