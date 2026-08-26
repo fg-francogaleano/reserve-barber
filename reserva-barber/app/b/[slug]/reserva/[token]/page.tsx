@@ -123,6 +123,7 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
     paymentMethod: booking.paymentMethod,
     hasCheckout: booking.hasCheckout,
     receiptStatus: booking.receiptStatus,
+    cancelledBy: booking.cancelledBy,
     outcome,
     shopCanBePaid: canBePaid(methods),
     now,
@@ -218,6 +219,24 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
             ? COPY.booking.paymentConfirmedEmailSent
             : COPY.booking.paymentConfirmedEmailFailed}
         </p>
+      )}
+
+      {/*
+        C2: the money, on the one cancelled state where any moved.
+
+        **The page is where this matters most and was the last place to say
+        it.** The owner's confirmation warned them before the write and the
+        email says it, but a client who still has their link open is the person
+        most likely to look and least likely to have read either — so a page
+        that mentioned only the released slot would be the quietest surface
+        about the only thing that costs them anything.
+
+        Guarded on the payment rather than on the state alone: a cancellation
+        with nothing charged has no money to explain, and raising a refund a
+        client never paid invites them to chase one.
+      */}
+      {isCancelled(state) && booking.paymentStatus === 'APPROVED' && (
+        <p className="text-sm font-medium">{COPY.booking.bookingCancelledDepositNote}</p>
       )}
 
       <section className="border-border flex flex-col gap-2 rounded-md border p-4">
@@ -344,10 +363,25 @@ function currentUrlOf(
   return `/b/${encodeURIComponent(slug)}/reserva/${encodeURIComponent(token)}${suffix}`;
 }
 
+/**
+ * Whether this state is a cancellation, of either attribution (C2).
+ *
+ * A predicate rather than two comparisons inlined at the call site, because
+ * C1 adds a third member to this set and the page should gain it by editing
+ * one line rather than by somebody remembering every place that asks.
+ */
+function isCancelled(state: PaymentPageState): boolean {
+  return state === 'cancelledByShop' || state === 'cancelled';
+}
+
 function headingFor(state: PaymentPageState): string {
   switch (state) {
     case 'confirmed':
       return COPY.booking.paymentConfirmed;
+    case 'cancelledByShop':
+      return COPY.booking.bookingCancelledByShop;
+    case 'cancelled':
+      return COPY.booking.bookingCancelled;
     case 'awaitingConfirmation':
       return COPY.booking.paymentConfirming;
     case 'paymentRejected':
@@ -378,6 +412,10 @@ function introFor(state: PaymentPageState): string {
   switch (state) {
     case 'confirmed':
       return COPY.booking.paymentConfirmedHelp;
+    case 'cancelledByShop':
+      return COPY.booking.bookingCancelledByShopHelp;
+    case 'cancelled':
+      return COPY.booking.bookingCancelledHelp;
     case 'awaitingConfirmation':
       return COPY.booking.paymentConfirmingHelp;
     case 'paymentRejected':

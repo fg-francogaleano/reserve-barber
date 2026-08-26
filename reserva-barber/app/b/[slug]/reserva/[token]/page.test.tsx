@@ -36,6 +36,8 @@ function booking(overrides: Partial<BookingByToken> = {}): BookingByToken {
     // unless a test opts in. Existing assertions keep meaning what they meant.
     confirmationEmailSentAt: null,
     updatedAt: new Date(),
+    // C2: nobody cancelled by default. Tests that need a cancellation opt in.
+    cancelledBy: null,
     barberDisplayName: 'Juan',
     serviceName: 'Corte',
     locationName: 'Centro',
@@ -599,6 +601,77 @@ describe('what the confirmed state says about the email', () => {
     const { container } = await renderPage(
       booking({ status: 'CONFIRMED', confirmationEmailSentAt: new Date() })
     );
+
+    expect(container.textContent).not.toMatch(/@/);
+  });
+});
+
+/**
+ * C2: the cancelled state, and the money it must not stay quiet about.
+ */
+describe('a booking the shop cancelled', () => {
+  const cancelled = (overrides: Partial<BookingByToken> = {}) =>
+    booking({
+      status: 'CANCELLED',
+      holdExpiresAt: null,
+      cancelledBy: 'OWNER',
+      ...overrides,
+    });
+
+  it('names the shop rather than reporting an expiry', async () => {
+    await renderPage(cancelled());
+
+    expect(screen.getByText(COPY.booking.bookingCancelledByShop)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.booking.holdExpired)).not.toBeInTheDocument();
+  });
+
+  it('blames nobody when no canceller was recorded', async () => {
+    await renderPage(cancelled({ cancelledBy: null }));
+
+    expect(screen.getByText(COPY.booking.bookingCancelled)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.booking.bookingCancelledByShop)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The page was the last surface to say this and the one the client is most
+   * likely to be looking at. Without it, the only thing that costs them
+   * anything is the thing this page stays quiet about.
+   */
+  it('says the deposit is not returned here when one was approved', async () => {
+    await renderPage(cancelled({ paymentStatus: 'APPROVED' }));
+
+    expect(screen.getByText(COPY.booking.bookingCancelledDepositNote)).toBeInTheDocument();
+  });
+
+  it('says nothing about money when nothing was charged', async () => {
+    await renderPage(cancelled({ paymentStatus: null }));
+
+    expect(screen.queryByText(COPY.booking.bookingCancelledDepositNote)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about money when the payment never completed', async () => {
+    await renderPage(cancelled({ paymentStatus: 'PENDING' }));
+
+    expect(screen.queryByText(COPY.booking.bookingCancelledDepositNote)).not.toBeInTheDocument();
+  });
+
+  it('carries the note on an unattributed cancellation too', async () => {
+    // A row cancelled before C2 recorded who did it. The money question is
+    // independent of the attribution question.
+    await renderPage(cancelled({ cancelledBy: null, paymentStatus: 'APPROVED' }));
+
+    expect(screen.getByText(COPY.booking.bookingCancelledDepositNote)).toBeInTheDocument();
+  });
+
+  it('offers no payment control and no receipt form', async () => {
+    const { container } = await renderPage(cancelled({ paymentStatus: 'APPROVED' }));
+
+    expect(container.querySelector('form')).toBeNull();
+    expect(container.querySelector('button')).toBeNull();
+  });
+
+  it('still renders no client email or phone', async () => {
+    const { container } = await renderPage(cancelled({ paymentStatus: 'APPROVED' }));
 
     expect(container.textContent).not.toMatch(/@/);
   });

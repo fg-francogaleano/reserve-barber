@@ -3,6 +3,7 @@ import type { LocalDate } from '@/server/domain/models/bookingCalendar';
 import type { WorkingWindowMinutes } from './IBarberAvailabilityRepository';
 import type { PaymentMethod, PaymentStatus } from '../models/Payment';
 import type { ReceiptStatus } from '../models/TransferReceipt';
+import type { CancelledBy } from '../models/Booking';
 
 /**
  * The booking a successful hold produces, as the flow needs it.
@@ -83,6 +84,15 @@ export interface BookingByToken {
   readonly holdExpiresAt: Date | null;
   readonly depositAmount: string;
   readonly clientName: string;
+  /**
+   * Who cancelled, when somebody did (C2).
+   *
+   * The page attributes the decision from this rather than inferring it from
+   * the status, which cannot tell an owner cancelling from a client doing so —
+   * opposite messages. A null on a cancelled booking is every row written
+   * before it was recorded.
+   */
+  readonly cancelledBy: CancelledBy | null;
   /**
    * When the confirmation email was accepted by the provider, or `null` (N1).
    *
@@ -281,6 +291,26 @@ export interface BookingForConfirmationEmail {
   readonly cancellationToken: string;
 }
 
+/**
+ * What an owner's cancellation attempt did (C2).
+ *
+ * `notCancellable` carries **the status it actually found**, for the reason the
+ * payment confirmation gives about its own refusal: from inside the transaction
+ * a booking confirmed a moment ago and one the sweep expired look identical,
+ * and only the caller can turn that difference into something an owner reads.
+ *
+ * `applied` carries `depositApproved` because the transaction is the only place
+ * that question is answered authoritatively — it has just read the payment
+ * under the same statement that refused to touch it — and the client's notice
+ * needs it to decide whether to mention money at all. Recomputing it afterwards
+ * would be a second read that a concurrent write could answer differently.
+ */
+export type CancelBookingResult =
+  | { readonly outcome: 'applied'; readonly bookingId: string; readonly depositApproved: boolean }
+  | { readonly outcome: 'notCancellable'; readonly status: string }
+  /** The booking id resolved to nothing within this owner's scope. */
+  | { readonly outcome: 'notFound' };
+
 export interface IBookingRepository {
   /**
    * Holds a slot, or reports why it could not.
@@ -414,6 +444,40 @@ export interface IBookingRepository {
    * question "which confirmed bookings have a client who was never told".
    */
   markConfirmationEmailSent(bookingId: string, sentAt: Date): Promise<void>;
+
+  /**
+   * The owner cancels a booking, releasing its slot (C2).
+   *
+   * **One transaction, every write conditional on the status it expects, and no
+   * advisory lock.** The per-barber lock exists so two writers cannot *place* a
+   * booking into one slot; this only releases one, and a release cannot
+   * double-book — the same reasoning the receipt rejection records. Safety is
+   * the conditional update: a booking confirmed by a notification or swept by
+   * the expiry job between the read and the write matches zero rows and is
+   * reported as what it became, rather than having `CANCELLED` stamped over it.
+   *
+   * The booking write sets the status, `cancelledAt`, `cancelledBy` as `OWNER`,
+   * and **clears `holdExpiresAt`** — deliberately unlike an expiry, which keeps
+   * it as the evidence of why the row ended.
+   *
+   * **An `APPROVED` payment is never rewritten.** It records a charge that
+   * really happened, and the payment update is guarded on `PENDING` so an
+   * approval matches zero rows rather than relying on a branch to skip it. A
+   * `PENDING` payment becomes `REJECTED`: it is an attempt that can now never
+   * complete, and leaving it pending keeps it counted as live by the
+   * one-live-payment index.
+   *
+   * A `PENDING` receipt becomes `REJECTED` with a `reviewedAt`, so a row does
+   * not go on asserting that a human owes an answer when nobody does.
+   *
+   * `ownerId` scopes the resolution: a booking belonging to another owner and
+   * one that does not exist MUST both answer `notFound`.
+   */
+  cancelByOwner(input: {
+    bookingId: string;
+    ownerId: string;
+    now: Date;
+  }): Promise<CancelBookingResult>;
 }
 
 /** Re-exported so the transaction's re-assertion has one vocabulary for windows. */

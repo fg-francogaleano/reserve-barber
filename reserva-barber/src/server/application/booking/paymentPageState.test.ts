@@ -22,6 +22,7 @@ function input(overrides: Partial<PaymentPageInput> = {}): PaymentPageInput {
     receiptStatus: null,
     outcome: null,
     shopCanBePaid: true,
+    cancelledBy: null,
     now: NOW,
     ...overrides,
   };
@@ -165,12 +166,26 @@ describe('precedence, which is the part that is easy to get wrong', () => {
     );
   });
 
-  it.each(['CANCELLED', 'EXPIRED'] as const)(
-    'reports a %s booking as lapsed rather than payable',
-    (bookingStatus) => {
-      expect(resolvePaymentPageState(input({ bookingStatus }))).toBe('holdLapsed');
-    }
-  );
+  it('reports an EXPIRED booking as lapsed rather than payable', () => {
+    expect(resolvePaymentPageState(input({ bookingStatus: 'EXPIRED' }))).toBe('holdLapsed');
+  });
+
+  /**
+   * **This case was asserted alongside `EXPIRED` and it was asserting the bug.**
+   *
+   * The two statuses were parameterised together as though they meant the same
+   * thing to a client, which is the opposite of why the product has both:
+   * `EXPIRED` is a deadline and `CANCELLED` is a decision. Telling somebody the
+   * shop cancelled on them that their reservation "venció" is not a wording
+   * quibble — it blames them for running out of time.
+   *
+   * Split rather than deleted, so the reversal is visible to whoever reads this
+   * file next. See the cancelled-booking block below for the states that
+   * replace it.
+   */
+  it('no longer reports a CANCELLED booking as lapsed', () => {
+    expect(resolvePaymentPageState(input({ bookingStatus: 'CANCELLED' }))).not.toBe('holdLapsed');
+  });
 });
 
 describe('which states offer a control', () => {
@@ -301,9 +316,38 @@ describe('the transfer states', () => {
     ).toBe('receiptUnderReview');
   });
 
-  it('reports a rejected receipt rather than a bare cancellation', () => {
+  /**
+   * **This test has certified an unreachable branch since B6, and C2's runtime
+   * check is what found it.**
+   *
+   * It constructs `CANCELLED` + receipt `REJECTED`, which is what the database
+   * holds after a rejection — but **not what the projection returns**. That
+   * read takes only the booking's live payment (`status not REJECTED`), and a
+   * rejection sets the payment to `REJECTED` too, so `receiptStatus` reaches
+   * this function as `null` and `receiptRejected` never fires.
+   *
+   * The consequence was invisible and real: every rejected comprobante fell
+   * through to `holdLapsed` and told its client the reservation *expired*. C2
+   * gives it the generic cancelled message instead, which is true; the
+   * specific one stays unreachable and is tracked as debt.
+   *
+   * Kept, inverted and documented rather than deleted, so the next reader finds
+   * the discovery instead of a gap where a test used to be.
+   */
+  it('cannot reach the rejected-receipt state from what the projection returns', () => {
+    // The shape the page actually receives after a rejection.
     expect(
-      resolvePaymentPageState(input({ bookingStatus: 'CANCELLED', receiptStatus: 'REJECTED' }))
+      resolvePaymentPageState(
+        input({ bookingStatus: 'CANCELLED', receiptStatus: null, cancelledBy: 'OWNER' })
+      )
+    ).not.toBe('receiptRejected');
+  });
+
+  it('still resolves the rejected state if a receipt status ever reaches it', () => {
+    // The branch is not deleted: it becomes correct the moment the projection
+    // is widened to carry a rejected payment's receipt.
+    expect(
+      resolvePaymentPageState(input({ bookingStatus: 'PENDING_APPROVAL', receiptStatus: 'REJECTED' }))
     ).toBe('receiptRejected');
   });
 
@@ -401,5 +445,112 @@ describe('a forged code cannot invent a lost slot', () => {
     expect(
       resolvePaymentPageState(input({ holdExpiresAt: new Date('2026-08-19T11:00:00.000Z') }))
     ).toBe('holdLapsed');
+  });
+});
+
+/**
+ * C2: a cancelled booking stops claiming it expired.
+ *
+ * `CANCELLED` was written from B6 onward and this table had **no branch for
+ * it** — the word appeared nowhere in the module. A cancelled booking fell
+ * through every branch to `holdLapsed` and told its client "La reserva venció".
+ * That stayed invisible because the only writer of `CANCELLED` also set the
+ * receipt to `REJECTED`, and that branch fires first; the fall-through became
+ * reachable the moment a second canceller existed.
+ */
+describe('a cancelled booking', () => {
+  const cancelled = (overrides: Partial<PaymentPageInput> = {}) =>
+    input({ bookingStatus: 'CANCELLED', holdExpiresAt: null, cancelledBy: 'OWNER', ...overrides });
+
+  it('names the shop rather than reporting an expiry', () => {
+    expect(resolvePaymentPageState(cancelled())).toBe('cancelledByShop');
+  });
+
+  it('does not fall through to the lapsed hold, whatever the clock says', () => {
+    // The fall-through this closes: a cancelled booking whose appointment and
+    // hold are both long past.
+    expect(
+      resolvePaymentPageState(
+        cancelled({
+          startTime: new Date('2026-08-18T10:00:00.000Z'),
+          endTime: new Date('2026-08-18T10:30:00.000Z'),
+          holdExpiresAt: new Date('2026-08-18T09:00:00.000Z'),
+        })
+      )
+    ).toBe('cancelledByShop');
+  });
+
+  /**
+   * **What a real receipt rejection renders — measured, not assumed.**
+   *
+   * C2's runtime check found that `receiptRejected` is **unreachable from the
+   * real projection**, and has been since B6. The projection reads only the
+   * booking's *live* payment (`where: { status: { not: 'REJECTED' } }`), and a
+   * rejection sets that payment to `REJECTED` — so `receiptStatus` arrives
+   * `null` and the rejection branch cannot fire.
+   *
+   * Before C2 that meant a rejected comprobante fell all the way to
+   * `holdLapsed` and told its client **"La reserva venció"** — the same lie
+   * this story exists to fix, arriving from a path nobody had looked at. C2
+   * does not make the specific message reachable; it makes the generic one
+   * true. Tracked as debt.
+   *
+   * **This is asserted with a `null` receipt on purpose**, because that is what
+   * the projection actually produces. The pair of tests that constructed
+   * `receiptStatus: 'REJECTED'` here certified a shape no code path emits.
+   */
+  it('renders the cancellation for a booking whose receipt was rejected', () => {
+    // What a real rejection looks like coming out of the projection: the
+    // payment is filtered out, so no receipt status survives to reach the page.
+    expect(resolvePaymentPageState(cancelled({ receiptStatus: null }))).toBe('cancelledByShop');
+  });
+
+  it('renders the cancellation when the receipt was never answered', () => {
+    // What C2 produces on a booking awaiting review. The receipt stays PENDING
+    // in the database, but its payment is rejected by the cancellation, so the
+    // page sees null here too — the two cases converge on one message.
+    expect(resolvePaymentPageState(cancelled({ receiptStatus: null }))).toBe('cancelledByShop');
+  });
+
+  it('outranks a paid-but-slot-lost reading', () => {
+    // "We received your payment but the time was gone" is wrong for a booking
+    // the shop itself cancelled.
+    expect(resolvePaymentPageState(cancelled({ paymentStatus: 'APPROVED' }))).toBe(
+      'cancelledByShop'
+    );
+  });
+
+  it('is not produced by any outcome code on a live booking', () => {
+    // A URL can never invent a cancellation, the same rule every other state
+    // on this page follows.
+    expect(resolvePaymentPageState(input({ outcome: 'pago-rechazado' }))).not.toBe(
+      'cancelledByShop'
+    );
+  });
+
+  it('blames nobody when no canceller was recorded', () => {
+    // Every row cancelled before C2 has a null canceller. Attributing the
+    // decision to the shop would be inventing a fact.
+    expect(resolvePaymentPageState(cancelled({ cancelledBy: null }))).toBe('cancelled');
+  });
+
+  it('does not attribute a client cancellation to the shop', () => {
+    // C1 will write this. Until it does, the generic form is the safe landing.
+    expect(resolvePaymentPageState(cancelled({ cancelledBy: 'CLIENT' }))).not.toBe(
+      'cancelledByShop'
+    );
+  });
+
+  it('still loses to a confirmed booking', () => {
+    // Nothing outranks the database saying the appointment is real.
+    expect(
+      resolvePaymentPageState(cancelled({ bookingStatus: 'CONFIRMED', cancelledBy: 'OWNER' }))
+    ).toBe('confirmed');
+  });
+
+  it('offers no payment control', () => {
+    const state = resolvePaymentPageState(cancelled());
+    expect(offersMercadoPago(state, methods())).toBe(false);
+    expect(offersTransfer(state, methods())).toBe(false);
   });
 });

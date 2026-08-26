@@ -10,6 +10,8 @@ import type { DashboardHomeView } from '@/server/application/services/DashboardS
 import { requireOwner } from '@/server/infrastructure/supabase/requireOwner';
 import { dashboardSummaryService } from './dashboardSummaryService';
 import { RecentBookingsFilter } from './RecentBookingsFilter';
+import { CancelBookingButton } from './CancelBookingButton';
+import { isCancellableByOwner } from '@/server/domain/models/Booking';
 
 /**
  * The owner's summary of their business.
@@ -225,6 +227,19 @@ function RecentRow({ booking }: { booking: RecentBooking }) {
           <span className="text-muted-foreground text-sm">
             {COPY.dashboard.depositLabel} {formatCurrency(booking.depositAmount)}
           </span>
+          {/*
+            Absent on a terminal booking, never disabled — the rule the public
+            flow's payment controls follow, for the same reason: a
+            disabled-looking control invites a click that cannot succeed.
+
+            The decision comes from the shared domain predicate rather than a
+            status list written here, so the control cannot appear where the
+            write would refuse. It needs no extra columns: the row already
+            carries the id and the status.
+          */}
+          {isCancellableByOwner(booking.status) && (
+            <CancelBookingButton bookingId={booking.id} clientName={booking.clientName} />
+          )}
         </div>
       </CardContent>
     </Card>

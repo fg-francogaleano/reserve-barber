@@ -363,6 +363,38 @@ describe('reject', () => {
     );
   });
 
+  /**
+   * **This path wrote the status alone for three stories, and it was not
+   * harmless.** The dashboard's cancellations counter bounds on `cancelledAt`,
+   * so with no instant it read zero for every cancellation the product had ever
+   * performed — verified against the live database, which held cancelled rows
+   * and not one timestamp. C2 needs the canceller for a second reason: its
+   * client-facing state attributes the decision, and attribution keys on
+   * `cancelledBy`, so without this every booking rejected here would fall
+   * through to the generic form.
+   */
+  it('records who cancelled and when, not just the status', async () => {
+    const { db, raw, tx } = createDb();
+    raw.transferReceipt.findFirst.mockResolvedValue(ownedReceipt());
+
+    await new PrismaTransferReceiptRepository(db).reject({
+      receiptId: RECEIPT,
+      ownerId: OWNER,
+      now: NOW,
+    });
+
+    expect(tx.booking.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'CANCELLED',
+          cancelledAt: NOW,
+          cancelledBy: 'OWNER',
+          holdExpiresAt: null,
+        }),
+      })
+    );
+  });
+
   // Freeing a slot can never double-book, so there is nothing to serialize.
   it('takes no advisory lock', async () => {
     const { db, raw, tx } = createDb();

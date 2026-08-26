@@ -21,6 +21,7 @@ import { formatCurrency } from '@/lib/formatCurrency';
 import { formatBookingDateLong } from '@/lib/formatBookingDate';
 import { businessToday, formatSlotTime } from './bookingCalendar';
 import { fromCents, toCents } from './money';
+import { escapeHtml, headerSafe } from './emailText';
 import type { EmailMessage } from '@/server/domain/repositories/IEmailSender';
 
 /**
@@ -64,52 +65,6 @@ export interface ConfirmationEmailInput {
 }
 
 const COPY_EMAIL = COPY.email.confirmation;
-
-/**
- * The five characters that change the meaning of markup, plus the quotes,
- * because an escaped value can land inside an attribute.
- */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-/**
- * Whether a code point is a C0 control character or DEL.
- *
- * **Deliberately not a regex character class.** The first version of this was
- * one, and it was correct and unreadable: written with literal control bytes it
- * renders in most tools as `[ -]`, indistinguishable from the range *space to
- * hyphen* — a class that would silently strip `!"#$%&'()*+,-` from every
- * legitimate subject. A comparison on the code point cannot be misread, and it
- * needs no lint suppression to exist.
- */
-function isControl(codePoint: number): boolean {
-  return codePoint < 0x20 || codePoint === 0x7f;
-}
-
-/**
- * Make a value safe to place in the subject.
- *
- * The subject is the only header this builder composes, and a CR or LF inside
- * one is a second message with an attacker-chosen recipient. The shop name is
- * owner-supplied — authenticated, which is not the same as trusted with the
- * bytes of a header this product sends on their behalf.
- *
- * Controls collapse to a space rather than vanishing, so that `A\r\nB` reads as
- * `A B` and not as the single word `AB`.
- */
-function headerSafe(value: string): string {
-  let stripped = '';
-  for (const character of value) {
-    stripped += isControl(character.codePointAt(0) ?? 0) ? ' ' : character;
-  }
-  return stripped.replace(/\s+/g, ' ').trim();
-}
 
 /**
  * What is left to pay at the shop, in integer cents.

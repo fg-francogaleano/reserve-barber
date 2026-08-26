@@ -3,6 +3,7 @@ import type {
   BookingForConfirmationEmail,
   BookingForPaymentInitiation,
   BookingForTransfer,
+  CancelBookingResult,
   PublicTransferDestination,
   HeldBooking,
   IBookingRepository,
@@ -11,7 +12,12 @@ import type {
 } from '@/server/domain/repositories/IBookingRepository';
 import type { Interval } from '@/server/domain/models/availability';
 import { overlaps } from '@/server/domain/models/availability';
-import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
+import {
+  blocksAvailability,
+  isCancellableByOwner,
+  BOOKING_STATUSES,
+  type BookingStatus,
+} from '@/server/domain/models/Booking';
 import type { PaymentMethod, PaymentStatus } from '@/server/domain/models/Payment';
 import type { ReceiptStatus } from '@/server/domain/models/TransferReceipt';
 import { isTransferOfferableToClient } from '@/server/domain/models/PaymentConfig';
@@ -353,6 +359,8 @@ export class PrismaBookingRepository implements IBookingRepository {
           // to.
           confirmationEmailSentAt: true,
           updatedAt: true,
+          // C2: who ended it, so the page attributes rather than guesses.
+          cancelledBy: true,
           client: { select: { name: true } },
           service: { select: { name: true } },
           barber: {
@@ -444,6 +452,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       clientName: row.client.name,
       confirmationEmailSentAt: row.confirmationEmailSentAt,
       updatedAt: row.updatedAt,
+      cancelledBy: row.cancelledBy,
       barberDisplayName: row.barber.displayName,
       serviceName: row.service.name,
       locationName: row.barber.location.name,
@@ -685,4 +694,140 @@ export class PrismaBookingRepository implements IBookingRepository {
       data: { confirmationEmailSentAt: sentAt },
     });
   }
+
+  /**
+   * The owner cancels a booking, releasing its slot (C2).
+   *
+   * **No advisory lock, and that is the design rather than an omission.** The
+   * per-barber lock exists so two writers cannot *place* a booking into one
+   * slot; this only releases one, and a release cannot double-book — the same
+   * argument the receipt rejection makes about itself. What carries the safety
+   * instead is that **every write below is conditional on the status it
+   * expects**, so a row that moved underneath matches zero rows rather than
+   * being reasserted.
+   *
+   * The resolution happens **before** the transaction: a booking outside this
+   * owner's scope should cost one indexed read, not an opened transaction.
+   */
+  async cancelByOwner(input: {
+    bookingId: string;
+    ownerId: string;
+    now: Date;
+  }): Promise<CancelBookingResult> {
+    const target = await this.db.booking.findFirst({
+      // `Barber` carries no ownerId (`data-model.md` §5), so ownership is
+      // reached through the location — the only path, and the tenancy boundary.
+      where: { id: input.bookingId, barber: { location: { ownerId: input.ownerId } } },
+      select: { id: true, status: true },
+    });
+
+    // Another owner's booking and one that does not exist are the same answer.
+    if (target === null) return { outcome: 'notFound' };
+
+    // Asked here as well as in the guard below, so a terminal booking costs no
+    // transaction. The guard is still what makes it correct — this is the cheap
+    // rejection, not the safety.
+    if (!isCancellableByOwner(target.status as BookingStatus)) {
+      return { outcome: 'notCancellable', status: target.status };
+    }
+
+    return this.db.$transaction(async (client) => {
+      const tx = client as unknown as CancelTx;
+
+      const cancelled = await tx.booking.updateMany({
+        where: { id: input.bookingId, status: { in: CANCELLABLE_STATUSES } },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: input.now,
+          cancelledBy: 'OWNER',
+          // Cleared, deliberately unlike an expiry — which preserves it as the
+          // evidence of why that row ended. A booking this write finishes has
+          // no hold left to describe.
+          holdExpiresAt: null,
+        },
+      });
+
+      if (cancelled.count === 0) {
+        // It moved between the read and the write. Report what it became; the
+        // payment and the receipt are left untouched, because a booking this
+        // call did not cancel is not this call's to unwind.
+        const current = await tx.booking.findUnique({
+          where: { id: input.bookingId },
+          select: { status: true },
+        });
+        return { outcome: 'notCancellable' as const, status: current?.status ?? 'MISSING' };
+      }
+
+      /**
+       * **Guarded on `PENDING`, not branched on it.** An `APPROVED` payment
+       * matches zero rows here, which is a stronger protection than an `if`
+       * that a later edit could invert: the database refuses it rather than the
+       * code remembering to. An approved deposit is a charge that really
+       * happened and rewriting it would falsify the only record of it.
+       */
+      await tx.payment.updateMany({
+        where: { bookingId: input.bookingId, status: 'PENDING' },
+        data: { status: 'REJECTED' },
+      });
+
+      /**
+       * **A pending receipt is deliberately left `PENDING`**, and the first
+       * draft of C2 rejected it here.
+       *
+       * The argument for writing it was that the row keeps asserting "a human
+       * owes an answer" when nobody does. The argument against turned out to be
+       * decisive and only surfaced when an existing page test went red: the
+       * receipt rejection already produces `{CANCELLED, receipt REJECTED,
+       * cancelledBy OWNER}`, so writing `REJECTED` here would make a
+       * cancellation **byte-identical to a rejection** — and the client's page
+       * distinguishes them to choose between "la barbería no aprobó tu
+       * comprobante" and "la barbería canceló tu turno". One of the two would
+       * necessarily have got the wrong message.
+       *
+       * Leaving it `PENDING` is also the more honest record: nobody reviewed
+       * this document. `REJECTED` would claim a review that never happened, for
+       * a queue that already hides the row anyway — it filters on the booking's
+       * status, so a cancelled booking's receipt disappears from the owner's
+       * view with no write at all.
+       */
+
+      /**
+       * Asked inside the transaction because this is where it is answerable
+       * without a race: the payment write above has just refused to touch an
+       * approval, so an approval found here is the one that survived.
+       */
+      const approved = await tx.payment.findFirst({
+        where: { bookingId: input.bookingId, status: 'APPROVED' },
+        select: { id: true },
+      });
+
+      return {
+        outcome: 'applied' as const,
+        bookingId: input.bookingId,
+        depositApproved: approved !== null,
+      };
+    }, TRANSACTION_OPTIONS);
+  }
+}
+
+/** The statuses the guard admits, derived from the domain predicate. */
+const CANCELLABLE_STATUSES: BookingStatus[] = BOOKING_STATUSES.filter(isCancellableByOwner);
+
+/**
+ * The slice of the transaction client this write uses.
+ *
+ * **It names no `$executeRaw`**, which is the type-level form of "this takes no
+ * lock": an implementation that tried would not compile. B4 shipped a lock
+ * defect past a test that mocked the call, so here the absence is structural
+ * rather than asserted.
+ */
+interface CancelTx {
+  booking: {
+    updateMany(args: unknown): Promise<{ count: number }>;
+    findUnique(args: unknown): Promise<{ status: string } | null>;
+  };
+  payment: {
+    updateMany(args: unknown): Promise<{ count: number }>;
+    findFirst(args: unknown): Promise<{ id: string } | null>;
+  };
 }

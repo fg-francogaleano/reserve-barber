@@ -2359,6 +2359,17 @@ anybody delete anybody's receipt. The displaced key is logged so a retention rul
 This is the same family as **T56** (guest personal data has no deletion path) and should probably be
 solved with it: one rule about how long this product keeps things about people, applied to both.
 
+**C2 added a second route into this pile, and one the retention rule will have to name (2026-08-26).**
+An owner cancelling a booking that is awaiting review leaves its receipt **`PENDING` forever** — the
+row is deliberately not written, because `PENDING` is the honest record of a document nobody
+reviewed, and the owner's queue hides it anyway by filtering on the booking's status. The file stays
+in the bucket regardless.
+
+So the bucket now accumulates from three directions rather than two: reviewed receipts, superseded
+uploads, and now receipts whose booking ended before anybody looked. **Only the third has no
+terminal status at all**, which means a retention rule keyed on `reviewedAt` would skip exactly the
+receipts nobody is ever going to review.
+
 - **Trigger:** T56, a storage bill, or the first client who asks for their data to be removed.
 
 ---
@@ -2638,7 +2649,22 @@ the only record is a log line distinguishable from an ordinary failure by one fi
 
 ### T72 — A client who paid and lost their slot is the only one this product never contacts
 
-**Status:** accepted · **Effort:** ~2 h once the email path exists — and it now does · **Added:** N1 (2026-08-25, deliberately not fixed)
+**Status:** accepted — **narrowed by C2, and the title is now the whole of it** · **Effort:** ~2 h once the email path exists — and it now does · **Added:** N1 (2026-08-25, deliberately not fixed)
+
+> **C2 closed the half that was about deliberate decisions (2026-08-26).** When it was written this
+> entry covered a broader asymmetry: *this product emails when nothing is wrong and stays silent when
+> something is.* An owner cancelling a confirmed appointment now sends the client a message naming
+> the shop as the canceller and, where a deposit was approved, saying plainly that it is not returned
+> by this system — non-fatal on the same terms as the confirmation, so a provider outage cannot undo
+> a scheduling decision.
+>
+> **What remains is the harder half, and it is the one about accidents rather than decisions**: the
+> two outcomes where money moved and the appointment did not exist — `slotLost` and
+> `bookingUnavailable` — still send nothing. Those are the cases with no human deciding anything, so
+> nobody is prompted to make contact by hand either. The owner learns from a log line or not at all.
+>
+> The cost of building it has dropped again: C2 added a second message and a second builder to the
+> path N1 opened, so a third is now a well-worn shape rather than a design question.
 
 There are two outcomes where money moved and the appointment did not exist:
 
@@ -2673,3 +2699,86 @@ same gap as **T70** and should be built with it.
 - **Trigger:** the first real `slotLost` or `bookingUnavailable` in production — which is also the
   first time somebody is out real money — or **T70**, whichever comes first. Do not wait for the
   first one; it is a bad way to find out.
+
+---
+
+### T73 — The receipt-rejected state is unreachable, so a refused comprobante has never said so
+
+**Status:** accepted — C2 replaced the false message with a true one, not the specific one · **Effort:** ~1 h plus re-verification of the payment states · **Added:** C2 (2026-08-26, found in runtime verification)
+
+`resolvePaymentPageState` has a `receiptRejected` state whose whole purpose is to tell a client
+**"La barbería no aprobó el comprobante"** — the reason and something they can act on. **It has never
+been reachable.**
+
+The confirmation page's projection reads only the booking's *live* payment:
+
+```ts
+payments: { where: { status: { not: 'REJECTED' } }, take: 1, ... }
+receiptStatus: payment?.transferReceipt?.status ?? null
+```
+
+B6's rejection sets the `Payment` to `REJECTED` in the same transaction as the receipt. So after a
+rejection there is **no live payment**, `receiptStatus` arrives `null`, and the branch that would
+name the comprobante cannot fire.
+
+**What the client saw instead, from B6 until C2: "La reserva venció."** The booking fell through
+every branch to the lapsed-hold state — the same lie C2 was written to fix for cancellations,
+arriving from a path nobody had looked at. Measured at runtime on 2026-08-26 against a real rejected
+receipt, not inferred.
+
+**Two tests were certifying the dead branch.** Both constructed `CANCELLED` + receipt `REJECTED` by
+hand — the shape the *database* holds, and not the one the *projection* emits. They passed for three
+stories while the state they described was unreachable. Both are now inverted and documented rather
+than deleted, so the branch stays live for whoever fixes this.
+
+**C2 improved it without fixing it.** A rejected comprobante now renders the generic cancelled state
+— *"La barbería canceló tu turno"* — which is true, and better than an expiry the client is blamed
+for. It is still less useful than naming the document.
+
+**Why C2 did not widen the projection.** That filter has documented semantics in B5's and B6's
+specs: it is what makes `paymentStatus`, `hasCheckout` and "the live payment" mean what the other
+states rely on. Changing it alters branches C2 does not verify, and the honest fix comes with its own
+runtime check rather than riding along on a story about cancellation.
+
+**The shape of the fix**: let the projection carry a rejected payment's receipt without changing what
+`paymentStatus` reports — a separate narrow read of the booking's most recent receipt, rather than
+widening the payment filter. Then `receiptRejected` becomes reachable and this entry closes.
+
+- **Trigger:** **C1**, which touches this same state table and will add a third cancelled state, or
+  the first owner who asks why a client did not understand that their transfer was refused.
+
+---
+
+### T74 — Nothing returns a deposit, and nothing records that one is owed
+
+**Status:** accepted · **Effort:** ~2 h to record the obligation, unbounded to actually move money · **Added:** C2 (2026-08-26)
+
+This product takes deposits and has no way to give one back. That was tolerable while every path to
+"money moved and the appointment did not happen" was either an accident or a refusal:
+
+- **`slotLost` / `bookingUnavailable`** — an approved payment against a booking that lapsed or was
+  resold. Rare, and nobody chose it.
+- **A rejected receipt** — the owner refusing a transfer they judged wrong. The confirmation says
+  the money is not returned here, and the owner was already looking at the case.
+
+**C2 makes it routine and deliberate.** An owner can now cancel a `CONFIRMED` booking whose Mercado
+Pago deposit is `APPROVED` — a real charge, on a real card, for an appointment the shop is choosing
+to end. That is the cleanest possible statement of "this product owes somebody money", and it
+happens from a button on the dashboard home.
+
+**What C2 does about it, which is not nothing and is not enough:** the confirmation names it before
+the write (*"si el cliente ya pagó la seña, la devolución la coordinás vos"*), the client's page says
+it, and the cancellation email says it where a deposit was approved. Three surfaces tell the truth.
+
+**What is missing is any record.** No column marks a deposit as owed, no query lists them, no counter
+shows one. An owner who cancels five paid bookings in a busy week has five refunds to remember and
+nothing to remember them with — and the client has only whichever of the three messages they happened
+to see.
+
+**The cheap fix is not a refund integration.** It is a flag and a list: mark the payment as
+refund-owed at cancellation, and surface the outstanding set on the dashboard. That turns an
+obligation nobody is tracking into a short list somebody can work through, without this product ever
+touching money it cannot move.
+
+- **Trigger:** the first owner cancellation of a paid booking in production, or **D5** (statistics),
+  which will otherwise report deposit income that includes money the shop owes back.

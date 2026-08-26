@@ -1,4 +1,8 @@
-import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
+import {
+  blocksAvailability,
+  type BookingStatus,
+  type CancelledBy,
+} from '@/server/domain/models/Booking';
 import type { PaymentMethod, PaymentStatus } from '@/server/domain/models/Payment';
 import type { ReceiptStatus } from '@/server/domain/models/TransferReceipt';
 import type { PaymentOutcomeCode } from './bookingOutcome';
@@ -27,6 +31,10 @@ export type PaymentPageState =
   | 'awaitingConfirmation'
   /** The booking is confirmed. Nothing left to do. */
   | 'confirmed'
+  /** The shop cancelled the appointment. Not an expiry, and not the client's doing. */
+  | 'cancelledByShop'
+  /** Cancelled, with no record of by whom. Every row predating C2 is one. */
+  | 'cancelled'
   /** The gateway rejected the payment and the hold is still live. */
   | 'paymentRejected'
   /** The hold lapsed with nothing paid. */
@@ -72,6 +80,17 @@ export interface PaymentPageInput {
    * reach this page with no way to pay for it.
    */
   readonly shopCanBePaid: boolean;
+  /**
+   * Who cancelled, when somebody did (C2).
+   *
+   * **On the input rather than inferred from the status**, because the status
+   * cannot answer it. `CANCELLED` is reachable by an owner today and by a
+   * client once C1 ships, and those are opposite messages — one is an apology,
+   * the other a receipt. A null on a cancelled booking is every row written
+   * before this was recorded, and it means the decision cannot be attributed
+   * rather than that nobody made one.
+   */
+  readonly cancelledBy: CancelledBy | null;
   readonly now: Date;
 }
 
@@ -112,6 +131,42 @@ export function resolvePaymentPageState(input: PaymentPageInput): PaymentPageSta
   // because the client is owed the reason and a way to act on it.
   if (input.receiptStatus === 'REJECTED') {
     return 'receiptRejected';
+  }
+
+  /**
+   * **Somebody ended this booking on purpose** (C2).
+   *
+   * This branch closes a hole the table carried from B6 until C2. `CANCELLED`
+   * appeared nowhere in this function, so a cancelled booking fell through
+   * every branch below to `holdLapsed` and told its client **"La reserva
+   * venció"** — that it ran out of time, when the shop had ended it. It stayed
+   * invisible because the only writer of `CANCELLED` also set the receipt to
+   * `REJECTED`, and that branch fires first.
+   *
+   * **It sits BELOW the receipt states, and the first draft of C2 had it
+   * above.** The reasoning for putting it above was that cancelling a booking
+   * awaiting review would set its receipt to `REJECTED`, so a client whose
+   * comprobante was never opened would be told the shop refused it. That was
+   * true — and the fix was to stop writing the receipt, not to reorder.
+   *
+   * With this ordering the two cases stay distinguishable, which is what
+   * matters: a **receipt rejection** leaves `REJECTED` and lands above, where
+   * "la barbería no aprobó el comprobante" is the specific and more useful
+   * message; a **cancellation** leaves the receipt `PENDING` and lands here.
+   * Had C2 written `REJECTED` too, the two would have been identical in the
+   * data and one of them would necessarily have got the wrong message.
+   *
+   * It still outranks `paidSlotLost`: "we received your payment but the time
+   * was gone" is not what happened to somebody the shop cancelled on.
+   *
+   * A null canceller is every row written before this was recorded, and it
+   * renders the unattributed form rather than blaming the shop — inventing the
+   * actor would be inventing a fact. `CLIENT` lands there too until C1 gives it
+   * a state of its own, which is the safe direction: the alternative is telling
+   * a client the shop cancelled a booking they cancelled themselves.
+   */
+  if (input.bookingStatus === 'CANCELLED') {
+    return input.cancelledBy === 'OWNER' ? 'cancelledByShop' : 'cancelled';
   }
 
   const holdIsLive = blocksAvailability(

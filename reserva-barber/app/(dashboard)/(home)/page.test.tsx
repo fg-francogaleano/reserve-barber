@@ -17,6 +17,10 @@ vi.mock('@/server/infrastructure/supabase/requireOwner', () => ({
 vi.mock('./dashboardSummaryService', () => ({
   dashboardSummaryService: () => ({ loadHome }),
 }));
+// The cancel control imports the action, which reaches `server-only` through
+// its composition root — unresolvable in the component environment. The action
+// has its own test; what this file asserts is where the control appears.
+vi.mock('./actions', () => ({ cancelBookingAction: vi.fn() }));
 
 const { default: DashboardHome } = await import('./page');
 
@@ -306,5 +310,61 @@ describe('the page itself', () => {
 
     expect(requireOwner).toHaveBeenCalled();
     expect(loadHome).toHaveBeenCalledWith(expect.objectContaining({ ownerId: 'owner-root' }));
+  });
+});
+
+/**
+ * C2: the cancel control, and where it must not be.
+ */
+describe('the cancel control', () => {
+  const cancellable = ['CONFIRMED', 'PENDING_PAYMENT', 'PENDING_APPROVAL'] as const;
+  const terminal = ['CANCELLED', 'EXPIRED'] as const;
+
+  it.each(cancellable)('offers a control on a %s booking', async (status) => {
+    await renderPage({
+      ...view(),
+      recent: { ok: true, value: [booking({ status, clientName: 'Ana Pérez' })] },
+    });
+
+    expect(screen.getByRole('button', { name: /Cancelar el turno de Ana Pérez/ })).toBeInTheDocument();
+  });
+
+  /**
+   * **Absent, never disabled.** A disabled-looking control invites a click that
+   * cannot succeed — the rule the public flow's payment controls already follow.
+   */
+  it.each(terminal)('renders no control at all on a %s booking', async (status) => {
+    const { container } = await renderPage({
+      ...view(),
+      recent: { ok: true, value: [booking({ status })] },
+    });
+
+    expect(container.querySelector('button[disabled]')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Cancelar/ })).not.toBeInTheDocument();
+  });
+
+  it('names the client in the control, so a list of rows stays unambiguous', async () => {
+    await renderPage({
+      ...view(),
+      recent: {
+        ok: true,
+        value: [
+          booking({ id: 'a', clientName: 'Ana Pérez' }),
+          booking({ id: 'b', clientName: 'Beto Díaz' }),
+        ],
+      },
+    });
+
+    expect(screen.getByRole('button', { name: /Ana Pérez/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Beto Díaz/ })).toBeInTheDocument();
+  });
+
+  it('carries the booking id in the body, never in an action URL', async () => {
+    const { container } = await renderPage({
+      ...view(),
+      recent: { ok: true, value: [booking({ id: 'bkg-42' })] },
+    });
+
+    expect(container.querySelector('input[name="bookingId"]')).toHaveValue('bkg-42');
   });
 });

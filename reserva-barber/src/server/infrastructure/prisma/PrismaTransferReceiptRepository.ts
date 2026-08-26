@@ -452,7 +452,18 @@ export class PrismaTransferReceiptRepository implements ITransferReceiptReposito
 
       const cancelled = await tx.booking.updateMany({
         where: { id: target.bookingId, status: 'PENDING_APPROVAL' },
-        data: { status: 'CANCELLED', holdExpiresAt: null },
+        // `cancelledAt`/`cancelledBy` added by C2, and the omission was not
+        // cosmetic: the dashboard's cancellations counter bounds on the
+        // instant, so for three stories it read zero for every cancellation
+        // this product had ever performed. `OWNER` because the owner is the
+        // actor here as much as in a direct cancellation — `CLIENT` belongs to
+        // C1, and telling the two apart is the whole reason the column exists.
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: input.now,
+          cancelledBy: 'OWNER',
+          holdExpiresAt: null,
+        },
       });
 
       if (cancelled.count === 0) {

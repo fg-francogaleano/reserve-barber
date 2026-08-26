@@ -3,9 +3,7 @@
 ## Purpose
 
 The owner's landing page: six figures summarising the business, and a recent-bookings list filterable by barber. Every counter is defined as a predicate over named columns rather than as a label, because "today's bookings" has several defensible readings that differ by more than a rounding error.
-
 ## Requirements
-
 ### Requirement: The dashboard home is the owner's summary, and every counter is defined as a predicate
 
 The route `/` inside the dashboard SHALL render a summary of the owner's business consisting of six counters and a recent-bookings list. It SHALL replace the placeholder location list that has occupied this route since S0.
@@ -42,7 +40,6 @@ The six counters are:
 - **WHEN** the owner has a `CONFIRMED` booking whose appointment was last month
 - **THEN** it is counted by "Turnos confirmados (histórico)" and not by "Turnos de hoy"
 
-
 ### Requirement: Today and this month are the business's, never the runtime's
 
 Every calendar boundary in this capability SHALL be computed through the project's business-time module. The deployment runtime is UTC and the business is at UTC−3, so the runtime's own calendar readers — the local getters for date, weekday and hour, and slicing an ISO string down to a date — answer for the following day between 21:00 and 23:59 local. They SHALL NOT be used here. They fail during closing hours, they return a plausible number rather than raising, and they self-heal by morning.
@@ -66,12 +63,17 @@ Month bounds SHALL be produced by a **new domain function** that converts the fi
 - **WHEN** the month-bounds function is reviewed
 - **THEN** it converts the first of this month and the first of next month through the business-time module, and adds no fixed number of days
 
-
 ### Requirement: An expired hold is never reported as a cancellation
 
-The cancellations counter SHALL filter on status `CANCELLED` **and** SHALL bound on `cancelledAt`. Both conditions are required. They are redundant by construction — the sweep leaves `cancelledAt` null — and either one alone would be correct only by accident.
+The cancellations counter SHALL filter on status `CANCELLED` **and** SHALL bound on `cancelledAt`. Both conditions are required.
 
-A booking in status `EXPIRED` SHALL NOT be counted as a cancellation under any circumstance, including one that carries a non-null `cancelledAt` written by some future path. `EXPIRED` against `CANCELLED` is how this product distinguishes a deadline from a decision, and the scheduled sweep now produces expired rows continuously. Counting them as cancellations tells the owner their clients are leaving.
+**The claim that the two are "redundant by construction" was wrong, and it made this counter read zero.** It rested on the sweep leaving `cancelledAt` null — which is true — while overlooking that the *only writer of `CANCELLED` in the product* left it null as well. The receipt rejection sets the status and records no instant, so every cancelled booking in existence fails the second condition and the counter has never been able to count anything. Verified against the live database: cancelled rows present, none carrying a timestamp.
+
+The two conditions are therefore **independent**, and this requirement SHALL be read as demanding both because each guards a different failure: the status guard keeps swept holds out, and the instant guard is what the counter actually counts by. **Every writer of `CANCELLED` SHALL record `cancelledAt`**, and a writer that does not is a writer whose cancellations are invisible here.
+
+A booking in status `EXPIRED` SHALL NOT be counted as a cancellation under any circumstance, including one that carries a non-null `cancelledAt` written by some future path. `EXPIRED` against `CANCELLED` is how this product distinguishes a deadline from a decision, and the scheduled sweep produces expired rows continuously. Counting them as cancellations tells the owner their clients are leaving.
+
+**A test for this counter SHALL NOT seed `cancelledAt` itself without also asserting that a real cancellation path writes it.** That is exactly how the defect survived: every test that exercised the counter constructed the row it wanted, so the counter was correct about data no writer produced.
 
 #### Scenario: Swept holds are not cancellations
 
@@ -88,6 +90,17 @@ A booking in status `EXPIRED` SHALL NOT be counted as a cancellation under any c
 - **WHEN** a booking whose appointment was last month is cancelled today
 - **THEN** it is counted by "Cancelaciones de hoy" and appears in no other counter
 
+#### Scenario: A real cancellation reaches the counter
+
+- **WHEN** a booking is cancelled through a cancellation path the product actually offers
+- **THEN** "Cancelaciones de hoy" increases by one
+
+#### Scenario: A rejected receipt reaches it too
+
+- **WHEN** the owner rejects a transfer receipt, cancelling its booking
+- **THEN** that cancellation is counted, because the rejection now records its instant
+
+---
 
 ### Requirement: The historical total counts confirmations, and its label says so
 
@@ -104,7 +117,6 @@ Counting every booking row makes the dashboard's headline number a count of chec
 
 - **WHEN** the historical counter is rendered
 - **THEN** its label states that it counts confirmed appointments
-
 
 ### Requirement: Income joins through the booking, is bounded by approval, and is named as deposits
 
@@ -146,7 +158,6 @@ The sum SHALL cross the repository boundary as a canonical decimal string and SH
 - **WHEN** the income card is rendered
 - **THEN** it states that the figure is deposits collected
 
-
 ### Requirement: Every counter is scoped to the owner through the barber relation
 
 Every predicate in this capability SHALL be scoped to the requesting owner by joining `barber → location → ownerId`. A booking's location is deliberately not duplicated onto the booking row, so this is the only path to an owner.
@@ -170,7 +181,6 @@ Cross-owner isolation SHALL be proven by test against a fixture containing two o
 - **WHEN** the aggregate repository's tests are reviewed
 - **THEN** they run against a two-owner fixture and assert the other owner's rows are absent from every counter
 
-
 ### Requirement: The recent-bookings list shows every status, bounded and narrowly projected
 
 The page SHALL render the most recent bookings ordered by creation time, newest first, bounded by a named constant.
@@ -178,6 +188,10 @@ The page SHALL render the most recent bookings ordered by creation time, newest 
 The list SHALL include bookings in **every** status, each rendered with a distinguishable badge. `CANCELLED` and `EXPIRED` SHALL be visually distinct from one another: that distinction is the entire reason the product has two statuses, and this list is the first surface in the product where an owner can see that a checkout was abandoned at all.
 
 Each row SHALL show the appointment date and time, the client's name, the service, the barber, the status and the deposit amount. The projection SHALL NOT carry the client's email or telephone number: a field that is not selected cannot reach a log line or a serialized prop, and contact details belong to the story that owns them.
+
+**Each row SHALL offer a cancel control where, and only where, the booking is still cancellable.** A terminal booking SHALL render no control rather than a disabled one. The decision SHALL come from the shared eligibility predicate rather than from a status list written into the row, so the control cannot appear where the write would refuse.
+
+Offering the control SHALL NOT widen the projection. It needs the booking's id and its status, both of which the row already carries.
 
 The read SHALL be bounded by a limit. An unbounded list read on the most-visited authenticated page in the product is not acceptable.
 
@@ -196,6 +210,20 @@ The read SHALL be bounded by a limit. An unbounded list read on the most-visited
 - **WHEN** the recent-bookings projection is reviewed
 - **THEN** it contains no client email and no client telephone field
 
+#### Scenario: A cancellable row offers the control
+
+- **WHEN** a row renders a `CONFIRMED`, `PENDING_PAYMENT` or `PENDING_APPROVAL` booking
+- **THEN** a cancel control is present
+
+#### Scenario: A terminal row offers nothing
+
+- **WHEN** a row renders a `CANCELLED` or `EXPIRED` booking
+- **THEN** no cancel control is present, disabled or otherwise
+
+#### Scenario: The control adds no columns to the read
+
+- **WHEN** the projection is compared before and after this change
+- **THEN** it is unchanged
 
 ### Requirement: The barber filter lives in the URL, adds no client JavaScript, and is matched rather than parsed
 
@@ -238,7 +266,6 @@ The option list SHALL include barbers who are inactive but have bookings, so tha
 - **WHEN** a barber with bookings has been deactivated
 - **THEN** they remain selectable in the filter
 
-
 ### Requirement: A counter that could not load is never rendered as a zero
 
 The page SHALL distinguish three states per counter block: loaded, zero, and failed.
@@ -264,7 +291,6 @@ Failures SHALL be logged through the project's structured error-context helper a
 - **WHEN** the owner has no bookings at all
 - **THEN** every counter renders zero and no failure state is shown
 
-
 ### Requirement: The page is uncached, unindexed, guarded, and free of client JavaScript
 
 The page SHALL be rendered dynamically and SHALL NOT be statically cached: it reads a session, it names clients, and a cached render would carry one owner's figures to whoever asked next.
@@ -289,7 +315,6 @@ It SHALL ship **no client JavaScript**: every component in this capability is a 
 
 - **WHEN** an unauthenticated request reaches the page
 - **THEN** the owner resolution redirects before any database read is issued
-
 
 ### Requirement: The page costs four reads in two waves, and the booking figures share one snapshot
 
@@ -325,7 +350,6 @@ The cost SHALL be measured against the live database rather than assumed.
 - **WHEN** the page's reads are reviewed
 - **THEN** all four are issued concurrently
 
-
 ### Requirement: The dashboard home is reachable from the dashboard
 
 The dashboard shell SHALL link to the home route. It currently links to seven pages and to none of them is the home, which leaves the owner's landing page unreachable from itself once they have navigated away.
@@ -334,7 +358,6 @@ The dashboard shell SHALL link to the home route. It currently links to seven pa
 
 - **WHEN** the owner is on any dashboard page
 - **THEN** a link to the dashboard home is present in the shell
-
 
 ### Requirement: Every user-facing string this capability introduces is Spanish and lives in the copy module
 
@@ -358,3 +381,4 @@ Long unbroken values — a maximal display name or service name — SHALL NOT ca
 
 - **WHEN** a booking's barber or service name is at its maximum length with no spaces
 - **THEN** the page does not scroll horizontally
+

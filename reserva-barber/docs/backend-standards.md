@@ -438,13 +438,21 @@ export function createPrismaClient(connectionString: string): PrismaClient {
    >
    > **`PENDING_APPROVAL` is not resolved by time, with one exception.** `holdExpiresAt` is the deadline for uploading a receipt, not for answering one, so the sweeper must not expire this status on it. A `PENDING_APPROVAL` booking whose **`startTime` has passed** is the exception and is eligible for expiry: its slot is unsellable regardless, and without this the status has no exit that does not depend on the owner being attentive. **The sweep in rule 2 is the job that acts on this exception**, and it is the only one — the grace window does not apply here, because the grace protects an in-flight gateway confirmation and this path has no gateway.
    >
+   > **Rejection is no longer the only writer of `CANCELLED`** (C2). The rules it holds are shared rather than particular to it: the booking update is conditional on the status it expects, **no advisory lock is taken** because a release cannot double-book, and an `APPROVED` payment is left untouched while a `PENDING` one is refused. A cancellation of any origin also **clears `holdExpiresAt`** and records `cancelledAt` and `cancelledBy` — see the rule below, which this path violated for three stories.
+
    > **An applied approval hands off to the same confirmation email, under the same rules.** After the transaction, never inside it; keyed on the approval having been *applied*, so an approval that matched zero rows sends nothing; and non-fatal, so the receipt, the payment and the booking stay approved and confirmed when the provider is down. **This is the path where the email matters most**: the Mercado Pago client is at least looking at a page when their booking confirms, while a transfer client is told a human will decide and then learns the answer only if something reaches them. Correspondingly, the owner's success message MUST NOT claim the client was notified unless the send was recorded — telling an owner that a client has been informed when they have not removes the owner's reason to make contact by hand, which is the only recovery this product offers.
 
    > **Nothing here verifies that money moved.** There is no gateway on this path. The receipt is evidence for a human, the review surface renders the snapshotted deposit beside it, and no code may treat an uploaded file as proof of payment.
 
-5. **Deposit computation:** `depositAmount` is derived once from `PaymentConfig` (`FIXED` or `PERCENT` of `priceAtBooking`) at booking creation and snapshotted on the booking.
-6. **Service bookability:** the booking flow must reject a service that has no active assigned barber (no `BarberService` row).
-7. **Availability:** `startTime` must fall inside the barber's `WorkingHours` for that weekday and outside any `TimeOff`.
+5. **A terminal status is written together with the columns that describe it.** A write that sets a status and leaves its companion columns null produces a row that is *technically* in the right state and unusable by every reader that needs to know more than the state's name.
+
+   > **This is a rule because the product broke it and nobody noticed for three stories.** B6's receipt rejection set `Booking.status = CANCELLED` and left `cancelledAt` and `cancelledBy` null. The consequence was not a crash: D1's "Cancelaciones de hoy" counter filters on the status **and** bounds on `cancelledAt`, so it read **zero for every cancellation the product had ever performed** — verified against the live database, which held cancelled rows and not one timestamp. The counter was correct about data no writer produced.
+   >
+   > **Its tests were what hid it.** Every test exercising the counter constructed the row it wanted, `cancelledAt` included, so the aggregate was proven against a shape no code path could create. A test that seeds a column no writer sets is a test that certifies the reader and excuses the writer. **Where a reader depends on a column, at least one test SHALL reach it through a real write.**
+
+6. **Deposit computation:** `depositAmount` is derived once from `PaymentConfig` (`FIXED` or `PERCENT` of `priceAtBooking`) at booking creation and snapshotted on the booking.
+7. **Service bookability:** the booking flow must reject a service that has no active assigned barber (no `BarberService` row).
+8. **Availability:** `startTime` must fall inside the barber's `WorkingHours` for that weekday and outside any `TimeOff`.
 
 ---
 
