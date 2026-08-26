@@ -1,5 +1,6 @@
 import type {
   BookingByToken,
+  BookingForConfirmationEmail,
   BookingForPaymentInitiation,
   BookingForTransfer,
   PublicTransferDestination,
@@ -345,6 +346,13 @@ export class PrismaBookingRepository implements IBookingRepository {
           endTime: true,
           holdExpiresAt: true,
           depositAmount: true,
+          // N1: whether the client was told, and when this row last changed.
+          // `client.email` stays unselected here — this projection feeds a page
+          // that can be opened on a shared device, which is exactly the
+          // distinction the confirmation-email projection is a named exception
+          // to.
+          confirmationEmailSentAt: true,
+          updatedAt: true,
           client: { select: { name: true } },
           service: { select: { name: true } },
           barber: {
@@ -434,6 +442,8 @@ export class PrismaBookingRepository implements IBookingRepository {
       holdExpiresAt: row.holdExpiresAt,
       depositAmount: toCanonicalDecimal(row.depositAmount),
       clientName: row.client.name,
+      confirmationEmailSentAt: row.confirmationEmailSentAt,
+      updatedAt: row.updatedAt,
       barberDisplayName: row.barber.displayName,
       serviceName: row.service.name,
       locationName: row.barber.location.name,
@@ -581,5 +591,98 @@ export class PrismaBookingRepository implements IBookingRepository {
       publicSlug: slug,
       barberId: row.barberId,
     };
+  }
+
+  /**
+   * What the confirmation message is composed from (N1).
+   *
+   * **The one read here that deliberately selects the client's email**, for the
+   * reason `IBookingRepository` records on the contract: the other projections
+   * withhold contact detail because they feed a page anyone holding the link
+   * can open, and an address is not something a *message* might leak — it is
+   * where the message goes.
+   *
+   * Keyed on the booking id rather than the token. Its callers already have the
+   * id from the transition they just completed, and a second token lookup is a
+   * second surface a stranger's input could reach.
+   *
+   * `null` for a shop with no public profile, the same rule the two payment
+   * projections apply: without a slug there is no address the link could be
+   * built from, and a message whose only actionable content is a broken URL is
+   * worse than one that omits it.
+   */
+  async findForConfirmationEmail(bookingId: string): Promise<BookingForConfirmationEmail | null> {
+    const row = await this.db.booking.findUnique({
+      where: { id: bookingId },
+      select: {
+        startTime: true,
+        priceAtBooking: true,
+        depositAmount: true,
+        cancellationToken: true,
+        // Name and email. **No phone** — nothing in the message needs it.
+        client: { select: { name: true, email: true } },
+        service: { select: { name: true } },
+        barber: {
+          select: {
+            displayName: true,
+            location: {
+              select: {
+                name: true,
+                address: true,
+                // The brand and the slug the link is addressed through. The
+                // owner's `paymentConfig` is deliberately not reachable from
+                // here: nothing on the way to an email may become a second
+                // holder of an access token.
+                owner: {
+                  select: {
+                    businessProfile: { select: { businessName: true, publicSlug: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (row === null) return null;
+
+    const profile = row.barber.location.owner.businessProfile;
+    if (profile === null || profile === undefined) return null;
+
+    return {
+      clientName: row.client.name,
+      clientEmail: row.client.email,
+      shopName: profile.businessName,
+      shopSlug: profile.publicSlug,
+      locationName: row.barber.location.name,
+      locationAddress: row.barber.location.address,
+      barberName: row.barber.displayName,
+      serviceName: row.service.name,
+      startTime: row.startTime,
+      priceAtBooking: toCanonicalDecimal(row.priceAtBooking),
+      depositAmount: toCanonicalDecimal(row.depositAmount),
+      cancellationToken: row.cancellationToken,
+    };
+  }
+
+  /**
+   * Records that the provider accepted the confirmation message (N1).
+   *
+   * **One statement, one column, no transaction and no lock.** It follows a
+   * transition that has already committed, and it can change nothing about what
+   * the booking is — so there is no invariant for a lock to protect and nothing
+   * a concurrent write could corrupt.
+   *
+   * `updateMany` rather than `update` so a booking deleted between the send and
+   * this write matches zero rows instead of throwing. The caller treats this
+   * write's failure as a log line either way; making the ordinary case
+   * non-throwing keeps that promise cheap to honour.
+   */
+  async markConfirmationEmailSent(bookingId: string, sentAt: Date): Promise<void> {
+    await this.db.booking.updateMany({
+      where: { id: bookingId },
+      data: { confirmationEmailSentAt: sentAt },
+    });
   }
 }

@@ -83,6 +83,25 @@ export interface BookingByToken {
   readonly holdExpiresAt: Date | null;
   readonly depositAmount: string;
   readonly clientName: string;
+  /**
+   * When the confirmation email was accepted by the provider, or `null` (N1).
+   *
+   * On this page it drives one sentence in the confirmed state, and the reason
+   * it belongs on **this** projection is that the sentence must never be a
+   * guess: claiming a message that failed would remove the client's reason to
+   * save the link, at exactly the moment the link became their only record.
+   */
+  readonly confirmationEmailSentAt: Date | null;
+  /**
+   * The booking's last write, used only to tell "not sent yet" from "could not
+   * be sent" (N1).
+   *
+   * A proxy for the confirmation instant, which this table does not store.
+   * Good enough for the one thing it decides — whether to stay quiet for a few
+   * seconds or to tell the client the message failed — and named here as a
+   * proxy so nobody later mistakes it for the confirmation time.
+   */
+  readonly updatedAt: Date;
   readonly barberDisplayName: string;
   readonly serviceName: string;
   readonly locationName: string;
@@ -232,6 +251,36 @@ export interface BookingForTransfer {
  * query is inexpressible — the property every repository in this project
  * holds.
  */
+/**
+ * What composing the confirmation message needs (N1).
+ *
+ * Structurally identical to `ConfirmationEmailBooking` in the domain builder,
+ * and deliberately declared separately: this one is the repository's promise
+ * about which columns it reads, and that one is the builder's statement about
+ * which values it renders. They agree today because the message needs exactly
+ * what the read returns; if a later change makes them differ, two names make
+ * that visible rather than silently widening a query to feed a template.
+ *
+ * `shopSlug` comes from the owner's `BusinessProfile`, which is what the link
+ * is addressed through. `locationAddress` is optional because a branch may not
+ * have one, and the message omits the line rather than printing an empty label.
+ */
+export interface BookingForConfirmationEmail {
+  readonly clientName: string;
+  readonly clientEmail: string;
+  readonly shopName: string;
+  readonly shopSlug: string;
+  readonly locationName: string;
+  readonly locationAddress: string | null;
+  readonly barberName: string;
+  readonly serviceName: string;
+  readonly startTime: Date;
+  /** Canonical decimal strings, like every money value crossing this boundary. */
+  readonly priceAtBooking: string;
+  readonly depositAmount: string;
+  readonly cancellationToken: string;
+}
+
 export interface IBookingRepository {
   /**
    * Holds a slot, or reports why it could not.
@@ -308,6 +357,63 @@ export interface IBookingRepository {
    * is allowed to know, and the two payment paths need different ones.
    */
   findForTransfer(token: string): Promise<BookingForTransfer | null>;
+
+  /**
+   * The booking behind a confirmation email, by booking id (N1).
+   *
+   * **This is the one projection in the public flow that deliberately selects
+   * the client's email address, and it is a named exception rather than an
+   * inconsistency.** Every projection above states that it carries no contact
+   * detail, and the reason each gives is the same: those feed a *page*, the
+   * link to that page can be shared or opened on a shared device, and a
+   * projection that cannot hold an address cannot render one by accident.
+   *
+   * A message is not a page. The address is not something the message might
+   * leak — it is where the message goes. Withholding it here would not protect
+   * anything; it would only move the read somewhere with less scrutiny.
+   *
+   * The bounds that remain are the ones that still mean something:
+   *
+   * - **No phone.** Nothing in the message needs it, and the shape that cannot
+   *   hold it cannot render it.
+   * - **No payment-configuration column, encrypted or otherwise.** The
+   *   notification path's composition root is specified as the only one in the
+   *   public flow that may decrypt an access token, and nothing on the way to
+   *   an email may become a second holder of one.
+   * - **By booking id, not by token.** Its callers already have the id from the
+   *   transition they just completed. Keying it on the token would make it a
+   *   second lookup a stranger's input could reach.
+   *
+   * Returns `null` when the booking does not exist, which its caller treats as
+   * a fault to log rather than as a reason to fail anything.
+   */
+  findForConfirmationEmail(bookingId: string): Promise<BookingForConfirmationEmail | null>;
+
+  /**
+   * Records that the confirmation message was accepted by the provider (N1).
+   *
+   * **It disturbs nothing about what the booking is** — never `status`, never
+   * `holdExpiresAt`, never a snapshot, never the token. It runs outside the
+   * confirming transaction, and its own failure changes nothing: a booking must
+   * not become unconfirmed because a bookkeeping write failed.
+   *
+   * **`updatedAt` moves with it, and that is not avoidable.** This contract
+   * used to say "one column and nothing else"; the N1 gate compared the whole
+   * row before and after and found Prisma's `@updatedAt` bumping alongside, as
+   * it does on every write through the client. Making the claim literally true
+   * would mean `$executeRaw` — the only write in this product to bypass the
+   * client, for a cosmetic property — so the claim was corrected instead. The
+   * one caller that reads `updatedAt` (`resolveConfirmationEmailNotice`, which
+   * uses it as a proxy for the confirmation instant) is unaffected: it consults
+   * it only when the send instant is null, which is exactly when this write did
+   * not happen.
+   *
+   * It is **not** an idempotency key and no caller reads it before sending. At
+   * most one send per booking is already guaranteed by the confirming
+   * transition being a conditional update. What this column buys is the
+   * question "which confirmed bookings have a client who was never told".
+   */
+  markConfirmationEmailSent(bookingId: string, sentAt: Date): Promise<void>;
 }
 
 /** Re-exported so the transaction's re-assertion has one vocabulary for windows. */

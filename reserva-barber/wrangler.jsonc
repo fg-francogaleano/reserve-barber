@@ -36,13 +36,45 @@
   // log — the only symptom is a preview nobody sees.
   //
   // Change this in one place when a custom domain replaces the workers.dev one.
+  //
+  // N1 RAISED THE STAKES ON APP_ORIGIN. It used to degrade only the OpenGraph
+  // tags above. It now also composes the link in every confirmation email, so
+  // its absence removes the point of the message — and unlike a bad preview, an
+  // email cannot be redeployed. The send therefore still goes out (a client who
+  // paid is owed the confirmation) with the link omitted entirely, never a
+  // relative URL and never a loopback address, and the service logs an error
+  // with `reason: "originMissing"`. That log line is the change: this failure is
+  // no longer silent.
+  //
+  // EMAIL_FROM BELONGS HERE AND IS DELIBERATELY ABSENT UNTIL A DOMAIN EXISTS.
+  //
+  // It is not a secret — it is the address printed on every message the shop
+  // sends — so when it exists it goes here, beside APP_ORIGIN, for the same
+  // reason: a value kept only in the Cloudflare dashboard is a value the next
+  // deploy from a fresh clone silently lacks.
+  //
+  // It shipped briefly as `Reserva Barber <onboarding@resend.dev>` and was
+  // removed, because that value is the worst of the three options. Resend's
+  // shared onboarding sender **delivers only to the account owner's own
+  // address**: it would have passed a verification done from that inbox and
+  // silently dropped every real client — a partial success is far worse here
+  // than an absent value, because nothing in the product can detect it.
+  //
+  // Absent is already a handled, tested state: `createEmailSender` names the
+  // missing variable, confirmation emails alone stop, and the booking page's
+  // could-not-send line tells the client to keep their link. Set this to a
+  // sender on a domain verified in Resend, with SPF/DKIM published, and nothing
+  // else changes.
+  //
+  //   "EMAIL_FROM": "Reserva Barber <turnos@your-verified-domain>"
   "vars": {
     "APP_ORIGIN": "https://reserva-barber.franco-galeano.workers.dev"
   }
   // No `triggers` here. B7's schedule belongs to the sweep Worker, configured
   // in `wrangler.cron.jsonc` — a cron on this Worker would fire a `scheduled`
   // handler that the generated entrypoint does not export.
-  // Secrets (DATABASE_URL, PAYMENT_CREDENTIALS_KEY) are NOT defined here:
+  // Secrets (DATABASE_URL, PAYMENT_CREDENTIALS_KEY, RESEND_API_KEY) are NOT
+  // defined here:
   // - local preview reads .dev.vars (git-ignored)
   // - production uses `wrangler secret put <NAME>`
   //
@@ -50,5 +82,13 @@
   // shell echo. A BOM or trailing newline is invisible and corrupts the value:
   // for DATABASE_URL that showed up in S0 as an unrelated connection error, and
   // for PAYMENT_CREDENTIALS_KEY it shows up as stored Mercado Pago credentials
-  // that cannot be decrypted.
+  // that cannot be decrypted. For RESEND_API_KEY it shows up as a provider
+  // rejection that reads as a wrong key rather than a mangled one — and, since
+  // a rejection is non-fatal by design, as clients quietly not being emailed.
+  //
+  // RESEND_API_KEY belongs on THIS Worker only. The cron Worker sends nothing,
+  // and a secret set where it is not needed is a second place to remember when
+  // rotating it. It is validated at the confirmation feature's own composition
+  // root and never in the global startup check: a global one that threw would
+  // take down payment confirmation itself over a missing mail credential.
 }

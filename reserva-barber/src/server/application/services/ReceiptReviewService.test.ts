@@ -26,8 +26,8 @@ function pendingReceipt(overrides: Record<string, unknown> = {}) {
 function build() {
   const receipts = {
     findPendingForOwner: vi.fn().mockResolvedValue([pendingReceipt()]),
-    approve: vi.fn().mockResolvedValue({ outcome: 'applied' }),
-    reject: vi.fn().mockResolvedValue({ outcome: 'applied' }),
+    approve: vi.fn().mockResolvedValue({ outcome: 'applied', bookingId: 'bkg-1' }),
+    reject: vi.fn().mockResolvedValue({ outcome: 'applied', bookingId: 'bkg-1' }),
   };
   const storage = {
     signForOwner: vi.fn().mockResolvedValue({ url: 'https://s/x?token=t', expiresInSeconds: 300 }),
@@ -35,14 +35,17 @@ function build() {
   const clock = { now: () => NOW.getTime(), sleep: vi.fn() };
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
+  const notifications = { notifyConfirmed: vi.fn().mockResolvedValue(undefined) };
+
   const service = new ReceiptReviewService(
     receipts as never,
     storage as never,
     clock as never,
-    logger as never
+    logger as never,
+    notifications as never
   );
 
-  return { service, receipts, storage, logger };
+  return { service, receipts, storage, logger, notifications };
 }
 
 describe('listPending', () => {
@@ -121,7 +124,10 @@ describe('approve and reject', () => {
 
     const result = await service.approve(RECEIPT, OWNER);
 
-    expect(result).toEqual({ outcome: 'applied' });
+    // The applied result now carries the booking it applied to (N1), so the
+    // caller has an id to announce a confirmation with that is guaranteed to
+    // name the row this call actually confirmed.
+    expect(result).toEqual({ outcome: 'applied', bookingId: 'bkg-1' });
     expect(receipts.approve).toHaveBeenCalledWith(
       expect.objectContaining({ receiptId: RECEIPT, ownerId: OWNER })
     );
@@ -204,5 +210,71 @@ describe('nothing here claims a payment was verified', () => {
       .join('\n');
 
     expect(identifiers).not.toMatch(/verifyPayment|validateTransfer|confirmTransfer/i);
+  });
+});
+
+/**
+ * The trigger on the path where it matters most (N1).
+ *
+ * The Mercado Pago client is at least looking at a page when their booking
+ * confirms. A transfer client uploaded a receipt, was told a human would decide,
+ * and then — minutes or hours later, tab long since closed — is told nothing at
+ * all. Without the email this path confirms appointments the client never finds
+ * out about.
+ */
+describe('the confirmation email trigger', () => {
+  it('notifies the client when an approval is applied', async () => {
+    const { service, notifications } = build();
+
+    await service.approve(RECEIPT, OWNER);
+
+    expect(notifications.notifyConfirmed).toHaveBeenCalledExactlyOnceWith('bkg-1');
+  });
+
+  it('notifies with the booking the transaction actually confirmed', async () => {
+    // The id comes out of the applied result rather than from a second read,
+    // which could return a booking a concurrent write had already moved.
+    const { service, receipts, notifications } = build();
+    receipts.approve.mockResolvedValue({ outcome: 'applied', bookingId: 'bkg-other' });
+
+    await service.approve(RECEIPT, OWNER);
+
+    expect(notifications.notifyConfirmed).toHaveBeenCalledWith('bkg-other');
+  });
+
+  it('does not notify when a second approval matched zero rows', async () => {
+    const { service, receipts, notifications } = build();
+    receipts.approve.mockResolvedValue({ outcome: 'notPending', bookingStatus: 'CONFIRMED' });
+
+    await service.approve(RECEIPT, OWNER);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when the receipt belongs to another owner', async () => {
+    const { service, receipts, notifications } = build();
+    receipts.approve.mockResolvedValue({ outcome: 'notFound' });
+
+    await service.approve(RECEIPT, OWNER);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('never notifies on a rejection, which confirms nothing', async () => {
+    const { service, notifications } = build();
+
+    await service.reject(RECEIPT, OWNER);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('still reports the approval as applied when the provider is down', async () => {
+    // A mail provider must not be able to undo an approval the owner made.
+    const { service, notifications } = build();
+    notifications.notifyConfirmed.mockRejectedValue(new Error('provider down'));
+
+    const result = await service.approve(RECEIPT, OWNER);
+
+    expect(result.outcome).toBe('applied');
   });
 });

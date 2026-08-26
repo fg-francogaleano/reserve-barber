@@ -225,6 +225,14 @@ import { cn } from '@/lib/utils';
 
 - All user-facing text is **Spanish (es-AR)**. Keep strings in a central location (constants or a lightweight dictionary), not scattered inline with logic, so copy can be reviewed and later translated.
 - Format currency in ARS and dates in `es-AR` via `Intl.NumberFormat` / `Intl.DateTimeFormat`.
+- **An email is user-facing copy that happens not to be rendered by React**, and its strings live in
+  `copy.ts` under their own namespace like every other Spanish string — not inline in the module that
+  composes the message. The message is built by a pure function taking a projection and returning
+  subject, text and html; the copy it reads comes from the same dictionary a page would read, so the
+  product's voice is reviewable in one file rather than in one file plus an adapter.
+- **An appointment is formatted in the business timezone, never the runtime's and never the
+  recipient's**, through the shared business-time module rather than a second `Intl` call written at
+  the point of use. A second expression of a rule that reads a clock drifts from the first.
 
 ### Form Handling
 

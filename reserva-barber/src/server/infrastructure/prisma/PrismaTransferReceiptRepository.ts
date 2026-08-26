@@ -429,7 +429,7 @@ export class PrismaTransferReceiptRepository implements ITransferReceiptReposito
         data: { status: 'APPROVED', reviewedAt: input.now },
       });
 
-      return { outcome: 'applied' as const };
+      return { outcome: 'applied' as const, bookingId: target.bookingId };
     }, TRANSACTION_OPTIONS);
   }
 
@@ -469,7 +469,7 @@ export class PrismaTransferReceiptRepository implements ITransferReceiptReposito
         data: { status: 'REJECTED', reviewedAt: input.now },
       });
 
-      return { outcome: 'applied' as const };
+      return { outcome: 'applied' as const, bookingId: target.bookingId };
     }, TRANSACTION_OPTIONS);
   }
 

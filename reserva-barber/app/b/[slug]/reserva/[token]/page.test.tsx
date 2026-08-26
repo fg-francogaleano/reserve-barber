@@ -31,6 +31,11 @@ function booking(overrides: Partial<BookingByToken> = {}): BookingByToken {
     holdExpiresAt: LIVE_HOLD,
     depositAmount: '5000.00',
     clientName: 'Franco Galeano',
+    // N1 defaults: nothing sent, and the row written just now — so a confirmed
+    // booking is inside the notice grace and says nothing about the email
+    // unless a test opts in. Existing assertions keep meaning what they meant.
+    confirmationEmailSentAt: null,
+    updatedAt: new Date(),
     barberDisplayName: 'Juan',
     serviceName: 'Corte',
     locationName: 'Centro',
@@ -144,14 +149,23 @@ describe('the eight states say the right thing', () => {
   });
 
   /**
-   * No spinner and no promise of automatic refresh: the page does not poll, and
-   * implying otherwise would leave somebody staring at it.
+   * **This assertion is inverted by T62, deliberately.**
+   *
+   * B5 wrote it to hold the rule that the awaiting state must not imply an
+   * update it does not perform — a spinner over a page that never changes
+   * leaves somebody staring at it. The rule was always conditional on the page
+   * not refreshing, and N1 makes the refresh real, so the honest form of the
+   * same rule is: the indicator appears exactly while something is actually
+   * going to happen, and never on the terminal form.
+   *
+   * Kept here rather than deleted, so the reversal is visible to whoever reads
+   * this file next.
    */
-  it('does not imply the awaiting state refreshes itself', async () => {
+  it('shows a progress indicator only while it is actually refreshing', async () => {
     const { container } = await renderPage(booking(), { estado: 'pago-pendiente' });
 
-    expect(container.querySelector('[role="progressbar"]')).toBeNull();
-    expect(container.querySelector('.animate-spin')).toBeNull();
+    expect(refreshMeta()).not.toBeNull();
+    expect(container.querySelector('.animate-pulse')).not.toBeNull();
   });
 
   it('states the time left when a payment was rejected', async () => {
@@ -439,5 +453,153 @@ describe('the states a receipt produces', () => {
     await renderPage(transferable(), { estado: 'metodo-en-curso' });
 
     expect(screen.getByText(COPY.booking.methodInUse)).toBeInTheDocument();
+  });
+});
+
+/**
+ * T62: the awaiting state stops asking for a manual refresh.
+ *
+ * B5 measured that this state is what nearly every client sees — the browser
+ * redirect from Mercado Pago beats the server-to-server notification
+ * essentially every time — so the most important moment in this product ended
+ * with an instruction to reload.
+ */
+/**
+ * React hoists a bare `<meta>` into `document.head` — which is exactly where an
+ * `http-equiv` refresh has to be to work at all, so the hoisting is the desired
+ * behaviour rather than a testing quirk to route around.
+ */
+function refreshMeta(): Element | null {
+  return document.head.querySelector('meta[http-equiv="refresh"]');
+}
+
+describe('the awaiting-confirmation refresh', () => {
+  const AWAITING = { estado: 'pago-pendiente' };
+
+  it('emits a server-rendered refresh on the first arrival', async () => {
+    await renderPage(booking(), AWAITING);
+
+    const meta = refreshMeta();
+    expect(meta).not.toBeNull();
+    expect(meta?.getAttribute('content')).toContain('intento=2');
+  });
+
+  it('advances the counter rather than repeating it', async () => {
+    await renderPage(booking(), { ...AWAITING, intento: '2' });
+
+    const content = refreshMeta()?.getAttribute('content');
+    expect(content).toContain('intento=3');
+    expect(content?.split('intento=').length).toBe(2);
+  });
+
+  it('stops at the bound and asks for a manual reload', async () => {
+    await renderPage(booking(), { ...AWAITING, intento: '3' });
+
+    expect(refreshMeta()).toBeNull();
+    expect(screen.getByText(COPY.booking.paymentConfirmingHelpExhausted)).toBeInTheDocument();
+  });
+
+  it('renders the terminal form for a forged counter rather than looping', async () => {
+    await renderPage(booking(), { ...AWAITING, intento: '999' });
+
+    expect(refreshMeta()).toBeNull();
+  });
+
+  it('renders the terminal form for a malformed counter', async () => {
+    await renderPage(booking(), { ...AWAITING, intento: 'abc' });
+
+    expect(refreshMeta()).toBeNull();
+  });
+
+  it('keeps the outcome code across the refresh so the state survives it', async () => {
+    await renderPage(booking(), AWAITING);
+
+    const content = refreshMeta()?.getAttribute('content');
+    expect(content).toContain('estado=pago-pendiente');
+  });
+
+  it('refreshes to a relative url, never to a host it was told', async () => {
+    // The path carries a cancellation token. A forged Host would aim the
+    // refresh, token included, at somebody else's domain.
+    await renderPage(booking(), AWAITING);
+
+    const content = refreshMeta()?.getAttribute('content');
+    expect(content).toMatch(/url=\//);
+    expect(content).not.toMatch(/url=https?:/);
+  });
+
+  /**
+   * B5 forbade a progress indicator here because the page did not update.
+   * The prohibition was conditional on that, and it survives on the terminal
+   * form — where nothing further is going to happen.
+   */
+  it('shows no progress indicator once the refreshing has stopped', async () => {
+    const { container } = await renderPage(booking(), { ...AWAITING, intento: '3' });
+
+    expect(container.querySelector('.animate-pulse')).toBeNull();
+  });
+
+  it('emits no refresh on any other state', async () => {
+    await renderPage(booking({ status: 'CONFIRMED' }));
+
+    expect(refreshMeta()).toBeNull();
+  });
+});
+
+/**
+ * N1: the confirmed state tells the truth about the email, or says nothing.
+ */
+describe('what the confirmed state says about the email', () => {
+  it('says the confirmation was emailed once it was recorded', async () => {
+    await renderPage(booking({ status: 'CONFIRMED', confirmationEmailSentAt: new Date() }));
+
+    expect(screen.getByText(COPY.booking.paymentConfirmedEmailSent)).toBeInTheDocument();
+  });
+
+  it('says nothing while the send may still be in flight', async () => {
+    await renderPage(
+      booking({ status: 'CONFIRMED', confirmationEmailSentAt: null, updatedAt: new Date() })
+    );
+
+    expect(screen.queryByText(COPY.booking.paymentConfirmedEmailSent)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.booking.paymentConfirmedEmailFailed)).not.toBeInTheDocument();
+  });
+
+  it('tells the client the link is their only copy when the send failed', async () => {
+    await renderPage(
+      booking({
+        status: 'CONFIRMED',
+        confirmationEmailSentAt: null,
+        updatedAt: new Date(Date.now() - 10 * 60_000),
+      })
+    );
+
+    expect(screen.getByText(COPY.booking.paymentConfirmedEmailFailed)).toBeInTheDocument();
+  });
+
+  it('never claims a message that was not sent', async () => {
+    await renderPage(
+      booking({
+        status: 'CONFIRMED',
+        confirmationEmailSentAt: null,
+        updatedAt: new Date(Date.now() - 10 * 60_000),
+      })
+    );
+
+    expect(screen.queryByText(COPY.booking.paymentConfirmedEmailSent)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about the email on a booking that is not confirmed', async () => {
+    await renderPage(booking({ confirmationEmailSentAt: new Date() }));
+
+    expect(screen.queryByText(COPY.booking.paymentConfirmedEmailSent)).not.toBeInTheDocument();
+  });
+
+  it('still renders no client email or phone in any of the three variants', async () => {
+    const { container } = await renderPage(
+      booking({ status: 'CONFIRMED', confirmationEmailSentAt: new Date() })
+    );
+
+    expect(container.textContent).not.toMatch(/@/);
   });
 });

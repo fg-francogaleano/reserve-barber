@@ -9,6 +9,7 @@ import {
   CredentialDecryptionError,
   CredentialKeyMissingError,
 } from '@/server/domain/errors/PaymentConfigErrors';
+import type { BookingConfirmationNotificationService } from './BookingConfirmationNotificationService';
 
 /**
  * What a Mercado Pago notification does to a booking.
@@ -74,7 +75,13 @@ export class PaymentConfirmationService {
     private readonly paymentConfig: IPaymentConfigRepository,
     private readonly gateway: IPaymentGateway,
     private readonly clock: IClock,
-    private readonly logger: ILogger
+    private readonly logger: ILogger,
+    /**
+     * Telling the client (N1). Required, not optional (T57): a confirmation
+     * this product does not announce is the defect the story exists to close,
+     * and an optional dependency is one a future composition root forgets.
+     */
+    private readonly notifications: BookingConfirmationNotificationService
   ) {}
 
   async confirm(input: {
@@ -251,6 +258,26 @@ export class PaymentConfirmationService {
           gatewayPaymentId: payment.id,
           lateConfirmation: !holdIsLive,
         });
+        /**
+         * **Tell the client, and only from here** (N1).
+         *
+         * This branch is reached exactly once per booking, because the write
+         * above is a conditional update guarded on the status it expected: a
+         * redelivery — which is normal operation for this gateway — matches
+         * zero rows and lands in `alreadyProcessed` instead. That is what
+         * makes the email at-most-once without a second mechanism, and it is
+         * why the send hangs off the *outcome* rather than off the booking
+         * being `CONFIRMED`. Keyed on the status, this public and replayable
+         * endpoint would become a way to send unlimited mail to one real
+         * person.
+         *
+         * After the transaction, never inside it. The notification service is
+         * specified never to throw, and this is still awaited rather than
+         * abandoned: the response owes Mercado Pago nothing more, and letting
+         * a floating promise outlive the request on a Worker is how it gets
+         * cancelled halfway.
+         */
+        await this.notifyConfirmed(record.bookingId);
         return { outcome: 'confirmed' };
 
       case 'slotLost':
@@ -309,6 +336,31 @@ export class PaymentConfirmationService {
         });
         return { outcome: 'bookingUnavailable' };
       }
+    }
+  }
+
+  /**
+   * The confirmation email, behind a `catch` this service should never need.
+   *
+   * `BookingConfirmationNotificationService` is specified never to throw and is
+   * tested for it. This guard exists anyway because of what is on the other
+   * side of it: an exception escaping here reaches the route's `catch`, becomes
+   * a `503`, and asks Mercado Pago to redeliver a confirmation that already
+   * succeeded — a redelivery that reports `alreadyProcessed` and, by the rule
+   * above, sends nothing. **The failure would erase its own evidence.**
+   *
+   * A defended contract is cheap; discovering it was broken by watching a
+   * booking's confirmation loop through a gateway's retry schedule is not.
+   */
+  private async notifyConfirmed(bookingId: string): Promise<void> {
+    try {
+      await this.notifications.notifyConfirmed(bookingId);
+    } catch (error) {
+      this.logger.error('Confirmation email failed after the booking was confirmed', {
+        operation: 'payment.confirm',
+        bookingId,
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
     }
   }
 }

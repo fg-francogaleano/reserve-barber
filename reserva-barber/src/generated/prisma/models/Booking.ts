@@ -59,6 +59,7 @@ export type BookingMinAggregateOutputType = {
   holdExpiresAt: Date | null
   cancelledAt: Date | null
   cancelledBy: $Enums.CancelledBy | null
+  confirmationEmailSentAt: Date | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -77,6 +78,7 @@ export type BookingMaxAggregateOutputType = {
   holdExpiresAt: Date | null
   cancelledAt: Date | null
   cancelledBy: $Enums.CancelledBy | null
+  confirmationEmailSentAt: Date | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -95,6 +97,7 @@ export type BookingCountAggregateOutputType = {
   holdExpiresAt: number
   cancelledAt: number
   cancelledBy: number
+  confirmationEmailSentAt: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -125,6 +128,7 @@ export type BookingMinAggregateInputType = {
   holdExpiresAt?: true
   cancelledAt?: true
   cancelledBy?: true
+  confirmationEmailSentAt?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -143,6 +147,7 @@ export type BookingMaxAggregateInputType = {
   holdExpiresAt?: true
   cancelledAt?: true
   cancelledBy?: true
+  confirmationEmailSentAt?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -161,6 +166,7 @@ export type BookingCountAggregateInputType = {
   holdExpiresAt?: true
   cancelledAt?: true
   cancelledBy?: true
+  confirmationEmailSentAt?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -266,6 +272,7 @@ export type BookingGroupByOutputType = {
   holdExpiresAt: Date | null
   cancelledAt: Date | null
   cancelledBy: $Enums.CancelledBy | null
+  confirmationEmailSentAt: Date | null
   createdAt: Date
   updatedAt: Date
   _count: BookingCountAggregateOutputType | null
@@ -307,6 +314,7 @@ export type BookingWhereInput = {
   holdExpiresAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   cancelledAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   cancelledBy?: Prisma.EnumCancelledByNullableFilter<"Booking"> | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"Booking"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Booking"> | Date | string
   client?: Prisma.XOR<Prisma.ClientScalarRelationFilter, Prisma.ClientWhereInput>
@@ -329,6 +337,7 @@ export type BookingOrderByWithRelationInput = {
   holdExpiresAt?: Prisma.SortOrderInput | Prisma.SortOrder
   cancelledAt?: Prisma.SortOrderInput | Prisma.SortOrder
   cancelledBy?: Prisma.SortOrderInput | Prisma.SortOrder
+  confirmationEmailSentAt?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   client?: Prisma.ClientOrderByWithRelationInput
@@ -354,6 +363,7 @@ export type BookingWhereUniqueInput = Prisma.AtLeast<{
   holdExpiresAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   cancelledAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   cancelledBy?: Prisma.EnumCancelledByNullableFilter<"Booking"> | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"Booking"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Booking"> | Date | string
   client?: Prisma.XOR<Prisma.ClientScalarRelationFilter, Prisma.ClientWhereInput>
@@ -376,6 +386,7 @@ export type BookingOrderByWithAggregationInput = {
   holdExpiresAt?: Prisma.SortOrderInput | Prisma.SortOrder
   cancelledAt?: Prisma.SortOrderInput | Prisma.SortOrder
   cancelledBy?: Prisma.SortOrderInput | Prisma.SortOrder
+  confirmationEmailSentAt?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.BookingCountOrderByAggregateInput
@@ -402,6 +413,7 @@ export type BookingScalarWhereWithAggregatesInput = {
   holdExpiresAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Booking"> | Date | string | null
   cancelledAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Booking"> | Date | string | null
   cancelledBy?: Prisma.EnumCancelledByNullableWithAggregatesFilter<"Booking"> | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Booking"> | Date | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Booking"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"Booking"> | Date | string
 }
@@ -417,6 +429,7 @@ export type BookingCreateInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   client: Prisma.ClientCreateNestedOneWithoutBookingsInput
@@ -439,6 +452,7 @@ export type BookingUncheckedCreateInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   payments?: Prisma.PaymentUncheckedCreateNestedManyWithoutBookingInput
@@ -455,6 +469,7 @@ export type BookingUpdateInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   client?: Prisma.ClientUpdateOneRequiredWithoutBookingsNestedInput
@@ -477,6 +492,7 @@ export type BookingUncheckedUpdateInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   payments?: Prisma.PaymentUncheckedUpdateManyWithoutBookingNestedInput
@@ -496,6 +512,7 @@ export type BookingCreateManyInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -511,6 +528,7 @@ export type BookingUpdateManyMutationInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -529,6 +547,7 @@ export type BookingUncheckedUpdateManyInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -557,6 +576,7 @@ export type BookingCountOrderByAggregateInput = {
   holdExpiresAt?: Prisma.SortOrder
   cancelledAt?: Prisma.SortOrder
   cancelledBy?: Prisma.SortOrder
+  confirmationEmailSentAt?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -580,6 +600,7 @@ export type BookingMaxOrderByAggregateInput = {
   holdExpiresAt?: Prisma.SortOrder
   cancelledAt?: Prisma.SortOrder
   cancelledBy?: Prisma.SortOrder
+  confirmationEmailSentAt?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -598,6 +619,7 @@ export type BookingMinOrderByAggregateInput = {
   holdExpiresAt?: Prisma.SortOrder
   cancelledAt?: Prisma.SortOrder
   cancelledBy?: Prisma.SortOrder
+  confirmationEmailSentAt?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -775,6 +797,7 @@ export type BookingCreateWithoutBarberInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   client: Prisma.ClientCreateNestedOneWithoutBookingsInput
@@ -795,6 +818,7 @@ export type BookingUncheckedCreateWithoutBarberInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   payments?: Prisma.PaymentUncheckedCreateNestedManyWithoutBookingInput
@@ -843,6 +867,7 @@ export type BookingScalarWhereInput = {
   holdExpiresAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   cancelledAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   cancelledBy?: Prisma.EnumCancelledByNullableFilter<"Booking"> | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.DateTimeNullableFilter<"Booking"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"Booking"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Booking"> | Date | string
 }
@@ -858,6 +883,7 @@ export type BookingCreateWithoutServiceInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   client: Prisma.ClientCreateNestedOneWithoutBookingsInput
@@ -878,6 +904,7 @@ export type BookingUncheckedCreateWithoutServiceInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   payments?: Prisma.PaymentUncheckedCreateNestedManyWithoutBookingInput
@@ -920,6 +947,7 @@ export type BookingCreateWithoutClientInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   barber: Prisma.BarberCreateNestedOneWithoutBookingsInput
@@ -940,6 +968,7 @@ export type BookingUncheckedCreateWithoutClientInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   payments?: Prisma.PaymentUncheckedCreateNestedManyWithoutBookingInput
@@ -982,6 +1011,7 @@ export type BookingCreateWithoutPaymentsInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   client: Prisma.ClientCreateNestedOneWithoutBookingsInput
@@ -1003,6 +1033,7 @@ export type BookingUncheckedCreateWithoutPaymentsInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1034,6 +1065,7 @@ export type BookingUpdateWithoutPaymentsInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   client?: Prisma.ClientUpdateOneRequiredWithoutBookingsNestedInput
@@ -1055,6 +1087,7 @@ export type BookingUncheckedUpdateWithoutPaymentsInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1072,6 +1105,7 @@ export type BookingCreateManyBarberInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1087,6 +1121,7 @@ export type BookingUpdateWithoutBarberInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   client?: Prisma.ClientUpdateOneRequiredWithoutBookingsNestedInput
@@ -1107,6 +1142,7 @@ export type BookingUncheckedUpdateWithoutBarberInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   payments?: Prisma.PaymentUncheckedUpdateManyWithoutBookingNestedInput
@@ -1125,6 +1161,7 @@ export type BookingUncheckedUpdateManyWithoutBarberInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1142,6 +1179,7 @@ export type BookingCreateManyServiceInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1157,6 +1195,7 @@ export type BookingUpdateWithoutServiceInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   client?: Prisma.ClientUpdateOneRequiredWithoutBookingsNestedInput
@@ -1177,6 +1216,7 @@ export type BookingUncheckedUpdateWithoutServiceInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   payments?: Prisma.PaymentUncheckedUpdateManyWithoutBookingNestedInput
@@ -1195,6 +1235,7 @@ export type BookingUncheckedUpdateManyWithoutServiceInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1212,6 +1253,7 @@ export type BookingCreateManyClientInput = {
   holdExpiresAt?: Date | string | null
   cancelledAt?: Date | string | null
   cancelledBy?: $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1227,6 +1269,7 @@ export type BookingUpdateWithoutClientInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   barber?: Prisma.BarberUpdateOneRequiredWithoutBookingsNestedInput
@@ -1247,6 +1290,7 @@ export type BookingUncheckedUpdateWithoutClientInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   payments?: Prisma.PaymentUncheckedUpdateManyWithoutBookingNestedInput
@@ -1265,6 +1309,7 @@ export type BookingUncheckedUpdateManyWithoutClientInput = {
   holdExpiresAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cancelledBy?: Prisma.NullableEnumCancelledByFieldUpdateOperationsInput | $Enums.CancelledBy | null
+  confirmationEmailSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1314,6 +1359,7 @@ export type BookingSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   holdExpiresAt?: boolean
   cancelledAt?: boolean
   cancelledBy?: boolean
+  confirmationEmailSentAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   client?: boolean | Prisma.ClientDefaultArgs<ExtArgs>
@@ -1337,6 +1383,7 @@ export type BookingSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Exten
   holdExpiresAt?: boolean
   cancelledAt?: boolean
   cancelledBy?: boolean
+  confirmationEmailSentAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   client?: boolean | Prisma.ClientDefaultArgs<ExtArgs>
@@ -1358,6 +1405,7 @@ export type BookingSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Exten
   holdExpiresAt?: boolean
   cancelledAt?: boolean
   cancelledBy?: boolean
+  confirmationEmailSentAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   client?: boolean | Prisma.ClientDefaultArgs<ExtArgs>
@@ -1379,11 +1427,12 @@ export type BookingSelectScalar = {
   holdExpiresAt?: boolean
   cancelledAt?: boolean
   cancelledBy?: boolean
+  confirmationEmailSentAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type BookingOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "clientId" | "barberId" | "serviceId" | "startTime" | "endTime" | "status" | "priceAtBooking" | "depositAmount" | "cancellationToken" | "holdExpiresAt" | "cancelledAt" | "cancelledBy" | "createdAt" | "updatedAt", ExtArgs["result"]["booking"]>
+export type BookingOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "clientId" | "barberId" | "serviceId" | "startTime" | "endTime" | "status" | "priceAtBooking" | "depositAmount" | "cancellationToken" | "holdExpiresAt" | "cancelledAt" | "cancelledBy" | "confirmationEmailSentAt" | "createdAt" | "updatedAt", ExtArgs["result"]["booking"]>
 export type BookingInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   client?: boolean | Prisma.ClientDefaultArgs<ExtArgs>
   barber?: boolean | Prisma.BarberDefaultArgs<ExtArgs>
@@ -1468,6 +1517,32 @@ export type $BookingPayload<ExtArgs extends runtime.Types.Extensions.InternalArg
     holdExpiresAt: Date | null
     cancelledAt: Date | null
     cancelledBy: $Enums.CancelledBy | null
+    /**
+     * When the email provider accepted the confirmation message (N1).
+     * 
+     * **This is not an idempotency key and nothing reads it before sending.**
+     * At-most-once delivery is already a property of the confirming transition:
+     * both writers update this row conditionally on the status they expect, so
+     * exactly one caller per booking ever observes the confirming outcome. A
+     * second mechanism claiming the same guarantee would be a second thing to
+     * get wrong, and a read-then-send would reintroduce the race the guarded
+     * update exists to avoid.
+     * 
+     * What it buys is a question the product otherwise cannot ask: **a null on a
+     * CONFIRMED booking means that client was never told their appointment is
+     * real.** That set is a WHERE clause rather than a log line nobody reads.
+     * 
+     * Written after the provider accepts, OUTSIDE the confirming transaction, by
+     * a write that touches no other column. Its own failure is logged and
+     * swallowed — a booking must never become unconfirmed because a bookkeeping
+     * write failed.
+     * 
+     * No index, deliberately: nothing queries it yet, and the story that gives
+     * that set a surface is the story that should measure the predicate. The
+     * dashboard aggregates were indexed by measurement rather than assumption
+     * (D1), and this follows the same rule.
+     */
+    confirmationEmailSentAt: Date | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["booking"]>
@@ -1910,6 +1985,7 @@ export interface BookingFieldRefs {
   readonly holdExpiresAt: Prisma.FieldRef<"Booking", 'DateTime'>
   readonly cancelledAt: Prisma.FieldRef<"Booking", 'DateTime'>
   readonly cancelledBy: Prisma.FieldRef<"Booking", 'CancelledBy'>
+  readonly confirmationEmailSentAt: Prisma.FieldRef<"Booking", 'DateTime'>
   readonly createdAt: Prisma.FieldRef<"Booking", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"Booking", 'DateTime'>
 }

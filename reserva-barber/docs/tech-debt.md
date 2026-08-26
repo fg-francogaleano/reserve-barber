@@ -1028,6 +1028,78 @@ reading is "not rejected today, with a margin nobody should spend deliberately".
   of a story. **The recommendation is to take the paid plan before starting N1** rather than
   discovering it the same way a second time.
 
+### ✅ RESOLVED — WORKERS PAID TAKEN, N1 DEPLOYED (2026-08-26)
+
+**Status: closed.** Franco took the paid plan and N1 deployed on the first attempt.
+
+```
+Total Upload: 12796.09 KiB / gzip: 3068.31 KiB
+Uploaded reserva-barber (15.93 sec)
+Deployed reserva-barber triggers (1.08 sec)
+Current Version ID: a5a8df49-b30f-4e74-bf00-d3ca8f5f44a7
+```
+
+**3068.31 KiB against the free plan's 3072 would almost certainly have been refused** — B2's rejected
+build reported *less* than this one. Against the paid plan's 10 MiB it is **~30% of the ceiling**,
+with roughly 7 MiB free. At the ~140 KiB/story trend this entry has tracked since B4, that is on the
+order of fifty stories of headroom rather than none.
+
+**What this entry cost while it was open**, worth keeping because the lesson is about timing rather
+than bytes: it was opened at B2 by a failed deploy mid-story, recommended the paid plan from B6
+onward, forced B7 to restructure a story into a second Worker rather than pay US$5, and was the
+blocker on N1's deploy. **The five-minute fix was available for four stories before it was taken.**
+
+**What stays true and is not closed by the upgrade:**
+
+- **`wrangler deploy --dry-run` remains a lower bound, not a gate.** B2's measurement stands: the
+  API's own check is stricter than the printed figure. That matters less now, and it is still not a
+  green light.
+- **The two-bundler rule from B7 is unaffected.** A custom entrypoint that imports application code
+  reaching Prisma still ships the query compiler twice — that was a correctness-of-bundling problem,
+  not a size-limit one, and 10 MiB does not make it a good idea.
+- **The cron Worker is unchanged**, at 878.62 KiB with its own config.
+
+- **Trigger:** none. Re-open only if a story adds a dependency large enough to matter against 10 MiB,
+  which on the current trend is not a realistic concern.
+
+<details>
+<summary>The measurement that forced the decision, kept for the record</summary>
+
+### ⛔ N1 MEASURED AT 3068.26 KiB — THE FREE PLAN IS EXHAUSTED (2026-08-25)
+
+| build                  | reported gzip | headroom vs 3072 |
+| ---------------------- | ------------- | ---------------- |
+| B6                     | 2924.08 KiB   | ~148 KiB         |
+| **N1**                 | **3068.26 KiB** | **3.74 KiB**   |
+| B2, rejected by the API| 3064.88 KiB   | 7.12 KiB         |
+
+**N1 reports a larger figure than the build Cloudflare's API actually rejected.** B2's whole lesson
+is recorded above: the number wrangler prints is a **lower bound**, and a build reporting "fits by
+7 KiB" was refused. This one claims to fit by 3.74.
+
+**The honest reading is that the next production deploy will be rejected**, and no amount of
+re-measuring locally will change that — `--dry-run` can say "definitely too big" and can never say
+"this will fit".
+
+The cost is **+144.18 KiB over B6**, which is the ~138 KiB/story trend this entry has been tracking
+since B4, landing exactly where it predicted. And it is not the dependency: `package.json` is
+byte-identical, asserted by a test, and the Resend adapter is `fetch` against a single endpoint
+modelled on `MercadoPagoGateway`. The bytes are the story's surface — a port, a builder, a service,
+a projection, two composition roots, a copy namespace, a clamp module and page changes — exactly as
+B6 was "expected to be cheap" and cost +177.56 KiB in surface area alone.
+
+**Nobody should read "no new dependency" as "no new bytes". That was the plan's own assumption and
+the measurement contradicts it.**
+
+- **The lever is unchanged and is now the only one: Workers Paid, US$5/month, 10 MiB, ~5 minutes and
+  no code.** This entry has recommended taking it before N1 since B6, and B7 restructured a story
+  rather than pay it. There is nothing left to restructure here — the story is already SDK-free.
+- **What is NOT blocked by this:** everything below the deploy. The workerd runtime was verified
+  locally at this exact size (`wrangler dev` on the same build), so the code is known to work on the
+  production runtime; only the upload is in question.
+
+</details>
+
 **B7 hit the ceiling and did not deploy over it (2026-08-23).** This entry's prediction came true one
 story earlier than expected, and the story was restructured rather than the plan upgraded.
 
@@ -1900,6 +1972,13 @@ a decision nobody has made.
 Scope is small today — no real shop has used the product, so the table is empty — which is exactly why
 it is worth deciding before it is not.
 
+**N1 made it worse by one location and did not address it (2026-08-25).** Guest personal data now
+lives in a third place: **the client's own mailbox, and the email provider's outbound record.**
+Neither is reachable by anything this product could build — an anonymising write over `Client` cannot
+unsend a message or reach into a provider's retention. So the deletion rule this entry keeps
+deferring will, when it is written, already be unable to be complete, and it should say so rather
+than imply otherwise.
+
 - **Trigger:** the first real shop taking real bookings, or any request from a client to be removed.
   Also **N1**, which is when these addresses start receiving email and the data stops being merely
   stored.
@@ -2085,7 +2164,34 @@ which payment methods the client will actually be offered belongs.
 
 ### T62 — The confirmation moment ends with "please refresh", and that is the normal path
 
-**Status:** accepted · **Effort:** ~1 h · **Added:** B5 (2026-08-21, observed in runtime verification)
+**Status:** ✅ **CLOSED by N1 (2026-08-25)** · **Effort:** ~1 h · **Added:** B5 (2026-08-21, observed in runtime verification)
+
+> **What shipped, and it is both halves rather than one.** This entry was deferred to N1 by decision
+> (Franco, 2026-08-22) so that *how this product tells somebody their appointment is real* got
+> decided once instead of twice. It did:
+>
+> - **The page updates itself.** `resolveConfirmationRefresh` emits a server-rendered
+>   `<meta http-equiv="refresh">` on the awaiting state only, at most twice, five seconds apart,
+>   carrying the attempt in `?intento=`. No JavaScript, exactly as this entry required. The parse is
+>   **strict** — a run of digits or nothing — because `parseInt('2.5')` is `2` and a lenient parse
+>   accepts values this page never emitted; anything absent, malformed, negative or past the bound
+>   renders the terminal form, which is precisely the pre-N1 page. **The worst a hand-edited URL can
+>   do is get the old behaviour.**
+> - **The spinner became honest and was added with it**, as this entry predicted. B5's prohibition was
+>   always conditional on the page not updating, so it survives in its true form: no indicator on the
+>   terminal state, where nothing further will happen. The B5 test asserting the old rule was
+>   **inverted rather than deleted**, with the reversal written into it.
+> - **The email is the other half**, and it is what makes the transfer path work at all — that client
+>   is never on the page when their booking confirms.
+>
+> **One thing this entry did not anticipate:** the page now also has to say whether the email
+> actually went. Three variants — sent, too soon to say, could not be sent — because claiming a
+> message that failed would remove the client's reason to save the link at the exact moment the link
+> became their only record. `EMAIL_NOTICE_GRACE_SECONDS` (30) is the sixth guessed constant in this
+> product and is disclosed as one.
+>
+> The rejections stand as written: no client-side polling, and no holding the response on Mercado
+> Pago's schedule.
 
 When a client returns from Mercado Pago, the confirmation page reads live state and renders one of
 two things: the booking is `CONFIRMED`, or the notification has not arrived yet and the page says
@@ -2399,9 +2505,171 @@ npx tsx -e "…SELECT repeat('x', 1400)…"     # hangs on the affected path
 Or outside Node entirely: `ping -f -l 1400 aws-1-sa-east-1.pooler.supabase.com` on Windows, which
 should report that the packet needs fragmenting.
 
+**N1 found that it also blocks `prisma migrate` entirely (2026-08-25), which this entry had not
+predicted.** `npx prisma migrate status` and `migrate deploy` both fail with **`P1001: Can't reach
+database server`** from this machine — while `pg` connects to the same host and port in the same
+second and runs queries fine. The engine's own reads are past the ceiling, and Prisma reports that
+as unreachability, which sends you looking at the network instead of at the payload.
+
+Measured at the time, on the direct connection:
+
+| payload            | result           |
+| ------------------ | ---------------- |
+| `repeat('x', 1000)`| OK               |
+| `repeat('x', 1400)`| read timeout     |
+| `repeat('x', 2000)`| read timeout     |
+
+**The workaround used for N1's migration**, and it is worth keeping because the next migration will
+hit this too: apply the DDL through the Supabase MCP — which travels over Supabase's HTTPS API and
+is therefore unaffected by the local MTU — and then insert the `_prisma_migrations` ledger row by
+hand, with the migration's real `sha256` checksum, so Prisma sees no drift afterwards. It is exactly
+what `migrate deploy` does, in two steps that route around the broken hop.
+
+**This raises the cost of the entry considerably.** It was previously "gates that return volume
+cannot run here". It is now also "schema changes cannot be applied here by the normal tool", which
+is on the critical path of every story that touches the database.
+
 - **Likely fixes** (all outside this repository): disable a VPN or split-tunnel the database host;
   lower the interface MTU (`netsh interface ipv4 set subinterface "<name>" mtu=1400 store=persistent`);
   or run the gates from a different network. Verifying with a phone hotspot is the cheapest first test.
 - **Trigger:** the next gate that must return more than a handful of rows — **D3, D4 or D5**, whichever
   comes first. Until then, `readSummary`-shaped probes still work and the gates keep most of their
   value.
+
+---
+
+### T69 — The address a confirmation is sent to has never been verified, and it now carries a credential
+
+**Status:** accepted — the mitigation it forces belongs to C1 · **Effort:** unbounded to fix properly, ~0 to constrain C1 · **Added:** N1 (2026-08-25)
+
+B4 takes an email address in a form and creates a booking with it. **Nothing confirms the address
+belongs to the person typing it**, and nothing ever has — until N1 that was harmless, because the
+address was only ever a column.
+
+N1 makes that address the destination for the client's **cancellation token**, which is their only
+credential for the booking. A single typo therefore does one of two things:
+
+- nobody receives the confirmation, and the client has only the page they were redirected to; or
+- **a stranger receives a working link to somebody else's appointment.**
+
+The second is the one that matters. It is not a hypothetical shape of attack — it is what happens
+when somebody mistypes their own address, which people do constantly.
+
+**Why it is not fixed here.** The honest fix is verifying the address before it becomes a
+destination, and every version of that gates the deposit on a round trip through a mailbox: the
+client is at a checkout, holding a slot on a 15-minute timer, and would have to leave, find a
+message, come back and pay. That trades a rare wrong recipient for a common abandoned booking, and
+it is a product decision nobody has made.
+
+**What it does force, and this is the part that must not be lost:**
+
+> **C1's cancellation MUST be a `POST` behind an explicit confirmation, never a `GET`.**
+
+A cancel-by-URL would be fired by a mail scanner, a link-preview bot, a corporate security gateway
+that fetches every link in an inbound message, or a person who received the mail by mistake — none
+of them intending to cancel anything, all of them producing an appointment that vanishes. The
+booking page N1 links to is safe today because it only renders; the moment C1 puts an action behind
+that token, the action needs a deliberate second step.
+
+Cheaper partial mitigations, if the full fix stays deferred: a confirm-your-address step on the
+booking form for addresses at obviously mistyped domains, or an owner-visible flag on bookings whose
+confirmation bounced (which needs a provider webhook this product does not have).
+
+- **Trigger:** **C1**, for the `POST` constraint — that one is not optional and is not deferred, it
+  is a requirement on the next story. The verification question itself triggers on the first real
+  shop, or the first client who reports never receiving a confirmation.
+
+---
+
+### T70 — A confirmation that fails to send has no recovery path inside the product
+
+**Status:** accepted · **Effort:** ~2 h for the owner-visible half · **Added:** N1 (2026-08-25)
+
+N1 records `Booking.confirmationEmailSentAt` precisely so that "confirmed, and the client was never
+told" is a query rather than a log line:
+
+```sql
+SELECT id FROM "Booking" WHERE status = 'CONFIRMED' AND "confirmationEmailSentAt" IS NULL;
+```
+
+**Nothing runs that query.** The column has no reader, no index, and no surface. Three gaps follow
+from it:
+
+- **The owner is never told.** On the transfer path the approval succeeds, the receipt leaves the
+  queue, and a failed send produces one `error` line in a log the owner does not read. The action's
+  success message deliberately does **not** claim the client was notified (that would remove the
+  owner's reason to phone them) — but not lying is not the same as informing.
+- **There is no resend.** No control anywhere re-sends a confirmation, and after approval the receipt
+  row is gone from `/comprobantes`, so there is not even an obvious place to put one.
+- **The client's only signal is the page.** They see the could-not-send variant *if* they still have
+  the link open. A client who closed the tab after paying gets nothing at all.
+
+**The cheapest useful version is a counter and a list on the dashboard home**, which is a surface
+that already exists (D1). A sweeper-based retry is the more complete answer and is more work: B7's
+cron Worker would need the email adapter, which is the second Worker growing a second reason to
+exist.
+
+- **Trigger:** the first failed send in production, or **D1's next revision** — whichever comes
+  first. Also worth doing alongside **T67**, which is the same shape of gap for expired holds: a
+  thing that happened, that only a log knows about.
+
+---
+
+### T71 — Quota exhaustion stops every confirmation and looks exactly like success
+
+**Status:** accepted · **Effort:** ~30 min for an alert, ~0 to notice it exists · **Added:** N1 (2026-08-25)
+
+The email provider caps sending volume. Crossing that cap is the **most likely production failure of
+this story**, and it is shaped so that nothing in the product looks wrong: bookings still confirm,
+payments still clear, every page still renders, and every client after the cap simply hears nothing.
+
+`IEmailSender` splits `throttled` from `rejected` for exactly this reason — the two look identical at
+the call site and lead to completely different action, so the log line is at least findable. That is
+the whole mitigation. **Nothing alerts on it**, and nobody is watching a log on a Saturday.
+
+It compounds with T70: the shop stops notifying its clients, no owner-visible surface says so, and
+the only record is a log line distinguishable from an ordinary failure by one field.
+
+- **Trigger:** the first `throttled` outcome in production, the first shop busy enough to approach
+  the cap, or taking the provider's paid tier — whichever comes first. An alert on that one outcome
+  is cheap; the surface from T70 would carry it for free.
+
+---
+
+### T72 — A client who paid and lost their slot is the only one this product never contacts
+
+**Status:** accepted · **Effort:** ~2 h once the email path exists — and it now does · **Added:** N1 (2026-08-25, deliberately not fixed)
+
+There are two outcomes where money moved and the appointment did not exist:
+
+- **`slotLost`** — the payment was approved after the hold lapsed and somebody else had taken the
+  time.
+- **`bookingUnavailable`** — the payment was approved against a booking that had been cancelled or
+  expired.
+
+Both are logged at `error` because, as `PaymentConfirmationService` puts it, "a human owes this client
+a refund and nothing else in the product is going to say so". **That sentence is still true after
+N1, and N1 is the story that makes it look deliberate rather than pending.**
+
+The confirmation email now goes out on the one outcome that is good news. The two outcomes that are
+bad news — the ones where somebody has actually lost money — send nothing. The client sees the
+`paidSlotLost` state **only if they still have the page open**, which after a redirect back from a
+gateway is a coin flip, and after a bank transfer is not even that.
+
+So the asymmetry N1 leaves behind is: **this product will email you when nothing is wrong, and stay
+silent when something is.**
+
+**Why it was not fixed here.** It is a different message with different copy, a different trigger
+branch and a different failure mode, and N1's scope was the confirmation. Adding it as an
+afterthought to a story whose whole subject is the confirming outcome would have got it the least
+attention of anything in the change. It is now cheap, though — the port, the adapter, the builder
+shape and the composition roots all exist, and this needs a second `build*Email` function and one
+more call site.
+
+**What it needs beyond the email:** the owner has to know too. A refund is theirs to arrange, they
+cannot arrange one they never hear about, and today the only record is a log line. That half is the
+same gap as **T70** and should be built with it.
+
+- **Trigger:** the first real `slotLost` or `bookingUnavailable` in production — which is also the
+  first time somebody is out real money — or **T70**, whichever comes first. Do not wait for the
+  first one; it is a bad way to find out.

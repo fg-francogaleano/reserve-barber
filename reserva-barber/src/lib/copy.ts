@@ -486,16 +486,42 @@ export const COPY = {
     resumePaymentHelp: 'Ya empezaste a pagar esta seña. Podés retomarlo desde acá.',
 
     /**
-     * Returned from Mercado Pago, notification not processed yet. No spinner
-     * and no promise of automatic refresh: the page does not poll, and implying
-     * otherwise would leave someone staring at it.
+     * Returned from Mercado Pago, notification not processed yet.
+     *
+     * **N1 made the refresh real, so the help text stopped lying in the other
+     * direction.** B5 wrote this state with no spinner and an instruction to
+     * reload by hand, because the page did not poll and implying otherwise
+     * would leave someone staring at it. T62 then measured that this is what
+     * nearly every client sees — the redirect beats the notification — so the
+     * most important moment in the product ended by asking for a reload.
+     *
+     * There are now two help strings because there are two states: the page
+     * refreshes itself a bounded number of times, and then it stops. The
+     * spinner belongs only to the first; on the terminal one nothing further is
+     * going to happen and a spinner would be the same lie B5 refused.
      */
     paymentConfirming: 'Estamos confirmando tu pago',
-    paymentConfirmingHelp:
-      'Puede tardar un momento. Actualizá esta página en unos segundos para ver el estado.',
+    paymentConfirmingHelp: 'Puede tardar unos segundos. Esta página se actualiza sola.',
+    /** The terminal form, after the last attempt. B5's original sentence. */
+    paymentConfirmingHelpExhausted:
+      'Está tardando más de lo normal. Actualizá esta página en unos segundos para ver el estado.',
 
     paymentConfirmed: '¡Listo! Tu turno está confirmado',
     paymentConfirmedHelp: 'Te esperamos. Guardá este link por si necesitás cancelar.',
+
+    /**
+     * What happened to the confirmation email (N1).
+     *
+     * Three variants and not two, because "we have not recorded it yet" and "it
+     * failed" are different facts and only one of them is worth alarming
+     * somebody with. The page must never claim a message that was not sent: in
+     * the failed case the on-screen link stops being a convenience and becomes
+     * the client's only copy, which is the whole reason the third string is
+     * more emphatic than the first.
+     */
+    paymentConfirmedEmailSent: 'Te mandamos la confirmación a tu email.',
+    paymentConfirmedEmailFailed:
+      'No pudimos mandarte el mail de confirmación. Guardá este link: es tu única copia del turno.',
 
     paymentRejected: 'El pago fue rechazado',
     paymentRejectedHelp: 'Podés intentar de nuevo con otro medio de pago.',
@@ -954,5 +980,54 @@ export const COPY = {
     credentialsError: 'Email o contraseña incorrectos.',
     infrastructureError: 'No pudimos iniciar sesión. Intentá de nuevo más tarde.',
     logout: 'Cerrar sesión',
+  },
+
+  /**
+   * The confirmation email (N1).
+   *
+   * **An email is user-facing copy that happens not to be rendered by React**,
+   * so it lives here like every other Spanish string rather than inline in the
+   * module that composes the message. The product's voice stays reviewable in
+   * one file.
+   *
+   * These values are static and trusted. Everything interpolated into the
+   * message — the client's name, the shop's, the branch's — is guest- or
+   * owner-supplied and is escaped by the builder at the point of assembly, not
+   * here: a template that pre-escaped its own literals would have to be undone
+   * for the plain-text part.
+   */
+  email: {
+    confirmation: {
+      /** Composed from server-held values only. A header never carries guest text. */
+      subject: (shopName: string, when: string) => `Tu turno en ${shopName} — ${when}`,
+      greeting: (clientName: string) => `Hola ${clientName},`,
+      heading: 'Tu turno está confirmado',
+      intro: 'Ya está todo listo. Estos son los datos de tu turno:',
+
+      whenLabel: 'Cuándo',
+      whereLabel: 'Dónde',
+      addressLabel: 'Dirección',
+      barberLabel: 'Barbero',
+      serviceLabel: 'Servicio',
+      depositLabel: 'Seña pagada',
+      balanceLabel: 'A pagar en el local',
+
+      /**
+       * The link block. The URL is also printed as text immediately below the
+       * control, because a plain-text rendering or a forward is exactly where a
+       * button-only link disappears.
+       */
+      linkIntro: 'Guardá este link. Desde ahí podés ver tu turno:',
+      linkLabel: 'Ver mi turno',
+
+      /**
+       * What the message says when no public origin is configured and there is
+       * therefore no link to give. It never apologises for a URL the reader
+       * cannot see — it tells them the one thing they can act on.
+       */
+      noLink: 'Si necesitás cambiar o cancelar el turno, escribile a la barbería.',
+
+      closing: '¡Te esperamos!',
+    },
   },
 } as const;

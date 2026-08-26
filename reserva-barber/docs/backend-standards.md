@@ -428,6 +428,8 @@ export function createPrismaClient(connectionString: string): PrismaClient {
 
 3. **Mercado Pago confirmation:** the `/api/webhooks/mercadopago` handler treats the notification body as a **hint, never as evidence**, and establishes authenticity by **re-fetching the payment from Mercado Pago** (`GET /v1/payments/{id}`) with the owner's own access token. That response is the sole authority. Before any transition it verifies three properties against the stored row — `external_reference` equals the booking id, `transaction_amount` equals the payment's recorded amount, and `currency_id` is `ARS` — and a mismatch refuses rather than confirms. On approval it transitions Payment → `APPROVED` and Booking → `CONFIRMED`. Webhook handling is **idempotent**, guaranteed by a unique `mpPaymentId` and a status-guarded conditional update rather than by a prior read. Every handled, ignored or refused notification answers `200`; only a genuinely transient failure answers `503`, because a retry is the only thing that can resolve it.
 
+   > **A confirmed transition hands off to the confirmation email, after the transaction and never inside it.** The handoff is keyed on the **outcome of the guarded write**, never on the booking's observed status: this endpoint is public and redelivery is normal operation, so every duplicate notification re-reaches `CONFIRMED`, and a send keyed on the status would turn an unauthenticated endpoint into an unbounded mail sender aimed at one real person. Exactly one caller per booking ever observes the confirming outcome, which is what makes the email at-most-once without a second mechanism. **A send failure changes nothing** — not the booking, not the outcome, and not the `200`. It must not become a `503`: the retry that request asks for would find the booking already `CONFIRMED`, report it as already processed, and by the rule above send nothing, so the failure would erase its own evidence while spending an outbound call per delivery.
+
    > **Why not signature validation.** Mercado Pago's `x-signature` is an HMAC keyed by a **per-integration webhook secret** issued in their dashboard. This product is multi-tenant against Mercado Pago — every owner brings their own account — so choosing _which_ owner's secret to validate with requires resolving the notification first, and no such secret is stored. The owner is instead resolved from a `ref` query parameter on the `notification_url` carrying the `Payment` row's id, which is not a secret and authorizes nothing. **The re-fetch is the stronger check**: a signature proves only that Mercado Pago sent the bytes, while the re-fetch proves the payment exists, is approved, is for the right amount and is bound to our booking. Storing a webhook secret is deferred as **T60**. A `validateSignature()` that passes when no secret is configured must never be introduced — it reads as protection in every later review while protecting nothing. (Decided in B5 design D1.)
 
 4. **Transfer deposit and approval:** committing to a bank transfer opens a `BANK_TRANSFER` `Payment` and **extends the hold** to `TRANSFER_HOLD_DURATION_MINUTES`, under the shared clamp — the destination is not disclosed before that write, so a client never transfers into a window about to lapse. Uploading a receipt moves Booking → `PENDING_APPROVAL` (slot still held). Owner approval → Payment `APPROVED`, Booking `CONFIRMED`. Owner rejection → Payment `REJECTED`, Booking `CANCELLED`, slot released.
@@ -436,6 +438,8 @@ export function createPrismaClient(connectionString: string): PrismaClient {
    >
    > **`PENDING_APPROVAL` is not resolved by time, with one exception.** `holdExpiresAt` is the deadline for uploading a receipt, not for answering one, so the sweeper must not expire this status on it. A `PENDING_APPROVAL` booking whose **`startTime` has passed** is the exception and is eligible for expiry: its slot is unsellable regardless, and without this the status has no exit that does not depend on the owner being attentive. **The sweep in rule 2 is the job that acts on this exception**, and it is the only one — the grace window does not apply here, because the grace protects an in-flight gateway confirmation and this path has no gateway.
    >
+   > **An applied approval hands off to the same confirmation email, under the same rules.** After the transaction, never inside it; keyed on the approval having been *applied*, so an approval that matched zero rows sends nothing; and non-fatal, so the receipt, the payment and the booking stay approved and confirmed when the provider is down. **This is the path where the email matters most**: the Mercado Pago client is at least looking at a page when their booking confirms, while a transfer client is told a human will decide and then learns the answer only if something reaches them. Correspondingly, the owner's success message MUST NOT claim the client was notified unless the send was recorded — telling an owner that a client has been informed when they have not removes the owner's reason to make contact by hand, which is the only recovery this product offers.
+
    > **Nothing here verifies that money moved.** There is no gateway on this path. The receipt is evidence for a human, the review surface renders the snapshotted deposit beside it, and no code may treat an uploaded file as proof of payment.
 
 5. **Deposit computation:** `depositAmount` is derived once from `PaymentConfig` (`FIXED` or `PERCENT` of `priceAtBooking`) at booking creation and snapshotted on the booking.
@@ -538,12 +542,32 @@ Transfer receipts (B6) are the only upload in this product whose author has **no
 - **Mercado Pago Access Token** and the DB connection string are server-only; never sent to the browser. Only the MP **Public Key** is exposed to the client.
 - Validate the Mercado Pago **webhook signature** on every notification.
 
+**Global validation is for variables without which nothing works.** `RESEND_API_KEY` and
+`PAYMENT_CREDENTIALS_KEY` are **not** among them and MUST NOT be added to this list — see the rule
+below. A deploy missing either must break one feature, not every page.
+
 ```typescript
-const required = ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'RESEND_API_KEY'];
+const required = ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 required.forEach((v) => {
   if (!process.env[v]) throw new Error(`Missing required env var: ${v}`);
 });
 ```
+
+- **A per-feature secret is validated at that feature's composition root**, never here. This covers
+  `PAYMENT_CREDENTIALS_KEY` (payment credentials) and `RESEND_API_KEY` (confirmation email). Without
+  the email key, bookings still confirm, the missing variable is named in the log, and no page,
+  endpoint or dashboard action fails.
+- **A secret is set only where it is used.** `RESEND_API_KEY` belongs on the application Worker and
+  not on the scheduled one, which sends nothing: a secret placed where it is not needed is a second
+  place to remember when rotating it.
+- **A non-secret deployment value belongs in committed `wrangler.jsonc` `vars`**, not in the
+  Cloudflare dashboard — `APP_ORIGIN` and `EMAIL_FROM` both. A value kept only in the dashboard is a
+  value the next deploy from a fresh clone silently lacks.
+- **`APP_ORIGIN`'s absence is no longer only cosmetic.** It used to degrade social-preview tags with
+  no error and no log. It now also removes the link from every confirmation email, which is most of
+  the reason the email exists, so any path composing an outbound link logs an error when no origin
+  resolves. An outbound link is built from configuration alone: no request header may contribute to
+  it, and no loopback or relative URL may be emitted into a message that cannot be recalled.
 
 ### Encrypting a stored secret
 
@@ -568,6 +592,36 @@ required.forEach((v) => {
   A missing secret must break one page, not the whole dashboard.
 - **Surface an undecryptable value as its own state** in the UI, distinct from "not configured".
   Otherwise the failure is discovered by a user action far from its cause.
+
+### Calling an external service
+
+> Established by B5's Mercado Pago gateway and followed by N1's email sender. Follow it for any future one.
+
+- **The platform `fetch`, and no vendor SDK.** A handful of endpoints does not justify a package
+  against a Worker bundle already near its size ceiling (`tech-debt.md` T51). Both integrations in
+  this product are two endpoints and one endpoint respectively, and both are hand-rolled.
+- **An injected `fetch`-shaped transport** (`constructor(private readonly transport: typeof fetch = fetch)`),
+  so tests never reach the network and the timeout behaviour is provable rather than assumed.
+- **Every call bounded by an abort timeout.** An unbounded call leaves a request pending until the
+  platform kills it, after which the client submits again and two writes race.
+- **The credential in a header, never in a URL or a query string.**
+- **No response body ever leaves the adapter** — not to a log, not attached to an error, not on a
+  returned value. This is not fastidiousness: Mercado Pago's rejection payloads echo the credential
+  they rejected, and an email provider's `422` echoes the recipient address and whatever link the
+  message carried. A body that reaches a log is a leaked secret in both cases.
+- **No external call inside a database transaction.** A third party's latency must never hold a
+  pooled connection the owner's dashboard is also waiting on. The structural form of this rule is
+  that the adapter imports nothing from the database layer.
+- **A failure that must not be fatal is returned as a value, never thrown.** Where a caller sits on a
+  path whose failure semantics are already decided — a webhook that answers `200` to everything
+  handled, an owner action that already committed — the port returns a small closed set of outcomes
+  and the adapter catches its own transport errors and its own abort. A `throw` there would reach the
+  route's `catch`, become a `503`, and ask the third party to redeliver work that already succeeded.
+  Making the failure a value makes that shape unreachable rather than merely avoided by a `try`
+  somebody could later remove.
+- **The outcome set distinguishes what leads to different action.** At minimum: accepted · refused
+  for a reason a retry cannot change · rate-limited or quota-exhausted · transient. Collapsing the
+  third into the second hides the failure an operator most needs to see.
 
 ### AuthN / AuthZ
 

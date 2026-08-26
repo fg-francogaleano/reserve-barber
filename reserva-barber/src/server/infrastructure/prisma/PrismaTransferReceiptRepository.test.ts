@@ -269,7 +269,9 @@ describe('approve', () => {
       now: NOW,
     });
 
-    expect(result).toEqual({ outcome: 'applied' });
+    // Carries the booking it applied to (N1), so the caller can announce the
+    // confirmation against the row this transaction actually confirmed.
+    expect(result).toEqual({ outcome: 'applied', bookingId: BOOKING });
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.booking.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -348,7 +350,9 @@ describe('reject', () => {
       now: NOW,
     });
 
-    expect(result).toEqual({ outcome: 'applied' });
+    // Carries the booking it applied to (N1), so the caller can announce the
+    // confirmation against the row this transaction actually confirmed.
+    expect(result).toEqual({ outcome: 'applied', bookingId: BOOKING });
     // CANCELLED, not EXPIRED: a human decided this, and those two statuses are
     // how the product tells a decision apart from a deadline.
     expect(tx.booking.updateMany).toHaveBeenCalledWith(

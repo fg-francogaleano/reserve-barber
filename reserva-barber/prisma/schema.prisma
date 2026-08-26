@@ -463,6 +463,36 @@ model Booking {
   cancelledAt   DateTime?    @db.Timestamptz(3)
   cancelledBy   CancelledBy?
 
+  /// When the email provider accepted the confirmation message (N1).
+  ///
+  /// **This is not an idempotency key and nothing reads it before sending.**
+  /// At-most-once delivery is already a property of the confirming transition:
+  /// both writers update this row conditionally on the status they expect, so
+  /// exactly one caller per booking ever observes the confirming outcome. A
+  /// second mechanism claiming the same guarantee would be a second thing to
+  /// get wrong, and a read-then-send would reintroduce the race the guarded
+  /// update exists to avoid.
+  ///
+  /// What it buys is a question the product otherwise cannot ask: **a null on a
+  /// CONFIRMED booking means that client was never told their appointment is
+  /// real.** That set is a WHERE clause rather than a log line nobody reads.
+  ///
+  /// Written after the provider accepts, OUTSIDE the confirming transaction, by
+  /// a write that disturbs nothing about what the booking is. Its own failure is
+  /// logged and swallowed — a booking must never become unconfirmed because a
+  /// bookkeeping write failed.
+  ///
+  /// Prisma bumps updatedAt alongside it, as it does on every write through the
+  /// client. The N1 gate found that by comparing the whole row before and after;
+  /// an earlier version of this comment claimed "one column and nothing else",
+  /// which was never true.
+  ///
+  /// No index, deliberately: nothing queries it yet, and the story that gives
+  /// that set a surface is the story that should measure the predicate. The
+  /// dashboard aggregates were indexed by measurement rather than assumption
+  /// (D1), and this follows the same rule.
+  confirmationEmailSentAt DateTime? @db.Timestamptz(3)
+
   /// A list, not a single payment: a rejected attempt does not block a retry,
   /// so a booking can accumulate several. At most one of them is ever live,
   /// which is a partial unique index on Payment rather than a rule here.
