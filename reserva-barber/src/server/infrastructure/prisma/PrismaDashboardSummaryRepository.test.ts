@@ -330,3 +330,63 @@ describe('PrismaDashboardSummaryRepository - findFilterableBarbers', () => {
     expect(call.where.isActive).toBeUndefined();
   });
 });
+
+/**
+ * C1: the projection grows by exactly one field.
+ *
+ * The rule it amends said this list's projection must not widen — written when
+ * the only thing being added was a control the row's existing columns already
+ * supported. It does not extend to a fact the row does not carry, and the
+ * owner's only channel for a client cancellation is this list.
+ */
+describe('PrismaDashboardSummaryRepository - the canceller (C1)', () => {
+  it('selects the canceller', async () => {
+    const { db, raw } = createDb();
+
+    await new PrismaDashboardSummaryRepository(db).findRecentForOwner({
+      ownerId: OWNER,
+      limit: 10,
+    });
+
+    const { select } = vi.mocked(raw.booking.findMany).mock.calls[0][0];
+    expect(select.cancelledBy).toBe(true);
+  });
+
+  it('adds nothing else', async () => {
+    // Asserted by name rather than by count, so a later story adding a field
+    // fails here for a reason somebody has to read.
+    const { db, raw } = createDb();
+
+    await new PrismaDashboardSummaryRepository(db).findRecentForOwner({
+      ownerId: OWNER,
+      limit: 10,
+    });
+
+    const { select } = vi.mocked(raw.booking.findMany).mock.calls[0][0];
+    expect(Object.keys(select).sort()).toEqual(
+      [
+        'barber',
+        'cancelledBy',
+        'client',
+        'depositAmount',
+        'id',
+        'service',
+        'startTime',
+        'status',
+      ].sort()
+    );
+  });
+
+  it('still carries no client email or telephone', async () => {
+    const { db, raw } = createDb();
+
+    await new PrismaDashboardSummaryRepository(db).findRecentForOwner({
+      ownerId: OWNER,
+      limit: 10,
+    });
+
+    const select = JSON.stringify(vi.mocked(raw.booking.findMany).mock.calls[0][0].select);
+    expect(select).not.toContain('email');
+    expect(select).not.toContain('phone');
+  });
+});

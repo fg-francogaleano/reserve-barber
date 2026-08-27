@@ -311,6 +311,50 @@ export type CancelBookingResult =
   /** The booking id resolved to nothing within this owner's scope. */
   | { readonly outcome: 'notFound' };
 
+/**
+ * Why a client's cancellation was refused (C1).
+ *
+ * **Two reasons rather than one**, because the client acts on them differently:
+ * a started appointment is over and the only thing left is to contact the shop,
+ * while a booking that moved underneath the attempt may already be in the state
+ * they wanted. A single refusal would leave them re-submitting a control that
+ * can never succeed.
+ */
+export type ClientCancellationRefusal =
+  /** The appointment had already begun. Nothing was left to release. */
+  | 'alreadyStarted'
+  /** Confirmed, swept, already cancelled, or a receipt awaiting review. */
+  | 'noLongerCancellable';
+
+/**
+ * What a client's cancellation attempt did (C1).
+ *
+ * **It carries the shop's slug on every outcome that has one**, so the caller
+ * can return the client to their own page using a value this projection
+ * produced rather than one the submission supplied. `notFound` carries none,
+ * deliberately: there is nothing to return, and inventing a destination would
+ * disclose whether the token resolved.
+ *
+ * `applied` carries `depositApproved` for the reason the owner's result gives —
+ * the transaction is the only place that question has no race.
+ */
+export type CancelBookingByTokenResult =
+  | {
+      readonly outcome: 'applied';
+      readonly bookingId: string;
+      readonly slug: string;
+      readonly depositApproved: boolean;
+    }
+  | {
+      readonly outcome: 'notCancellable';
+      readonly bookingId: string;
+      readonly slug: string;
+      readonly status: string;
+      readonly reason: ClientCancellationRefusal;
+    }
+  /** The token matched nothing, or its shop has no public profile. */
+  | { readonly outcome: 'notFound' };
+
 export interface IBookingRepository {
   /**
    * Holds a slot, or reports why it could not.
@@ -467,8 +511,18 @@ export interface IBookingRepository {
    * complete, and leaving it pending keeps it counted as live by the
    * one-live-payment index.
    *
-   * A `PENDING` receipt becomes `REJECTED` with a `reviewedAt`, so a row does
-   * not go on asserting that a human owes an answer when nobody does.
+   * **A `PENDING` receipt is left exactly as it is**, and this contract claimed
+   * the opposite until C1 corrected it. C2's first draft did set it to
+   * `REJECTED` with a `reviewedAt`; an existing B6 test went red, because that
+   * made a cancellation byte-identical to a receipt rejection and one of the two
+   * would then necessarily have got the wrong message on the client's page. The
+   * implementation, the spec and C2's design all record the reversal — this
+   * sentence did not, and a contract that contradicts the code beneath it is
+   * worse than no contract.
+   *
+   * `PENDING` is also the more honest record: nobody reviewed the document.
+   * `REJECTED` would assert a review that never happened, for a queue that
+   * already hides the row by filtering on the booking's status.
    *
    * `ownerId` scopes the resolution: a booking belonging to another owner and
    * one that does not exist MUST both answer `notFound`.
@@ -478,6 +532,40 @@ export interface IBookingRepository {
     ownerId: string;
     now: Date;
   }): Promise<CancelBookingResult>;
+
+  /**
+   * The **client** cancels their own booking, by cancellation token (C1).
+   *
+   * **A second method rather than a widened `cancelByOwner`**, because the two
+   * resolve the booking through different credentials — a session joined through
+   * `barber.location.ownerId`, versus a unique token — and one method accepting
+   * "either" is one edit away from accepting neither, on the write that destroys
+   * a confirmed appointment.
+   *
+   * The interior is the same: one transaction, no advisory lock (a release
+   * cannot double-book), the booking update **conditional on the status it
+   * read**, an `APPROVED` payment protected by a `where` clause rather than by a
+   * branch, a `PENDING` payment set to `REJECTED`, and **no write to any
+   * receipt**. It sets `cancelledBy` to `CLIENT`, records `cancelledAt`, and
+   * clears `holdExpiresAt`.
+   *
+   * **Eligibility is decided by `isCancellableByClient` in the application, and
+   * the transaction guards on status alone.** Re-expressing "the hold is still
+   * live" in SQL is the drift `createProvisional` forbids by name. Status is
+   * also the only one of the predicate's inputs that races: the sweep writes
+   * `EXPIRED` and a notification writes `CONFIRMED`, while `startTime` never
+   * moves and `holdExpiresAt` only ever moves *later* — a commitment to transfer
+   * extends it, which can make a hold more live but never less.
+   *
+   * A token matching nothing and a booking whose shop has no public profile MUST
+   * both answer `notFound`. The second is unreachable through the flow, which is
+   * entered by slug, and is reported rather than papered over with a redirect
+   * that would 404 after a real cancellation.
+   */
+  cancelByToken(input: {
+    cancellationToken: string;
+    now: Date;
+  }): Promise<CancelBookingByTokenResult>;
 }
 
 /** Re-exported so the transaction's re-assertion has one vocabulary for windows. */

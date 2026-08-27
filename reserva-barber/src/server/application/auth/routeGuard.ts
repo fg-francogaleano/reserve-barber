@@ -62,6 +62,29 @@ export const PUBLIC_MP_WEBHOOK = '/api/webhooks/mercadopago';
  * `Referer` headers, rather than in a path this guard would then have to match
  * by pattern.
  */
+
+/**
+ * The public cancellation write (C1) — the client ending their own booking.
+ *
+ * **A sibling of `PUBLIC_BOOKING_API` beneath the same segment, and neither
+ * admits the other.** The comparison below is `===`, so `/api/bookings` opens
+ * exactly one path and this is a second one opened by name. Reading the first
+ * as a prefix would have admitted this endpoint before it was reviewed — and
+ * every other one created beneath that segment afterwards.
+ *
+ * It carries **no identifier**, for the reason `PUBLIC_PAYMENT_API` records:
+ * an identifier could only be admitted by teaching a deny-by-default guard to
+ * match patterns, in the one place where a loose match is most expensive. The
+ * cancellation token travels in the request body, which also keeps a live
+ * credential out of access logs and `Referer` headers.
+ *
+ * **Opening this is opening a destructive write to anonymous callers**, which
+ * no other entry in this set is: the others create a booking or move a payment
+ * forward. What protects it is not the guard — it is the credential in the body
+ * and the confirmation step in front of it (`tech-debt.md` T69).
+ */
+export const PUBLIC_CANCELLATION_API = '/api/bookings/cancel';
+
 export const PUBLIC_TRANSFER_API = '/api/payments/transfer';
 
 /** The public API paths, matched by equality and never by prefix. */
@@ -69,6 +92,7 @@ const PUBLIC_API_PATHS: readonly string[] = [
   PUBLIC_BOOKING_API,
   PUBLIC_PAYMENT_API,
   PUBLIC_TRANSFER_API,
+  PUBLIC_CANCELLATION_API,
   PUBLIC_MP_WEBHOOK,
 ];
 

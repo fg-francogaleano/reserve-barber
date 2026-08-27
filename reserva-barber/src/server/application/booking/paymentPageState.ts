@@ -33,6 +33,8 @@ export type PaymentPageState =
   | 'confirmed'
   /** The shop cancelled the appointment. Not an expiry, and not the client's doing. */
   | 'cancelledByShop'
+  /** The client cancelled it themselves. A receipt of their own action, not an apology. */
+  | 'cancelledByClient'
   /** Cancelled, with no record of by whom. Every row predating C2 is one. */
   | 'cancelled'
   /** The gateway rejected the payment and the hold is still live. */
@@ -160,13 +162,25 @@ export function resolvePaymentPageState(input: PaymentPageInput): PaymentPageSta
    * was gone" is not what happened to somebody the shop cancelled on.
    *
    * A null canceller is every row written before this was recorded, and it
-   * renders the unattributed form rather than blaming the shop — inventing the
-   * actor would be inventing a fact. `CLIENT` lands there too until C1 gives it
-   * a state of its own, which is the safe direction: the alternative is telling
-   * a client the shop cancelled a booking they cancelled themselves.
+   * renders the unattributed form rather than blaming anyone — inventing the
+   * actor would be inventing a fact. **`CLIENT` now has a state of its own**
+   * (C1); until it did, it landed on the unattributed form as the safe
+   * direction, the alternative being to tell a client the shop cancelled a
+   * booking they cancelled themselves.
+   *
+   * The three are chosen by the canceller and by nothing else, because the
+   * status cannot tell them apart and they are opposite messages: an apology,
+   * a receipt, and a fact with no author.
    */
   if (input.bookingStatus === 'CANCELLED') {
-    return input.cancelledBy === 'OWNER' ? 'cancelledByShop' : 'cancelled';
+    switch (input.cancelledBy) {
+      case 'OWNER':
+        return 'cancelledByShop';
+      case 'CLIENT':
+        return 'cancelledByClient';
+      case null:
+        return 'cancelled';
+    }
   }
 
   const holdIsLive = blocksAvailability(

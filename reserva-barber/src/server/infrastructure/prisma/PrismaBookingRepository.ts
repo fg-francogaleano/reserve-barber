@@ -3,6 +3,7 @@ import type {
   BookingForConfirmationEmail,
   BookingForPaymentInitiation,
   BookingForTransfer,
+  CancelBookingByTokenResult,
   CancelBookingResult,
   PublicTransferDestination,
   HeldBooking,
@@ -14,6 +15,7 @@ import type { Interval } from '@/server/domain/models/availability';
 import { overlaps } from '@/server/domain/models/availability';
 import {
   blocksAvailability,
+  isCancellableByClient,
   isCancellableByOwner,
   BOOKING_STATUSES,
   type BookingStatus,
@@ -817,6 +819,149 @@ export class PrismaBookingRepository implements IBookingRepository {
       };
     }, TRANSACTION_OPTIONS);
   }
+
+  /**
+   * The client cancels their own booking, by cancellation token (C1).
+   *
+   * **Two reads and one transaction.** The first read resolves the token, gets
+   * the columns the eligibility predicate needs and the slug the caller will
+   * redirect with, and rejects cheaply — a forged token must not cost a
+   * transaction on an endpoint any stranger can post to. The transaction then
+   * guards on **the status that read observed**, so a booking a notification
+   * confirmed or the sweep expired in between matches zero rows.
+   *
+   * **The eligibility decision is `isCancellableByClient`'s and is made here in
+   * TypeScript**, never re-expressed in SQL: the predicate reads a deadline, and
+   * a SQL copy would drift from the availability read the first time either is
+   * refined. Status is the only one of its inputs that races — `startTime` never
+   * moves, and `holdExpiresAt` only ever moves later — so guarding the write on
+   * status alone is sufficient.
+   */
+  async cancelByToken(input: {
+    cancellationToken: string;
+    now: Date;
+  }): Promise<CancelBookingByTokenResult> {
+    const row = await this.db.booking.findUnique({
+      where: { cancellationToken: input.cancellationToken },
+      select: {
+        id: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        holdExpiresAt: true,
+        barber: {
+          select: {
+            location: {
+              select: {
+                owner: { select: { businessProfile: { select: { publicSlug: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // A token matching nothing discloses nothing about whether it ever existed.
+    if (row === null) return { outcome: 'notFound' };
+
+    const slug = row.barber.location.owner.businessProfile?.publicSlug;
+    // A booking whose shop has no public profile has nowhere to send its client
+    // back to. Unreachable through the flow, which is entered by slug, and
+    // answered identically to a token that matched nothing rather than papered
+    // over with a redirect that would 404 after a real cancellation.
+    if (slug === undefined) return { outcome: 'notFound' };
+
+    const candidate = {
+      startTime: row.startTime,
+      endTime: row.endTime,
+      status: row.status as BookingStatus,
+      holdExpiresAt: row.holdExpiresAt,
+    };
+
+    if (!isCancellableByClient(candidate, input.now)) {
+      return {
+        outcome: 'notCancellable',
+        bookingId: row.id,
+        slug,
+        status: row.status,
+        // **The started reason wins where both are true.** A past appointment
+        // is also terminal in every other sense, and "it already started" is
+        // the one the client can act on.
+        reason:
+          row.startTime.getTime() <= input.now.getTime() ? 'alreadyStarted' : 'noLongerCancellable',
+      };
+    }
+
+    return this.db.$transaction(async (client) => {
+      const tx = client as unknown as CancelByTokenTx;
+
+      const cancelled = await tx.booking.updateMany({
+        // **Guarded on the status the read observed**, not on a list. The
+        // eligibility answer above was reached against exactly this value, so
+        // anything that moved it invalidates that answer and must match nothing.
+        where: { id: row.id, status: row.status },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: input.now,
+          // The column's second writer, and the first to store this value.
+          cancelledBy: 'CLIENT',
+          // Cleared, deliberately unlike an expiry — which preserves it as the
+          // evidence of why that row ended.
+          holdExpiresAt: null,
+        },
+      });
+
+      if (cancelled.count === 0) {
+        const current = await tx.booking.findUnique({
+          where: { id: row.id },
+          select: { status: true },
+        });
+        return {
+          outcome: 'notCancellable' as const,
+          bookingId: row.id,
+          slug,
+          status: current?.status ?? 'MISSING',
+          reason: 'noLongerCancellable' as const,
+        };
+      }
+
+      /**
+       * **Guarded on `PENDING`, not branched on it**, the same way the owner's
+       * cancellation is. An `APPROVED` payment matches zero rows here, so the
+       * database refuses to falsify a charge that really happened rather than
+       * the code remembering to skip it.
+       */
+      await tx.payment.updateMany({
+        where: { bookingId: row.id, status: 'PENDING' },
+        data: { status: 'REJECTED' },
+      });
+
+      /**
+       * **No receipt is written, in any state.** Unreachable in practice —
+       * `isCancellableByClient` refuses `PENDING_APPROVAL`, which is the only
+       * status a receipt accompanies — and stated anyway, because the reason is
+       * the same one C2 recorded: `PENDING` is the honest record of a document
+       * nobody reviewed.
+       */
+
+      /**
+       * Asked inside the transaction because this is where it has no race: the
+       * payment write above has just refused to touch an approval, so an
+       * approval found here is the one that survived.
+       */
+      const approved = await tx.payment.findFirst({
+        where: { bookingId: row.id, status: 'APPROVED' },
+        select: { id: true },
+      });
+
+      return {
+        outcome: 'applied' as const,
+        bookingId: row.id,
+        slug,
+        depositApproved: approved !== null,
+      };
+    }, TRANSACTION_OPTIONS);
+  }
 }
 
 /** The statuses the guard admits, derived from the domain predicate. */
@@ -831,6 +976,26 @@ const CANCELLABLE_STATUSES: BookingStatus[] = BOOKING_STATUSES.filter(isCancella
  * rather than asserted.
  */
 interface CancelTx {
+  booking: {
+    updateMany(args: unknown): Promise<{ count: number }>;
+    findUnique(args: unknown): Promise<{ status: string } | null>;
+  };
+  payment: {
+    updateMany(args: unknown): Promise<{ count: number }>;
+    findFirst(args: unknown): Promise<{ id: string } | null>;
+  };
+}
+
+/**
+ * The slice of the transaction client the client's cancellation uses.
+ *
+ * **It names no `$executeRaw` and no `transferReceipt`**, which is the
+ * type-level form of two of this write's guarantees: it takes no lock, and it
+ * touches no receipt. An implementation that tried either would not compile.
+ * B4 shipped a lock defect past a test that mocked the call, so here the
+ * absences are structural rather than asserted.
+ */
+interface CancelByTokenTx {
   booking: {
     updateMany(args: unknown): Promise<{ count: number }>;
     findUnique(args: unknown): Promise<{ status: string } | null>;

@@ -108,3 +108,49 @@ describe('resolveConfirmationRefresh - the emitted refresh', () => {
     expect(refresh).toBeNull();
   });
 });
+
+/**
+ * C1: the refresh carries only what this page owns.
+ *
+ * **The defect this closes.** The page rebuilt the refresh URL from *every*
+ * parameter it was routed with, so a parameter belonging to another feature
+ * rode along on a timed navigation. C1 adds one — the cancellation
+ * confirmation — and without this the page would re-enter that confirmation on
+ * its own, every five seconds, while the client read an irreversible warning.
+ *
+ * The allowlist lives here rather than at the caller because this module owns
+ * the refresh: a caller cannot defeat it by passing something extra.
+ */
+describe('resolveConfirmationRefresh - the URL it refreshes to', () => {
+  const refreshUrlFor = (currentUrl: string): string => {
+    const refresh = resolveConfirmationRefresh({ attempt: undefined, currentUrl });
+    expect(refresh).not.toBeNull();
+    return refresh!.url;
+  };
+
+  it('should_drop_a_parameter_this_page_does_not_own', () => {
+    expect(refreshUrlFor('/b/shop/reserva/tok?cancelar=1')).not.toContain('cancelar');
+  });
+
+  it('should_keep_the_outcome_code', () => {
+    expect(refreshUrlFor('/b/shop/reserva/tok?estado=pago-pendiente')).toContain(
+      'estado=pago-pendiente'
+    );
+  });
+
+  it('should_keep_the_attempt_counter_it_sets', () => {
+    expect(refreshUrlFor('/b/shop/reserva/tok')).toContain('intento=2');
+  });
+
+  it('should_drop_an_unknown_parameter_while_keeping_the_known_ones', () => {
+    const url = refreshUrlFor('/b/shop/reserva/tok?estado=pago-pendiente&utm_source=mail&cancelar=1');
+    expect(url).toContain('estado=pago-pendiente');
+    expect(url).toContain('intento=2');
+    expect(url).not.toContain('utm_source');
+    expect(url).not.toContain('cancelar');
+  });
+
+  it('should_preserve_the_path_untouched', () => {
+    expect(refreshUrlFor('/b/shop/reserva/tok?cancelar=1')).toContain('/b/shop/reserva/tok');
+  });
+});

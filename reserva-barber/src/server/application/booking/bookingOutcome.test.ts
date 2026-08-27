@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseOutcomeCode, parseEcho, serializeEcho, BOOKING_OUTCOMES } from './bookingOutcome';
+import {
+  parseOutcomeCode,
+  parseEcho,
+  serializeEcho,
+  parsePaymentOutcomeCode,
+  BOOKING_OUTCOMES,
+  PAYMENT_OUTCOMES,
+} from './bookingOutcome';
 
 describe('parseOutcomeCode', () => {
   it.each(BOOKING_OUTCOMES)('should_accept_the_known_code_%s', (code) => {
@@ -88,5 +95,39 @@ describe('parseEcho - a cookie is client-controlled and nothing here trusts it',
       fieldErrors: {},
       submitted: { name: 'Ana' },
     });
+  });
+});
+
+/**
+ * C1: the two ways a client cancellation can be refused.
+ *
+ * **Two, not one.** "Your appointment already started" and "this booking moved
+ * underneath you" are different facts a client acts on differently, and a
+ * single generic refusal would leave them re-submitting a control that will
+ * never succeed.
+ *
+ * **And no success code at all.** The page reads live state, so a cancelled
+ * booking renders the cancelled state on its own; a success code could only
+ * agree with the database or be ignored.
+ */
+describe('bookingOutcome - the cancellation refusals', () => {
+  it('should_parse_the_started_appointment_refusal', () => {
+    expect(parsePaymentOutcomeCode('turno-empezado')).toBe('turno-empezado');
+  });
+
+  it('should_parse_the_generic_refusal', () => {
+    expect(parsePaymentOutcomeCode('cancelacion-no-posible')).toBe('cancelacion-no-posible');
+  });
+
+  it('should_not_carry_a_success_code', () => {
+    // Asserted rather than merely omitted: the absence is a decision.
+    for (const code of PAYMENT_OUTCOMES) {
+      expect(code).not.toBe('turno-cancelado');
+      expect(code).not.toBe('cancelacion-ok');
+    }
+  });
+
+  it('should_still_refuse_a_forged_cancellation_code', () => {
+    expect(parsePaymentOutcomeCode('cancelacion-si-posible')).toBeNull();
   });
 });

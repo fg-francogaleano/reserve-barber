@@ -6,6 +6,7 @@ import {
   DASHBOARD_HOME,
   PUBLIC_PROFILE_ROOT,
   PUBLIC_BOOKING_API,
+  PUBLIC_CANCELLATION_API,
 } from './routeGuard';
 
 describe('decideGuardAction', () => {
@@ -407,5 +408,63 @@ describe('the confirmation route is still the one that suppresses the referrer',
     // existence must not stop the confirmation route from being recognised.
     expect(isBookingConfirmationRoute('/b/barberia-don-juan/pago/retorno')).toBe(false);
     expect(isBookingConfirmationRoute('/b/barberia-don-juan/reserva/tok-1')).toBe(true);
+  });
+});
+
+describe('decideGuardAction - the public cancellation write (C1)', () => {
+  it('should_let_an_unauthenticated_client_reach_the_cancellation', () => {
+    // The client holding the link has no session and never will: guest clients
+    // do not have accounts in this product.
+    const action = decideGuardAction({
+      hasSession: false,
+      pathname: PUBLIC_CANCELLATION_API,
+      search: '',
+    });
+
+    expect(action).toEqual({ type: 'continue' });
+  });
+
+  it('should_let_an_authenticated_owner_reach_it_too', () => {
+    const action = decideGuardAction({
+      hasSession: true,
+      pathname: PUBLIC_CANCELLATION_API,
+      search: '',
+    });
+
+    expect(action).toEqual({ type: 'continue' });
+  });
+
+  it('should_sit_beneath_the_booking_root_without_opening_it', () => {
+    // The entry that matters most: `/api/bookings` is the booking *write*, and
+    // this is a sibling beneath the same segment. Neither admits the other.
+    expect(PUBLIC_CANCELLATION_API.startsWith(`${PUBLIC_BOOKING_API}/`)).toBe(true);
+  });
+
+  // Exact, never a prefix. Opening any segment above this would admit every
+  // endpoint created beneath it at the moment it exists — precisely what
+  // deny-by-default prevents.
+  it.each([
+    '/api/bookings/cancel/',
+    '/api/bookings/cancelar',
+    '/api/bookings/cancel/anything',
+    '/api/bookings/cancel/../../servicios',
+  ])('should_still_guard_the_neighbouring_path_%s', (pathname) => {
+    const action = decideGuardAction({ hasSession: false, pathname, search: '' });
+
+    expect(action.type).not.toBe('continue');
+  });
+
+  it('should_still_guard_dashboard_paths_after_the_cancellation_was_opened', () => {
+    const action = decideGuardAction({ hasSession: false, pathname: '/servicios', search: '' });
+
+    expect(action.type).toBe('redirect');
+  });
+
+  it('should_carry_no_identifier_in_its_path', () => {
+    // Because the match is `===`, an identifier could only be admitted by
+    // teaching a deny-by-default guard to match patterns. The token travels in
+    // the body, where it also stays out of access logs and `Referer` headers.
+    expect(PUBLIC_CANCELLATION_API).toBe('/api/bookings/cancel');
+    expect(PUBLIC_CANCELLATION_API).not.toMatch(/[:[\]{}*]/);
   });
 });

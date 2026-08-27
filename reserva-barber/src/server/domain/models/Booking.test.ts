@@ -3,6 +3,7 @@ import {
   blocksAvailability,
   holdExpiresAtFor,
   holdSweepCutoff,
+  isCancellableByClient,
   isCancellableByOwner,
   transferHoldExpiresAtFor,
   BOOKING_STATUSES,
@@ -291,5 +292,120 @@ describe('isCancellableByOwner', () => {
     // and the list this is offered from is ordered by recency.
     expect(isCancellableByOwner('CONFIRMED')).toBe(true);
     expect(isCancellableByOwner.length).toBe(1);
+  });
+});
+
+/**
+ * C1: which bookings the *client* may cancel.
+ *
+ * Built on `blocksAvailability` rather than on a status list, because that
+ * predicate already answers this question: is this booking still holding its
+ * time? A client cancels in order to give time back, so a booking holding none
+ * has nothing to release.
+ */
+describe('isCancellableByClient', () => {
+  const future = { startTime: new Date('2026-08-18T13:00:00.000Z'), endTime: new Date('2026-08-18T13:30:00.000Z') };
+  const past = { startTime: new Date('2026-08-17T13:00:00.000Z'), endTime: new Date('2026-08-17T13:30:00.000Z') };
+
+  it('should_admit_a_confirmed_appointment_that_has_not_started', () => {
+    expect(isCancellableByClient(booking({ status: 'CONFIRMED', ...future }), NOW)).toBe(true);
+  });
+
+  it('should_admit_a_pending_payment_whose_hold_is_still_live', () => {
+    expect(
+      isCancellableByClient(
+        booking({ status: 'PENDING_PAYMENT', holdExpiresAt: IN_TEN_MINUTES, ...future }),
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it('should_admit_a_pending_payment_carrying_no_hold_expiry', () => {
+    // Same reading `blocksAvailability` gives it: absence is not expiry.
+    expect(
+      isCancellableByClient(
+        booking({ status: 'PENDING_PAYMENT', holdExpiresAt: null, ...future }),
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it('should_refuse_an_appointment_that_has_already_started', () => {
+    // A past slot cannot be released. Cancelling one would only record an
+    // appointment that happened as cancelled — which the dashboard counts.
+    expect(isCancellableByClient(booking({ status: 'CONFIRMED', ...past }), NOW)).toBe(false);
+  });
+
+  it('should_refuse_at_the_exact_start_instant', () => {
+    // Strictly after: "has not started" is false at the moment something begins.
+    expect(
+      isCancellableByClient(
+        booking({ status: 'CONFIRMED', startTime: NOW, endTime: new Date('2026-08-17T15:30:00.000Z') }),
+        NOW
+      )
+    ).toBe(false);
+  });
+
+  it('should_refuse_a_booking_whose_hold_has_lapsed', () => {
+    // The paid-slot-lost shape: the slot is already gone, and cancelling would
+    // convert the client's bad luck into their own recorded decision.
+    expect(
+      isCancellableByClient(
+        booking({ status: 'PENDING_PAYMENT', holdExpiresAt: AN_HOUR_AGO, ...future }),
+        NOW
+      )
+    ).toBe(false);
+  });
+
+  it('should_refuse_a_receipt_that_is_under_review', () => {
+    // The client already transferred real money and a human owes them an
+    // answer. The owner's queue filters on the booking's status, so cancelling
+    // would hide the receipt from the only surface anybody looks at it on.
+    expect(
+      isCancellableByClient(
+        booking({ status: 'PENDING_APPROVAL', holdExpiresAt: AN_HOUR_AGO, ...future }),
+        NOW
+      )
+    ).toBe(false);
+  });
+
+  it.each(['CANCELLED', 'EXPIRED'] as const)('should_refuse_%s_because_it_is_terminal', (status) => {
+    expect(isCancellableByClient(booking({ status, ...future }), NOW)).toBe(false);
+  });
+
+  it('should_cover_every_member_of_the_status_enum', () => {
+    for (const status of BOOKING_STATUSES) {
+      expect(typeof isCancellableByClient(booking({ status, ...future }), NOW)).toBe('boolean');
+    }
+  });
+
+  it('should_never_admit_a_booking_that_no_longer_blocks_availability', () => {
+    // The dependency stated as a property rather than left to the reader: this
+    // predicate can only ever be narrower than `blocksAvailability`.
+    for (const status of BOOKING_STATUSES) {
+      for (const holdExpiresAt of [null, IN_TEN_MINUTES, AN_HOUR_AGO]) {
+        for (const times of [future, past]) {
+          const candidate = booking({ status, holdExpiresAt, ...times });
+          if (isCancellableByClient(candidate, NOW)) {
+            expect(blocksAvailability(candidate, NOW)).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('should_disagree_with_the_owner_rule_about_a_past_appointment', () => {
+    // The asymmetry, asserted rather than described. A no-show is precisely the
+    // past appointment an owner wants off the books; for a client it is the one
+    // case where cancelling achieves nothing.
+    const noShow = booking({ status: 'CONFIRMED', ...past });
+    expect(isCancellableByOwner(noShow.status)).toBe(true);
+    expect(isCancellableByClient(noShow, NOW)).toBe(false);
+  });
+
+  it('should_disagree_with_the_owner_rule_about_a_receipt_under_review', () => {
+    const underReview = booking({ status: 'PENDING_APPROVAL', ...future });
+    expect(isCancellableByOwner(underReview.status)).toBe(true);
+    expect(isCancellableByClient(underReview, NOW)).toBe(false);
   });
 });

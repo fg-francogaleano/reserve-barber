@@ -1,3 +1,5 @@
+import { BOOKING_OUTCOME_PARAM } from './bookingOutcome';
+
 /**
  * Whether the awaiting-confirmation state refreshes itself, and where to (T62).
  *
@@ -40,6 +42,22 @@ export const CONFIRMATION_REFRESH_PARAM = 'intento';
 export const MAX_REFRESH_ATTEMPTS = 3;
 
 export const REFRESH_INTERVAL_SECONDS = 5;
+
+/**
+ * The parameters a refresh may carry forward (C1).
+ *
+ * Everything else is dropped. The two here are the ones this page owns: the
+ * outcome code it renders wording from, and the counter this module sets.
+ *
+ * An allowlist rather than a denylist, because the failure mode of forgetting
+ * to deny is a parameter that silently rides a timed navigation, and the
+ * failure mode of forgetting to allow is a parameter that stops surviving a
+ * refresh — visible immediately, and harmless.
+ */
+const REFRESHABLE_PARAMS: ReadonlySet<string> = new Set([
+  BOOKING_OUTCOME_PARAM,
+  CONFIRMATION_REFRESH_PARAM,
+]);
 
 export interface ConfirmationRefresh {
   /** Seconds to wait before reloading. */
@@ -114,11 +132,20 @@ export function resolveConfirmationRefresh(
 }
 
 /**
- * The same URL with the counter set.
+ * The same URL with the counter set, **and nothing this page does not own**.
  *
  * **Set, never appended.** Appending would grow the URL on every hop and leave
  * two values for one parameter — at which point the clamp reads whichever the
  * framework happens to hand over first, and stops being a clamp.
+ *
+ * **The allowlist is C1's, and it fixes a defect this function shipped with.**
+ * The caller rebuilds the current URL from every parameter it was routed with,
+ * so anything present rode along on a timed navigation. That was harmless while
+ * this page owned every parameter it could see; C1 adds one that opens a
+ * confirmation panel, and a refresh carrying it would re-enter that panel every
+ * five seconds while the client read an irreversible warning. Stripping happens
+ * **here** rather than at the caller because this module owns the refresh: a
+ * caller cannot defeat a rule it does not apply.
  *
  * Parsed against a placeholder origin because `URL` requires one, and the
  * result is re-serialised relative: an absolute URL here would need a real
@@ -127,6 +154,11 @@ export function resolveConfirmationRefresh(
  */
 function withAttempt(currentUrl: string, attempt: number): string {
   const url = new URL(currentUrl, 'https://placeholder.invalid');
+
+  for (const key of [...url.searchParams.keys()]) {
+    if (!REFRESHABLE_PARAMS.has(key)) url.searchParams.delete(key);
+  }
+
   url.searchParams.set(CONFIRMATION_REFRESH_PARAM, String(attempt));
   return `${url.pathname}${url.search}`;
 }
