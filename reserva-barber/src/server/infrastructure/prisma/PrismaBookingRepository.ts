@@ -678,10 +678,19 @@ export class PrismaBookingRepository implements IBookingRepository {
   /**
    * Records that the provider accepted the confirmation message (N1).
    *
-   * **One statement, one column, no transaction and no lock.** It follows a
-   * transition that has already committed, and it can change nothing about what
-   * the booking is — so there is no invariant for a lock to protect and nothing
-   * a concurrent write could corrupt.
+   * **One statement, no transaction and no lock.** It follows a transition that
+   * has already committed, and it can change nothing about what the booking is
+   * — so there is no invariant for a lock to protect and nothing a concurrent
+   * write could corrupt.
+   *
+   * **Two columns move, not one: this one and Prisma's `@updatedAt`.** An
+   * earlier version of this comment said "one column", which the N1 gate
+   * falsified by comparing the whole stored row before and after — probe 6.3
+   * prints `changed=[confirmationEmailSentAt, updatedAt]` to this day. The claim
+   * was corrected in the contract, the schema, `data-model.md` and the spec, and
+   * missed here, which is the file a reader checking the guarantee actually
+   * opens. Making it literally true would mean `$executeRaw`, the only write in
+   * this product to bypass the client, for a property nothing reads.
    *
    * `updateMany` rather than `update` so a booking deleted between the send and
    * this write matches zero rows instead of throwing. The caller treats this

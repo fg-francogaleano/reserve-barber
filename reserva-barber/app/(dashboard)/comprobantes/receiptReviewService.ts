@@ -4,6 +4,7 @@ import { BookingConfirmationNotificationService } from '@/server/application/ser
 import { PrismaTransferReceiptRepository } from '@/server/infrastructure/prisma/PrismaTransferReceiptRepository';
 import { PrismaBookingRepository } from '@/server/infrastructure/prisma/PrismaBookingRepository';
 import { createEmailSender } from '@/server/infrastructure/email/emailSenderFactory';
+import { BOOKING_CONFIRMATION_EMAIL } from '@/server/domain/models/emailCapability';
 import { resolveOrigin } from '@/server/application/businessProfile/resolveOrigin';
 import { SupabaseOwnerReceiptStorage } from '@/server/infrastructure/storage/SupabaseReceiptStorage';
 import { createSupabaseServerClient } from '@/server/infrastructure/supabase/authClient';
@@ -51,7 +52,7 @@ export async function receiptReviewService(): Promise<ReceiptReviewService> {
     logger,
     new BookingConfirmationNotificationService(
       new PrismaBookingRepository(db),
-      createEmailSender(logger),
+      createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL),
       systemClock,
       logger,
       resolveOrigin({ configured: process.env.APP_ORIGIN })

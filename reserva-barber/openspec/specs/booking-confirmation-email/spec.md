@@ -289,7 +289,7 @@ This capability SHALL NOT be considered verified by a passing test suite or by a
 
 Verification SHALL consist of a message arriving in a real mailbox, composed from a real database read and sent by the real provider adapter through a real trigger.
 
-**Achieved once, and the remainder is recorded rather than waived (T76).** One trigger — the receipt approval — delivered a message whose link opened its booking. Three gaps stand: no sending domain is verified, so the provider s shared sender reaches the account owner and nobody else; the provider call has never been made from the Worker runtime, only from Node; and the notification trigger cannot be exercised, because the gateway no longer holds the payments that would reach its confirming branch.
+**Achieved once, and the remainder is recorded rather than waived (T76).** One trigger — the receipt approval — delivered a message whose link opened its booking. Three gaps stand: no sending domain is verified, so the provider's shared sender reaches the account owner and nobody else; the provider call has never been made from the Worker runtime, only from Node; and the notification trigger cannot be exercised, because the gateway no longer holds the payments that would reach its confirming branch.
 
 **While the first gap stands, the provider key SHALL NOT be set in production.** A deployment that appears to send, and reaches one person, is the partial success this capability already refuses in its configuration rule — and it would replace an honest could-not-send state with a false claim.
 

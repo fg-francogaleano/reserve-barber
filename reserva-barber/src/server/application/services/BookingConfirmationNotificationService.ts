@@ -4,6 +4,7 @@ import type { IClock } from '@/server/domain/repositories/IClock';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
 import { buildBookingConfirmationEmail } from '@/server/domain/models/bookingConfirmationEmail';
 import { isPubliclyRoutableHost } from '@/server/domain/models/publicOrigin';
+import { BOOKING_CONFIRMATION_EMAIL } from '@/server/domain/models/emailCapability';
 
 /**
  * Telling a client their appointment is real (N1).
@@ -75,7 +76,7 @@ export class BookingConfirmationNotificationService {
          * or not the branch fires.
          */
         this.logger.error('Cannot compose a confirmation: the projection returned nothing', {
-          operation: 'email.bookingConfirmation',
+          operation: BOOKING_CONFIRMATION_EMAIL.operation,
           bookingId,
           reason: 'projectionEmpty',
           cause: 'booking absent, or its shop has no public profile',
@@ -93,7 +94,7 @@ export class BookingConfirmationNotificationService {
         // told, and no other surface in this product will mention it — the same
         // reasoning the slot-lost branch of the notification handler gives.
         this.logger.error('Could not send a booking confirmation', {
-          operation: 'email.bookingConfirmation',
+          operation: BOOKING_CONFIRMATION_EMAIL.operation,
           bookingId,
           outcome,
         });
@@ -103,7 +104,7 @@ export class BookingConfirmationNotificationService {
       await this.recordSent(bookingId);
 
       this.logger.info('Booking confirmation sent', {
-        operation: 'email.bookingConfirmation',
+        operation: BOOKING_CONFIRMATION_EMAIL.operation,
         bookingId,
         outcome,
       });
@@ -112,7 +113,7 @@ export class BookingConfirmationNotificationService {
       // — the database is unreachable — which is exactly the case where the
       // booking is confirmed and nothing else must be disturbed.
       this.logger.error('Booking confirmation failed unexpectedly', {
-        operation: 'email.bookingConfirmation',
+        operation: BOOKING_CONFIRMATION_EMAIL.operation,
         bookingId,
         reason: error instanceof Error ? error.name : 'unknown',
       });
@@ -146,7 +147,7 @@ export class BookingConfirmationNotificationService {
     }
 
     this.logger.error('Sending a confirmation with no link: no usable public origin', {
-      operation: 'email.bookingConfirmation',
+      operation: BOOKING_CONFIRMATION_EMAIL.operation,
       bookingId,
       reason: 'originMissing',
     });
@@ -165,7 +166,7 @@ export class BookingConfirmationNotificationService {
       await this.bookings.markConfirmationEmailSent(bookingId, new Date(this.clock.now()));
     } catch (error) {
       this.logger.error('Confirmation sent but not recorded', {
-        operation: 'email.bookingConfirmation',
+        operation: BOOKING_CONFIRMATION_EMAIL.operation,
         bookingId,
         reason: error instanceof Error ? error.name : 'unknown',
       });

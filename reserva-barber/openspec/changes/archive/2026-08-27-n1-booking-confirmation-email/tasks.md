@@ -88,14 +88,6 @@
 
 ## 10b. Adversarial review fixes (found after implementation, before archive)
 
-- [x] 10b.1 Move the missing-configuration report out of the sender constructor and into . Composition roots are per-request functions, so constructing logged one  line per notification POST — on a **public unauthenticated endpoint**, including the cheap-rejection path where nothing was ever going to be sent — plus one per render of the review queue. Bound it to one line per confirmed booking, and correct the comment that claimed the opposite.
-- [x] 10b.2 Remove the  placeholder from . A shared onboarding sender delivers only to the provider account owner, so it passes a verification done from that inbox and silently drops every real client. Document the intended value in the file instead.
-- [x] 10b.3 Report the projection's two null causes honestly (, naming both) rather than asserting , which the code cannot distinguish.
-- [x] 10b.4 Pin the log cardinality with tests —  plus gate probes 9.1–9.3 — since nothing covered it before.
-- [x] 10b.5 Update the two specs the  decision changed, per the spec-first policy.
-
-## 10b. Adversarial review fixes (found after implementation, before archive)
-
 - [x] 10b.1 Move the missing-configuration report out of the sender's constructor and into `send()`. Composition roots are per-request functions, so constructing it logged one `error` line per notification POST — on a **public unauthenticated endpoint**, including the cheap-rejection path where nothing was ever going to be sent — plus one per render of the review queue. Bound it to one line per confirmed booking, and correct the comment that claimed the opposite.
 - [x] 10b.2 Remove the `EMAIL_FROM` placeholder from `wrangler.jsonc`. A shared onboarding sender delivers only to the provider account owner, so it passes a verification done from that inbox and silently drops every real client. Document the intended value in the file instead.
 - [x] 10b.3 Report the projection's two null causes honestly — `projectionEmpty`, naming both — rather than asserting `bookingNotFound`, which the code cannot distinguish.

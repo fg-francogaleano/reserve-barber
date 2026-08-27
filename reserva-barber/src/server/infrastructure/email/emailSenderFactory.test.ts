@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createEmailSender, EMAIL_API_KEY_VAR, EMAIL_FROM_VAR } from './emailSenderFactory';
 import { ResendEmailSender } from './ResendEmailSender';
+import {
+  BOOKING_CANCELLATION_EMAIL,
+  BOOKING_CONFIRMATION_EMAIL,
+} from '@/server/domain/models/emailCapability';
 import type { EmailMessage } from '@/server/domain/repositories/IEmailSender';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
 
@@ -38,7 +42,7 @@ describe('createEmailSender - what it builds', () => {
     configure('re_key', 'Shop <turnos@shop.example>');
 
     // Act
-    const sender = createEmailSender(testLogger());
+    const sender = createEmailSender(testLogger(), BOOKING_CONFIRMATION_EMAIL);
 
     // Assert
     expect(sender).toBeInstanceOf(ResendEmailSender);
@@ -58,7 +62,7 @@ describe('createEmailSender - what it builds', () => {
       const logger = testLogger();
 
       // Act
-      const result = await createEmailSender(logger).send(MESSAGE);
+      const result = await createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL).send(MESSAGE);
 
       // Assert
       expect(result.outcome).toBe('rejected');
@@ -75,7 +79,7 @@ describe('createEmailSender - what it builds', () => {
     const logger = testLogger();
 
     // Act
-    const result = await createEmailSender(logger).send(MESSAGE);
+    const result = await createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL).send(MESSAGE);
 
     // Assert
     expect(result.outcome).toBe('rejected');
@@ -99,9 +103,9 @@ describe('createEmailSender - the missing-configuration line is bounded by sends
     const logger = testLogger();
 
     // Act
-    createEmailSender(logger);
-    createEmailSender(logger);
-    createEmailSender(logger);
+    createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL);
+    createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL);
+    createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL);
 
     // Assert
     expect(logger.error).not.toHaveBeenCalled();
@@ -115,9 +119,9 @@ describe('createEmailSender - the missing-configuration line is bounded by sends
     const logger = testLogger();
 
     // Act: three roots built, one message actually sent.
-    createEmailSender(logger);
-    createEmailSender(logger);
-    await createEmailSender(logger).send(MESSAGE);
+    createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL);
+    createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL);
+    await createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL).send(MESSAGE);
 
     // Assert
     expect(logger.error).toHaveBeenCalledTimes(1);
@@ -129,7 +133,7 @@ describe('createEmailSender - the missing-configuration line is bounded by sends
     const logger = testLogger();
 
     // Act
-    await createEmailSender(logger).send(MESSAGE);
+    await createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL).send(MESSAGE);
 
     // Assert
     const serialized = JSON.stringify((logger.error as ReturnType<typeof vi.fn>).mock.calls);
@@ -144,11 +148,84 @@ describe('createEmailSender - the missing-configuration line is bounded by sends
     const logger = testLogger();
 
     // Act
-    await createEmailSender(logger).send(MESSAGE);
+    await createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL).send(MESSAGE);
 
     // Assert
     const serialized = JSON.stringify((logger.error as ReturnType<typeof vi.fn>).mock.calls);
     expect(serialized).not.toContain('re_super_secret_value');
     expect(serialized).toContain(EMAIL_FROM_VAR);
+  });
+});
+
+/**
+ * Who the line says it is about.
+ *
+ * **The defect this closes shipped and ran in production.** N1 wrote this
+ * factory for one message and hard-coded the confirmation's name into it; C2
+ * reused the factory for the cancellation notice, which is what a factory is
+ * for. Every cancellation that could not be sent then reported itself as a
+ * failed confirmation, under `email.bookingConfirmation` — while the
+ * cancellation service's own line, correctly tagged, carried only a bare
+ * `rejected` with no cause. Measured against the real factory, not inferred.
+ *
+ * Nothing covered attribution before, which is exactly why it broke silently:
+ * every assertion here was about volume, variable names or leakage, and all of
+ * them pass just as well with the wrong capability's name in the line.
+ */
+describe('createEmailSender - the line names the capability it was built for', () => {
+  it('should_report_a_confirmation_under_the_confirmation_operation', async () => {
+    // Arrange
+    configure(undefined, undefined);
+    const logger = testLogger();
+
+    // Act
+    await createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL).send(MESSAGE);
+
+    // Assert
+    const [message, context] = (logger.error as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(context.operation).toBe('email.bookingConfirmation');
+    expect(message).toContain('Confirmation email');
+  });
+
+  it('should_report_a_cancellation_under_the_cancellation_operation', async () => {
+    // Arrange
+    configure(undefined, undefined);
+    const logger = testLogger();
+
+    // Act
+    await createEmailSender(logger, BOOKING_CANCELLATION_EMAIL).send(MESSAGE);
+
+    // Assert
+    const [message, context] = (logger.error as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(context.operation).toBe('email.bookingCancellation');
+    expect(message).toContain('Cancellation notice');
+  });
+
+  /**
+   * The negative half, stated separately because it is the one that failed.
+   * A cancellation must not merely *also* be findable — it must not be filed
+   * under the other capability at all, or the confirmation's counts include it.
+   */
+  it('should_never_file_a_cancellation_under_the_confirmation', async () => {
+    // Arrange
+    configure(undefined, undefined);
+    const logger = testLogger();
+
+    // Act
+    await createEmailSender(logger, BOOKING_CANCELLATION_EMAIL).send(MESSAGE);
+
+    // Assert
+    const serialized = JSON.stringify((logger.error as ReturnType<typeof vi.fn>).mock.calls);
+    expect(serialized).not.toContain('email.bookingConfirmation');
+    expect(serialized).not.toContain('Confirmation');
+  });
+
+  /**
+   * The reason the capability is a required argument rather than a defaulted
+   * one (T57): a default is how a third message type would silently inherit
+   * whichever identity happened to be first, which is the whole defect again.
+   */
+  it('should_require_the_capability_rather_than_defaulting_it', () => {
+    expect(createEmailSender).toHaveLength(2);
   });
 });

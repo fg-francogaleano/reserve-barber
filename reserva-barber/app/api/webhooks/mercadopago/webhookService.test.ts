@@ -38,7 +38,10 @@ describe('webhookService - every dependency is wired', () => {
     const source = sourceOf(WEBHOOK_ROOT);
 
     expect(source).toMatch(/new PrismaBookingRepository\(db\)/);
-    expect(source).toMatch(/createEmailSender\(logger\)/);
+    // The capability, not just the factory. A root that passed the wrong one
+    // would compile and pass every other assertion here — which is exactly how
+    // the cancellation notice came to report itself as a failed confirmation.
+    expect(source).toMatch(/createEmailSender\(logger, BOOKING_CONFIRMATION_EMAIL\)/);
     expect(source).toMatch(/resolveOrigin\(\{ configured: process\.env\.APP_ORIGIN \}\)/);
   });
 
@@ -99,7 +102,10 @@ describe('receiptReviewService - every dependency is wired', () => {
     const source = sourceOf(RECEIPT_ROOT);
 
     expect(source).toMatch(/new PrismaBookingRepository\(db\)/);
-    expect(source).toMatch(/createEmailSender\(logger\)/);
+    // The capability, not just the factory. A root that passed the wrong one
+    // would compile and pass every other assertion here — which is exactly how
+    // the cancellation notice came to report itself as a failed confirmation.
+    expect(source).toMatch(/createEmailSender\(logger, BOOKING_CONFIRMATION_EMAIL\)/);
     expect(source).toMatch(/resolveOrigin\(\{ configured: process\.env\.APP_ORIGIN \}\)/);
   });
 

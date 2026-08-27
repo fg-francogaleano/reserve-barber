@@ -6,6 +6,7 @@ import { PrismaPaymentConfigRepository } from '@/server/infrastructure/prisma/Pr
 import { PrismaBookingRepository } from '@/server/infrastructure/prisma/PrismaBookingRepository';
 import { MercadoPagoGateway } from '@/server/infrastructure/payments/MercadoPagoGateway';
 import { createEmailSender } from '@/server/infrastructure/email/emailSenderFactory';
+import { BOOKING_CONFIRMATION_EMAIL } from '@/server/domain/models/emailCapability';
 import { WebCryptoCipher } from '@/server/infrastructure/crypto/WebCryptoCipher';
 import { getPrismaClient } from '@/server/infrastructure/prisma/client';
 import { systemClock } from '@/server/domain/repositories/IClock';
@@ -61,7 +62,7 @@ export function paymentConfirmationService(): PaymentConfirmationService {
     logger,
     new BookingConfirmationNotificationService(
       new PrismaBookingRepository(db),
-      createEmailSender(logger),
+      createEmailSender(logger, BOOKING_CONFIRMATION_EMAIL),
       systemClock,
       logger,
       // Configuration is read here, at the root, and never inside the service —

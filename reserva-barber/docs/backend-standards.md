@@ -326,6 +326,17 @@ export class SlotUnavailableError extends Error {
 
 - Use a centralized logger (structured JSON), not scattered `console.log`. Include context (bookingId, barberId, operation). Levels: `debug`, `info`, `warn`, `error`.
 
+**A component shared by several features MUST NOT hard-code the `operation` of any one of them.** The name is passed in by whoever built the component; it is never a literal inside it.
+
+The failure this closes is quiet and it shipped. N1 wrote `createEmailSender` for the confirmation email and hard-coded `email.bookingConfirmation` into the line it emits when configuration is missing. C2 reused that factory for the cancellation notice — the correct use of a factory — and every cancellation that could not be sent then filed itself under the confirmation. An operator filtering on the cancellation saw a bare `rejected` with no cause; one filtering on the confirmation counted cancellations as confirmations. It ran in production, on the only mail path reachable while no provider key was set.
+
+Two rules follow, and the second is the one that matters:
+
+1. Give the identity a **name that is a value** — a constant carrying the operation and its English subject — and have the shared component and the feature's own service read the same one. Names assembled at two call sites are names that can disagree at a third.
+2. **Make it a required argument with no default.** A default is how the next message type silently inherits whichever identity was written first, which is this defect again. This is T57's rule about optional dependencies applied to a name rather than to a collaborator.
+
+**And test the attribution, not only the volume and the redaction.** Everything covering that log line — that it appears once per send, that it names the missing variables, that it leaks no address or credential — passed just as well with the wrong capability's name in it. A log assertion that never checks *who the line says it is about* cannot see this class at all.
+
 ---
 
 ## API Design Standards

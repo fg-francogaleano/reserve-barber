@@ -49,6 +49,10 @@ import { BookingConfirmationNotificationService } from '../src/server/applicatio
 import { buildBookingConfirmationEmail } from '../src/server/domain/models/bookingConfirmationEmail';
 import { systemClock } from '../src/server/domain/repositories/IClock';
 import { createEmailSender } from '../src/server/infrastructure/email/emailSenderFactory';
+import {
+  BOOKING_CANCELLATION_EMAIL,
+  BOOKING_CONFIRMATION_EMAIL,
+} from '../src/server/domain/models/emailCapability';
 import type {
   EmailMessage,
   EmailSendOutcome,
@@ -512,9 +516,9 @@ async function main(): Promise<void> {
     delete process.env.EMAIL_FROM;
 
     const unconfigured = recordingLogger();
-    createEmailSender(unconfigured.logger);
-    createEmailSender(unconfigured.logger);
-    createEmailSender(unconfigured.logger);
+    createEmailSender(unconfigured.logger, BOOKING_CONFIRMATION_EMAIL);
+    createEmailSender(unconfigured.logger, BOOKING_CONFIRMATION_EMAIL);
+    createEmailSender(unconfigured.logger, BOOKING_CONFIRMATION_EMAIL);
 
     report(
       '9.1. Building the sender with no configuration logs nothing',
@@ -524,7 +528,7 @@ async function main(): Promise<void> {
 
     await new BookingConfirmationNotificationService(
       repository,
-      createEmailSender(unconfigured.logger),
+      createEmailSender(unconfigured.logger, BOOKING_CONFIRMATION_EMAIL),
       systemClock,
       unconfigured.logger,
       ORIGIN
@@ -547,11 +551,40 @@ async function main(): Promise<void> {
       'no recipient and no token in the configuration entries'
     );
 
+    report(
+      '9.4. The entry is filed under the confirmation, which is what asked for it',
+      configEntries.every((e) => e.context?.operation === 'email.bookingConfirmation') &&
+        configEntries.every((e) => String(e.message).startsWith('Confirmation email')),
+      `operation=${String(configEntries[0]?.context?.operation ?? '<none>')}`
+    );
+
+    // The other half of the same factory, and the reason this probe exists.
+    // C2 reused this factory for the cancellation notice and every unsendable
+    // cancellation reported itself as a failed confirmation — in production,
+    // on the only mail path reachable while no provider key is set. Attribution
+    // is a property of the factory, so it is measured on the factory, with both
+    // capabilities side by side in one run.
+    const crossed = recordingLogger();
+    await createEmailSender(crossed.logger, BOOKING_CANCELLATION_EMAIL).send({
+      to: 'client@example.com',
+      subject: 'Tu turno fue cancelado',
+      text: `${MARK}-main`,
+      html: '<p>x</p>',
+    });
+
+    report(
+      '9.5. A cancellation is never filed under the confirmation',
+      crossed.errors.length === 1 &&
+        crossed.errors[0]?.context?.operation === 'email.bookingCancellation' &&
+        !JSON.stringify(crossed.errors).includes('Confirmation'),
+      `operation=${String(crossed.errors[0]?.context?.operation ?? '<none>')}`
+    );
+
     if (savedKey !== undefined) process.env.RESEND_API_KEY = savedKey;
     if (savedFrom !== undefined) process.env.EMAIL_FROM = savedFrom;
 
     observe(
-      '9.4. Delivery',
+      '9.6. Delivery',
       'NOT under test here. A provider acceptance is not delivery, and this gate ' +
         'uses a stub. Only a message arriving in a real inbox proves N1 works.'
     );

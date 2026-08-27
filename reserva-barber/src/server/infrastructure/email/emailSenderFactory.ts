@@ -4,6 +4,7 @@ import type {
   IEmailSender,
 } from '@/server/domain/repositories/IEmailSender';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
+import type { EmailCapability } from '@/server/domain/models/emailCapability';
 import { ResendEmailSender } from './ResendEmailSender';
 
 /**
@@ -45,6 +46,15 @@ export const EMAIL_FROM_VAR = 'EMAIL_FROM';
  * of an anonymous caller: a forged notification never reaches a confirming
  * outcome, so it never reaches this method.
  *
+ * **It reports the capability it was built for, and never a fixed one.** The
+ * first version named the confirmation in both the sentence and the operation,
+ * because the confirmation was the only caller. C2 then reused this factory for
+ * the cancellation notice — the correct use of a factory — and every
+ * cancellation that could not be sent filed itself under
+ * `email.bookingConfirmation`, while the cancellation's own line carried a bare
+ * `rejected` with no cause. That ran in production, on the only mail path an
+ * owner could reach while no provider key was set.
+ *
  * `rejected` rather than `retry`: nothing about a missing variable is
  * transient, and a caller treating it as transient would keep a useless outcome
  * alive in the logs.
@@ -52,14 +62,15 @@ export const EMAIL_FROM_VAR = 'EMAIL_FROM';
 class UnconfiguredEmailSender implements IEmailSender {
   constructor(
     private readonly missing: readonly string[],
-    private readonly logger: ILogger
+    private readonly logger: ILogger,
+    private readonly capability: EmailCapability
   ) {}
 
   async send(_message: EmailMessage): Promise<EmailSendResult> {
     void _message;
 
-    this.logger.error('Confirmation email not sent: missing configuration', {
-      operation: 'email.bookingConfirmation',
+    this.logger.error(`${this.capability.subject} not sent: missing configuration`, {
+      operation: this.capability.operation,
       reason: 'notConfigured',
       // The variable names, never their values, and never the message. A name
       // is what an operator needs; a value here would be the credential, and
@@ -85,8 +96,14 @@ class UnconfiguredEmailSender implements IEmailSender {
  * own address. That configuration passes a verification done from the owner's
  * inbox and silently drops every real client — the one failure shape this
  * feature is least able to detect.
+ *
+ * **`capability` is required and has no default**, so a message type added
+ * later cannot inherit whichever identity happened to be written first. That is
+ * T57's rule about optional dependencies applied to a name rather than to a
+ * collaborator, and it is the specific hole the cancellation notice fell
+ * through.
  */
-export function createEmailSender(logger: ILogger): IEmailSender {
+export function createEmailSender(logger: ILogger, capability: EmailCapability): IEmailSender {
   const apiKey = process.env[EMAIL_API_KEY_VAR]?.trim();
   const from = process.env[EMAIL_FROM_VAR]?.trim();
 
@@ -95,7 +112,7 @@ export function createEmailSender(logger: ILogger): IEmailSender {
   if (!from) missing.push(EMAIL_FROM_VAR);
 
   if (!apiKey || !from) {
-    return new UnconfiguredEmailSender(missing, logger);
+    return new UnconfiguredEmailSender(missing, logger, capability);
   }
 
   return new ResendEmailSender(apiKey, from);

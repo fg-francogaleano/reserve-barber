@@ -6,6 +6,7 @@ import { systemClock } from '@/server/domain/repositories/IClock';
 import { logger } from '@/server/infrastructure/logger';
 import { BookingCancellationNotificationService } from '@/server/application/services/BookingCancellationNotificationService';
 import { createEmailSender } from '@/server/infrastructure/email/emailSenderFactory';
+import { BOOKING_CANCELLATION_EMAIL } from '@/server/domain/models/emailCapability';
 
 /**
  * Composition root for the owner's cancellation (C2).
@@ -33,6 +34,6 @@ export function bookingCancellationService(): BookingCancellationService {
     // One repository instance, shared: the notice reuses the confirmation
     // projection rather than adding a second read, and its builder's input type
     // omits the slug and the token so it cannot compose a link from them.
-    new BookingCancellationNotificationService(bookings, createEmailSender(logger), logger)
+    new BookingCancellationNotificationService(bookings, createEmailSender(logger, BOOKING_CANCELLATION_EMAIL), logger)
   );
 }

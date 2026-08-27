@@ -199,6 +199,12 @@ No instant SHALL be recorded for this message and no column SHALL be added for o
 
 No log line for this message SHALL carry the recipient address, the client's name, the cancellation token or the message body.
 
+Every log line about this message — including one emitted by a component shared with another message type — SHALL carry this capability's own operation name and SHALL NOT carry another capability's. The sending components are shared by design; the identity in the line is not, and a shared component that names a fixed capability misattributes every caller but the first.
+
+#### Scenario: A shared component reports this capability, not the one it was written for
+- **WHEN** a cancellation notice cannot be sent because email configuration is missing
+- **THEN** the entry naming that cause carries the cancellation's operation name and names the cancellation, not the confirmation
+
 #### Scenario: An applied cancellation notifies
 - **WHEN** a cancellation is applied
 - **THEN** exactly one message is requested for that booking

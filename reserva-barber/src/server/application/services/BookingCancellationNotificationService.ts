@@ -2,6 +2,7 @@ import type { IBookingRepository } from '@/server/domain/repositories/IBookingRe
 import type { IEmailSender } from '@/server/domain/repositories/IEmailSender';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
 import { buildBookingCancellationEmail } from '@/server/domain/models/bookingCancellationEmail';
+import { BOOKING_CANCELLATION_EMAIL } from '@/server/domain/models/emailCapability';
 
 /**
  * Telling a client the shop cancelled their appointment (C2).
@@ -45,7 +46,7 @@ export class BookingCancellationNotificationService {
 
       if (booking === null) {
         this.logger.error('Cannot compose a cancellation notice: the projection returned nothing', {
-          operation: 'email.bookingCancellation',
+          operation: BOOKING_CANCELLATION_EMAIL.operation,
           bookingId,
           reason: 'projectionEmpty',
           cause: 'booking absent, or its shop has no public profile',
@@ -62,7 +63,7 @@ export class BookingCancellationNotificationService {
         // client who will arrive to a shop that is not expecting them has not
         // been told, and nothing else in this product will mention it.
         this.logger.error('Could not send a cancellation notice', {
-          operation: 'email.bookingCancellation',
+          operation: BOOKING_CANCELLATION_EMAIL.operation,
           bookingId,
           outcome,
         });
@@ -70,7 +71,7 @@ export class BookingCancellationNotificationService {
       }
 
       this.logger.info('Cancellation notice sent', {
-        operation: 'email.bookingCancellation',
+        operation: BOOKING_CANCELLATION_EMAIL.operation,
         bookingId,
         outcome,
       });
@@ -79,7 +80,7 @@ export class BookingCancellationNotificationService {
       // which is exactly the case where the booking is cancelled, the slot is
       // released, and nothing else must be disturbed.
       this.logger.error('Cancellation notice failed unexpectedly', {
-        operation: 'email.bookingCancellation',
+        operation: BOOKING_CANCELLATION_EMAIL.operation,
         bookingId,
         reason: error instanceof Error ? error.name : 'unknown',
       });

@@ -42,7 +42,14 @@ describe('bookingCancellationService - every dependency is wired', () => {
     const source = sourceOf(ROOT);
 
     expect(source).toMatch(/new BookingCancellationNotificationService\(\s*bookings,/);
-    expect(source).toMatch(/createEmailSender\(logger\)/);
+    // **The capability, not just the factory.** This root passed only `logger`,
+    // so the shared sender reported every unsendable cancellation as a failed
+    // *confirmation*, under the confirmation's operation name — live in
+    // production, on the only mail path an owner could reach while no provider
+    // key was set. Nothing here could see it: the factory was named, and the
+    // factory was right.
+    expect(source).toMatch(/createEmailSender\(logger, BOOKING_CANCELLATION_EMAIL\)/);
+    expect(source).not.toMatch(/BOOKING_CONFIRMATION_EMAIL/);
   });
 
   /**
