@@ -57,6 +57,13 @@ frontend. The application has two surfaces built with the same framework:
 - **Icons:** **lucide-react** (ships with shadcn/ui).
 - **Charts:** **Recharts** (and/or **Tremor**) for the Estadísticas dashboard (income evolution, payment methods, hourly distribution).
 - **Date/calendar:** a shadcn/ui + `react-day-picker` calendar for date selection; a custom slot grid for barber availability.
+  > **Neither has been installed, and two surfaces have now shipped without them.** The public flow's
+  > date step (B3) is a strip of server-rendered links, and the owner's per-barber calendar (D3) is a
+  > native `<input type="date">` inside a GET form. On both, a picker would have been the **only**
+  > client component on a route that otherwise ships no JavaScript — trading the zero-JS property, and
+  > Worker bundle against the size ceiling (T51), for a control the server-rendered version already
+  > provides. Reach for `react-day-picker` when a surface genuinely needs month navigation or a range
+  > selection; a single day, chosen from a bounded set, is not that surface.
 
 ### State Management & Data Flow
 - **Local state:** React hooks (`useState`, `useReducer`).
@@ -89,16 +96,20 @@ barber/
 │   │   │   ├── page.tsx
 │   │   │   ├── nueva/page.tsx
 │   │   │   └── [id]/editar/page.tsx
-│   │   ├── barberos/                # Barbers: list, create, edit
+│   │   ├── barberos/                # Barbers: list (the card per barber), create, edit
 │   │   │   ├── page.tsx
 │   │   │   ├── nuevo/page.tsx
-│   │   │   └── [id]/editar/page.tsx
+│   │   │   └── [id]/
+│   │   │       ├── editar/page.tsx
+│   │   │       ├── servicios/page.tsx
+│   │   │       ├── horarios/page.tsx
+│   │   │       ├── ausencias/page.tsx
+│   │   │       └── calendario/page.tsx   # D3: that barber's day view
 │   │   ├── servicios/              # Services: list, create, edit
 │   │   │   ├── page.tsx
 │   │   │   ├── nuevo/page.tsx
 │   │   │   └── [id]/editar/page.tsx
 │   │   ├── perfil/page.tsx
-│   │   ├── calendario/page.tsx
 │   │   ├── clientes/page.tsx
 │   │   ├── estadisticas/page.tsx
 │   │   ├── transferencia/page.tsx

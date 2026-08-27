@@ -257,3 +257,96 @@ function holdDeadline(from: Date, durationMinutes: number, startTime: Date): Dat
   const unclamped = new Date(from.getTime() + durationMinutes * 60_000);
   return unclamped.getTime() > startTime.getTime() ? startTime : unclamped;
 }
+
+/**
+ * How a booking appears on the owner's calendar (D3).
+ *
+ * The five values a day's entry can take. `CANCELLED_BY` is declared the same
+ * way and for the same reason: the page, the pure day composition and the tests
+ * all need the set, and none of them may depend on Prisma.
+ */
+export const CALENDAR_PRESENCES = [
+  'confirmed',
+  'awaitingApproval',
+  'holding',
+  'lapsed',
+  'cancelled',
+] as const;
+
+export type CalendarPresence = (typeof CALENDAR_PRESENCES)[number];
+
+/**
+ * The three that occupy the day's timeline. The other two are recorded beside
+ * it, because a cancelled booking and the one that replaced it share a time and
+ * drawing both in one lane makes the timeline say the barber is in two places.
+ */
+export const OCCUPYING_PRESENCES = ['confirmed', 'awaitingApproval', 'holding'] as const;
+
+export function occupiesCalendar(presence: CalendarPresence): boolean {
+  return (OCCUPYING_PRESENCES as readonly CalendarPresence[]).includes(presence);
+}
+
+/**
+ * How this booking appears on a given day of the owner's calendar.
+ *
+ * ---
+ *
+ * **This is a second predicate over the same union as `blocksAvailability`, and
+ * it must stay one.** That is the opposite of what this project usually does —
+ * the blocking rule has exactly one home precisely so the read side and the
+ * write side cannot disagree about which bookings hold a slot — so the reason
+ * is written here rather than left for a reader to reconstruct.
+ *
+ * The two answer different questions:
+ *
+ * - `blocksAvailability` asks **"is this time still on sale, now?"** It is
+ *   shared with B4's transaction under its advisory lock, with B5's late
+ *   confirmation and with D2's approval. Being wrong there sells a slot twice.
+ * - This asks **"what was real on this day?"** It is shared with nothing, and
+ *   being wrong here draws a day that did not happen.
+ *
+ * They diverge on any past date, and `PENDING_APPROVAL` is where. The blocking
+ * rule stops blocking it once the appointment has started — correctly: nothing
+ * can be sold into a time that is being used, and without that clause an
+ * unanswered receipt would hold a slot forever. Reuse it here and yesterday's
+ * appointment, whose comprobante the shop never got round to answering and
+ * whose client may well have been served, is filed under "no effect".
+ *
+ * So this one is **clock-independent for `PENDING_APPROVAL`**: an unanswered
+ * receipt is a fact about the shop's queue, not about the hour. It is the first
+ * surface in the product that shows the owner one at all (T64).
+ *
+ * The clock is consulted for exactly one case — the live/lapsed hold boundary —
+ * and on the same half-open convention as everything else here: the hold covers
+ * `[created, holdExpiresAt)`, so the deadline instant is already past it. A null
+ * deadline holds, mirroring the blocking rule, because reading its absence as
+ * "expired long ago" would erase a booking the instant a write set the status
+ * without it.
+ *
+ * A `switch` over the union rather than a lookup, so a sixth status forces a
+ * decision here instead of defaulting to invisible by silence.
+ *
+ * **The one direction in which the two rules may not differ** is asserted by
+ * test: anything `blocksAvailability` still blocks must occupy the calendar, or
+ * the owner would be shown free time no client can buy.
+ */
+export function calendarPresence(booking: BlockingCandidate, now: Date): CalendarPresence {
+  switch (booking.status) {
+    case 'CONFIRMED':
+      return 'confirmed';
+
+    case 'PENDING_APPROVAL':
+      return 'awaitingApproval';
+
+    case 'PENDING_PAYMENT':
+      return booking.holdExpiresAt === null || booking.holdExpiresAt.getTime() > now.getTime()
+        ? 'holding'
+        : 'lapsed';
+
+    case 'EXPIRED':
+      return 'lapsed';
+
+    case 'CANCELLED':
+      return 'cancelled';
+  }
+}
