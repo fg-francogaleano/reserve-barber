@@ -1,0 +1,33 @@
+-- Records that the client was told their appointment is real (N1).
+--
+-- ONE NULLABLE COLUMN. No backfill, no altered column, no constraint, no index,
+-- no row modified. Every booking that existed before this migration reads NULL,
+-- which is exactly what is true of them: none of their clients was ever sent a
+-- confirmation, because nothing in this product had ever sent an email.
+--
+-- NOT AN IDEMPOTENCY KEY, and nothing reads it before sending. At-most-once
+-- delivery is already a property of the confirming transition -- both writers
+-- update the booking conditionally on the status they expect, so exactly one
+-- caller per booking ever observes the confirming outcome. A second mechanism
+-- claiming the same guarantee would be a second thing to get wrong, and a
+-- read-then-send would reintroduce the race the guarded update exists to avoid.
+--
+-- What it buys is a question the product otherwise cannot ask:
+--
+--   SELECT id FROM "Booking"
+--    WHERE status = 'CONFIRMED' AND "confirmationEmailSentAt" IS NULL;
+--
+-- "these clients do not know their appointment exists". That is the failure
+-- shape this codebase already names elsewhere -- the money moved and nothing in
+-- the product knew -- and a log line is not an answer to it.
+--
+-- NO INDEX, deliberately. Nothing queries the column yet. The story that gives
+-- that set a surface is the story that should measure the predicate first, the
+-- way D1's dashboard aggregates were indexed by measurement rather than by
+-- assumption. Adding one now would be guessing at a query nobody has written.
+--
+-- Timestamptz, like every other instant on this table. Prisma's default for
+-- DateTime is a zone-less TIMESTAMP, and docs/data-model.md names inheriting it
+-- by omission as the failure mode that convention exists to prevent.
+
+ALTER TABLE "Booking" ADD COLUMN "confirmationEmailSentAt" TIMESTAMPTZ(3);

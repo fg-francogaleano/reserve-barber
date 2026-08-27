@@ -1,7 +1,9 @@
 import type {
   BookingByToken,
+  BookingForConfirmationEmail,
   BookingForPaymentInitiation,
   BookingForTransfer,
+  CancelBookingResult,
   PublicTransferDestination,
   HeldBooking,
   IBookingRepository,
@@ -10,7 +12,12 @@ import type {
 } from '@/server/domain/repositories/IBookingRepository';
 import type { Interval } from '@/server/domain/models/availability';
 import { overlaps } from '@/server/domain/models/availability';
-import { blocksAvailability, type BookingStatus } from '@/server/domain/models/Booking';
+import {
+  blocksAvailability,
+  isCancellableByOwner,
+  BOOKING_STATUSES,
+  type BookingStatus,
+} from '@/server/domain/models/Booking';
 import type { PaymentMethod, PaymentStatus } from '@/server/domain/models/Payment';
 import type { ReceiptStatus } from '@/server/domain/models/TransferReceipt';
 import { isTransferOfferableToClient } from '@/server/domain/models/PaymentConfig';
@@ -345,6 +352,15 @@ export class PrismaBookingRepository implements IBookingRepository {
           endTime: true,
           holdExpiresAt: true,
           depositAmount: true,
+          // N1: whether the client was told, and when this row last changed.
+          // `client.email` stays unselected here — this projection feeds a page
+          // that can be opened on a shared device, which is exactly the
+          // distinction the confirmation-email projection is a named exception
+          // to.
+          confirmationEmailSentAt: true,
+          updatedAt: true,
+          // C2: who ended it, so the page attributes rather than guesses.
+          cancelledBy: true,
           client: { select: { name: true } },
           service: { select: { name: true } },
           barber: {
@@ -434,6 +450,9 @@ export class PrismaBookingRepository implements IBookingRepository {
       holdExpiresAt: row.holdExpiresAt,
       depositAmount: toCanonicalDecimal(row.depositAmount),
       clientName: row.client.name,
+      confirmationEmailSentAt: row.confirmationEmailSentAt,
+      updatedAt: row.updatedAt,
+      cancelledBy: row.cancelledBy,
       barberDisplayName: row.barber.displayName,
       serviceName: row.service.name,
       locationName: row.barber.location.name,
@@ -582,4 +601,242 @@ export class PrismaBookingRepository implements IBookingRepository {
       barberId: row.barberId,
     };
   }
+
+  /**
+   * What the confirmation message is composed from (N1).
+   *
+   * **The one read here that deliberately selects the client's email**, for the
+   * reason `IBookingRepository` records on the contract: the other projections
+   * withhold contact detail because they feed a page anyone holding the link
+   * can open, and an address is not something a *message* might leak — it is
+   * where the message goes.
+   *
+   * Keyed on the booking id rather than the token. Its callers already have the
+   * id from the transition they just completed, and a second token lookup is a
+   * second surface a stranger's input could reach.
+   *
+   * `null` for a shop with no public profile, the same rule the two payment
+   * projections apply: without a slug there is no address the link could be
+   * built from, and a message whose only actionable content is a broken URL is
+   * worse than one that omits it.
+   */
+  async findForConfirmationEmail(bookingId: string): Promise<BookingForConfirmationEmail | null> {
+    const row = await this.db.booking.findUnique({
+      where: { id: bookingId },
+      select: {
+        startTime: true,
+        priceAtBooking: true,
+        depositAmount: true,
+        cancellationToken: true,
+        // Name and email. **No phone** — nothing in the message needs it.
+        client: { select: { name: true, email: true } },
+        service: { select: { name: true } },
+        barber: {
+          select: {
+            displayName: true,
+            location: {
+              select: {
+                name: true,
+                address: true,
+                // The brand and the slug the link is addressed through. The
+                // owner's `paymentConfig` is deliberately not reachable from
+                // here: nothing on the way to an email may become a second
+                // holder of an access token.
+                owner: {
+                  select: {
+                    businessProfile: { select: { businessName: true, publicSlug: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (row === null) return null;
+
+    const profile = row.barber.location.owner.businessProfile;
+    if (profile === null || profile === undefined) return null;
+
+    return {
+      clientName: row.client.name,
+      clientEmail: row.client.email,
+      shopName: profile.businessName,
+      shopSlug: profile.publicSlug,
+      locationName: row.barber.location.name,
+      locationAddress: row.barber.location.address,
+      barberName: row.barber.displayName,
+      serviceName: row.service.name,
+      startTime: row.startTime,
+      priceAtBooking: toCanonicalDecimal(row.priceAtBooking),
+      depositAmount: toCanonicalDecimal(row.depositAmount),
+      cancellationToken: row.cancellationToken,
+    };
+  }
+
+  /**
+   * Records that the provider accepted the confirmation message (N1).
+   *
+   * **One statement, no transaction and no lock.** It follows a transition that
+   * has already committed, and it can change nothing about what the booking is
+   * — so there is no invariant for a lock to protect and nothing a concurrent
+   * write could corrupt.
+   *
+   * **Two columns move, not one: this one and Prisma's `@updatedAt`.** An
+   * earlier version of this comment said "one column", which the N1 gate
+   * falsified by comparing the whole stored row before and after — probe 6.3
+   * prints `changed=[confirmationEmailSentAt, updatedAt]` to this day. The claim
+   * was corrected in the contract, the schema, `data-model.md` and the spec, and
+   * missed here, which is the file a reader checking the guarantee actually
+   * opens. Making it literally true would mean `$executeRaw`, the only write in
+   * this product to bypass the client, for a property nothing reads.
+   *
+   * `updateMany` rather than `update` so a booking deleted between the send and
+   * this write matches zero rows instead of throwing. The caller treats this
+   * write's failure as a log line either way; making the ordinary case
+   * non-throwing keeps that promise cheap to honour.
+   */
+  async markConfirmationEmailSent(bookingId: string, sentAt: Date): Promise<void> {
+    await this.db.booking.updateMany({
+      where: { id: bookingId },
+      data: { confirmationEmailSentAt: sentAt },
+    });
+  }
+
+  /**
+   * The owner cancels a booking, releasing its slot (C2).
+   *
+   * **No advisory lock, and that is the design rather than an omission.** The
+   * per-barber lock exists so two writers cannot *place* a booking into one
+   * slot; this only releases one, and a release cannot double-book — the same
+   * argument the receipt rejection makes about itself. What carries the safety
+   * instead is that **every write below is conditional on the status it
+   * expects**, so a row that moved underneath matches zero rows rather than
+   * being reasserted.
+   *
+   * The resolution happens **before** the transaction: a booking outside this
+   * owner's scope should cost one indexed read, not an opened transaction.
+   */
+  async cancelByOwner(input: {
+    bookingId: string;
+    ownerId: string;
+    now: Date;
+  }): Promise<CancelBookingResult> {
+    const target = await this.db.booking.findFirst({
+      // `Barber` carries no ownerId (`data-model.md` §5), so ownership is
+      // reached through the location — the only path, and the tenancy boundary.
+      where: { id: input.bookingId, barber: { location: { ownerId: input.ownerId } } },
+      select: { id: true, status: true },
+    });
+
+    // Another owner's booking and one that does not exist are the same answer.
+    if (target === null) return { outcome: 'notFound' };
+
+    // Asked here as well as in the guard below, so a terminal booking costs no
+    // transaction. The guard is still what makes it correct — this is the cheap
+    // rejection, not the safety.
+    if (!isCancellableByOwner(target.status as BookingStatus)) {
+      return { outcome: 'notCancellable', status: target.status };
+    }
+
+    return this.db.$transaction(async (client) => {
+      const tx = client as unknown as CancelTx;
+
+      const cancelled = await tx.booking.updateMany({
+        where: { id: input.bookingId, status: { in: CANCELLABLE_STATUSES } },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: input.now,
+          cancelledBy: 'OWNER',
+          // Cleared, deliberately unlike an expiry — which preserves it as the
+          // evidence of why that row ended. A booking this write finishes has
+          // no hold left to describe.
+          holdExpiresAt: null,
+        },
+      });
+
+      if (cancelled.count === 0) {
+        // It moved between the read and the write. Report what it became; the
+        // payment and the receipt are left untouched, because a booking this
+        // call did not cancel is not this call's to unwind.
+        const current = await tx.booking.findUnique({
+          where: { id: input.bookingId },
+          select: { status: true },
+        });
+        return { outcome: 'notCancellable' as const, status: current?.status ?? 'MISSING' };
+      }
+
+      /**
+       * **Guarded on `PENDING`, not branched on it.** An `APPROVED` payment
+       * matches zero rows here, which is a stronger protection than an `if`
+       * that a later edit could invert: the database refuses it rather than the
+       * code remembering to. An approved deposit is a charge that really
+       * happened and rewriting it would falsify the only record of it.
+       */
+      await tx.payment.updateMany({
+        where: { bookingId: input.bookingId, status: 'PENDING' },
+        data: { status: 'REJECTED' },
+      });
+
+      /**
+       * **A pending receipt is deliberately left `PENDING`**, and the first
+       * draft of C2 rejected it here.
+       *
+       * The argument for writing it was that the row keeps asserting "a human
+       * owes an answer" when nobody does. The argument against turned out to be
+       * decisive and only surfaced when an existing page test went red: the
+       * receipt rejection already produces `{CANCELLED, receipt REJECTED,
+       * cancelledBy OWNER}`, so writing `REJECTED` here would make a
+       * cancellation **byte-identical to a rejection** — and the client's page
+       * distinguishes them to choose between "la barbería no aprobó tu
+       * comprobante" and "la barbería canceló tu turno". One of the two would
+       * necessarily have got the wrong message.
+       *
+       * Leaving it `PENDING` is also the more honest record: nobody reviewed
+       * this document. `REJECTED` would claim a review that never happened, for
+       * a queue that already hides the row anyway — it filters on the booking's
+       * status, so a cancelled booking's receipt disappears from the owner's
+       * view with no write at all.
+       */
+
+      /**
+       * Asked inside the transaction because this is where it is answerable
+       * without a race: the payment write above has just refused to touch an
+       * approval, so an approval found here is the one that survived.
+       */
+      const approved = await tx.payment.findFirst({
+        where: { bookingId: input.bookingId, status: 'APPROVED' },
+        select: { id: true },
+      });
+
+      return {
+        outcome: 'applied' as const,
+        bookingId: input.bookingId,
+        depositApproved: approved !== null,
+      };
+    }, TRANSACTION_OPTIONS);
+  }
+}
+
+/** The statuses the guard admits, derived from the domain predicate. */
+const CANCELLABLE_STATUSES: BookingStatus[] = BOOKING_STATUSES.filter(isCancellableByOwner);
+
+/**
+ * The slice of the transaction client this write uses.
+ *
+ * **It names no `$executeRaw`**, which is the type-level form of "this takes no
+ * lock": an implementation that tried would not compile. B4 shipped a lock
+ * defect past a test that mocked the call, so here the absence is structural
+ * rather than asserted.
+ */
+interface CancelTx {
+  booking: {
+    updateMany(args: unknown): Promise<{ count: number }>;
+    findUnique(args: unknown): Promise<{ status: string } | null>;
+  };
+  payment: {
+    updateMany(args: unknown): Promise<{ count: number }>;
+    findFirst(args: unknown): Promise<{ id: string } | null>;
+  };
 }

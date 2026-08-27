@@ -110,7 +110,16 @@ export type AttachReceiptResult =
  * double-clicks approve must see the approval, not a failure.
  */
 export type ReviewResult =
-  | { readonly outcome: 'applied' }
+  /**
+   * The decision was applied by this call, and by no other.
+   *
+   * **It carries the booking it applied to** (N1). The caller needs an id to
+   * announce a confirmation with, and getting one any other way would mean a
+   * second read — one that could return a booking a concurrent write had
+   * already moved. Carrying it out of the transaction that changed it is the
+   * only way the id is guaranteed to name the row this call actually confirmed.
+   */
+  | { readonly outcome: 'applied'; readonly bookingId: string }
   | { readonly outcome: 'notPending'; readonly bookingStatus: string }
   /** The receipt id resolved to nothing within this owner's scope. */
   | { readonly outcome: 'notFound' };

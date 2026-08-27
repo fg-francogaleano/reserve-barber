@@ -269,7 +269,9 @@ describe('approve', () => {
       now: NOW,
     });
 
-    expect(result).toEqual({ outcome: 'applied' });
+    // Carries the booking it applied to (N1), so the caller can announce the
+    // confirmation against the row this transaction actually confirmed.
+    expect(result).toEqual({ outcome: 'applied', bookingId: BOOKING });
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.booking.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -348,13 +350,47 @@ describe('reject', () => {
       now: NOW,
     });
 
-    expect(result).toEqual({ outcome: 'applied' });
+    // Carries the booking it applied to (N1), so the caller can announce the
+    // confirmation against the row this transaction actually confirmed.
+    expect(result).toEqual({ outcome: 'applied', bookingId: BOOKING });
     // CANCELLED, not EXPIRED: a human decided this, and those two statuses are
     // how the product tells a decision apart from a deadline.
     expect(tx.booking.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: BOOKING, status: 'PENDING_APPROVAL' },
         data: expect.objectContaining({ status: 'CANCELLED' }),
+      })
+    );
+  });
+
+  /**
+   * **This path wrote the status alone for three stories, and it was not
+   * harmless.** The dashboard's cancellations counter bounds on `cancelledAt`,
+   * so with no instant it read zero for every cancellation the product had ever
+   * performed — verified against the live database, which held cancelled rows
+   * and not one timestamp. C2 needs the canceller for a second reason: its
+   * client-facing state attributes the decision, and attribution keys on
+   * `cancelledBy`, so without this every booking rejected here would fall
+   * through to the generic form.
+   */
+  it('records who cancelled and when, not just the status', async () => {
+    const { db, raw, tx } = createDb();
+    raw.transferReceipt.findFirst.mockResolvedValue(ownedReceipt());
+
+    await new PrismaTransferReceiptRepository(db).reject({
+      receiptId: RECEIPT,
+      ownerId: OWNER,
+      now: NOW,
+    });
+
+    expect(tx.booking.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'CANCELLED',
+          cancelledAt: NOW,
+          cancelledBy: 'OWNER',
+          holdExpiresAt: null,
+        }),
       })
     );
   });

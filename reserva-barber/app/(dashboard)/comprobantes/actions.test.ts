@@ -151,3 +151,26 @@ describe('an infrastructure failure', () => {
     expect(JSON.stringify(state)).not.toContain('connection reset');
   });
 });
+
+/**
+ * N1: the owner is never told the client was notified.
+ *
+ * Telling an owner a client has been informed when they have not is worse than
+ * saying nothing — it removes the owner's reason to phone them, which is the
+ * only recovery this product offers for a failed send. There is no resend
+ * control and, once approved, the receipt leaves the queue.
+ */
+describe('what the approval notice may claim', () => {
+  it('confirms the booking without claiming the client was notified', async () => {
+    const state = await approveReceiptAction(EMPTY_REVIEW_STATE, submission());
+
+    expect(state.notice).toBe(COPY.receipts.approved);
+    expect(state.notice).not.toMatch(/mail|email|avisa|notific/i);
+  });
+
+  it('keeps the copy itself free of any claim about notifying', async () => {
+    // Asserted over the copy rather than only over one call, because the string
+    // is what a later change would edit.
+    expect(COPY.receipts.approved).not.toMatch(/mail|email|avisa|notific/i);
+  });
+});

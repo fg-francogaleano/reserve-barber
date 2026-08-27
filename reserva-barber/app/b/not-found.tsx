@@ -32,6 +32,14 @@ export const metadata: Metadata = {
  *   so neither can the copy — guessing would be a lie told to the person least
  *   able to check it.
  *
+ * **It answers for the booking link too, and its copy was corrected for that
+ * (C2 verification).** Nested `not-found` boundaries do not resolve in this app
+ * (T75), so `/b/{slug}/reserva/{token}` lands here as well — and the old
+ * heading, "No encontramos esta barbería", told a client the shop did not
+ * exist when the shop was fine and the booking was not. The subject is now the
+ * link, which is what both failures have in common. N1 is what raised the
+ * stakes: that link travels by email now.
+ *
  * What it does instead is give the client the one action that actually works:
  * ask the shop for the current link.
  */

@@ -47,16 +47,18 @@ function build() {
     getPayment: vi.fn().mockResolvedValue({ status: 'found', payment: gatewayPayment() }),
   };
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const notifications = { notifyConfirmed: vi.fn().mockResolvedValue(undefined) };
 
   const service = new PaymentConfirmationService(
     payments as never,
     config as never,
     gateway as never,
     { now: () => NOW.getTime(), sleep: async () => {} },
-    logger as never
+    logger as never,
+    notifications as never
   );
 
-  return { service, payments, config, gateway, logger };
+  return { service, payments, config, gateway, logger, notifications };
 }
 
 describe('the cheap rejection comes first', () => {
@@ -431,5 +433,164 @@ describe('a payment approved for a booking that no longer exists', () => {
       expect.stringContaining('already handled'),
       expect.anything()
     );
+  });
+});
+
+/**
+ * The security property of N1, tested branch by branch rather than by a
+ * representative case.
+ *
+ * `POST /api/webhooks/mercadopago` is public and redelivery is normal
+ * operation for this gateway. A send keyed on the booking *being* `CONFIRMED`
+ * — rather than on this call being the one that confirmed it — would let
+ * anyone who has seen a `ref` send unlimited mail to one real person and burn
+ * the provider quota doing it. Every outcome below therefore gets its own
+ * assertion; a single "the happy path notifies" test would not catch a
+ * regression that also notified on redelivery.
+ */
+describe('PaymentConfirmationService - the confirmation email trigger', () => {
+  it('notifies when the guarded write actually confirmed the booking', async () => {
+    const { service, notifications } = build();
+
+    const result = await service.confirm(REQUEST);
+
+    expect(result.outcome).toBe('confirmed');
+    expect(notifications.notifyConfirmed).toHaveBeenCalledExactlyOnceWith('bkg-1');
+  });
+
+  it('notifies on a late confirmation whose slot survived', async () => {
+    const { service, payments, notifications } = build();
+    // Hold lapsed, so the slot-free path runs instead.
+    payments.findForNotification.mockResolvedValue(
+      record({ holdExpiresAt: new Date('2026-08-19T11:45:00.000Z') })
+    );
+    payments.confirmIfSlotFree.mockResolvedValue({ outcome: 'confirmed' });
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).toHaveBeenCalledExactlyOnceWith('bkg-1');
+  });
+
+  it('does not notify on a redelivered notification', async () => {
+    const { service, payments, notifications } = build();
+    payments.confirmWithPayment.mockResolvedValue({ outcome: 'alreadyProcessed' });
+
+    const result = await service.confirm(REQUEST);
+
+    expect(result.outcome).toBe('alreadyProcessed');
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when the booking was already CONFIRMED by the other path', async () => {
+    const { service, payments, notifications } = build();
+    payments.confirmWithPayment.mockResolvedValue({
+      outcome: 'notPending',
+      bookingStatus: 'CONFIRMED',
+    });
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when the booking no longer exists', async () => {
+    const { service, payments, notifications } = build();
+    payments.confirmWithPayment.mockResolvedValue({
+      outcome: 'notPending',
+      bookingStatus: 'EXPIRED',
+    });
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when the slot was lost', async () => {
+    const { service, payments, notifications } = build();
+    payments.findForNotification.mockResolvedValue(
+      record({ holdExpiresAt: new Date('2026-08-19T11:45:00.000Z') })
+    );
+    payments.confirmIfSlotFree.mockResolvedValue({ outcome: 'slotLost' });
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when the reference resolves nothing', async () => {
+    const { service, payments, notifications } = build();
+    payments.findForNotification.mockResolvedValue(null);
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when Mercado Pago does not have the payment', async () => {
+    const { service, gateway, notifications } = build();
+    gateway.getPayment.mockResolvedValue({ status: 'notFound' });
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when verification fails on the amount', async () => {
+    const { service, gateway, notifications } = build();
+    gateway.getPayment.mockResolvedValue({
+      status: 'found',
+      payment: gatewayPayment({ transactionAmount: '1.00' }),
+    });
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when the payment is not approved', async () => {
+    const { service, gateway, notifications } = build();
+    gateway.getPayment.mockResolvedValue({
+      status: 'found',
+      payment: gatewayPayment({ status: 'in_process' }),
+    });
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify on a reversal reported after confirmation', async () => {
+    const { service, payments, gateway, notifications } = build();
+    payments.findForNotification.mockResolvedValue(record({ bookingStatus: 'CONFIRMED' }));
+    gateway.getPayment.mockResolvedValue({
+      status: 'found',
+      payment: gatewayPayment({ status: 'refunded' }),
+    });
+
+    await service.confirm(REQUEST);
+
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not notify when the gateway is unavailable and a retry is asked for', async () => {
+    const { service, gateway, notifications } = build();
+    gateway.getPayment.mockResolvedValue({ status: 'unavailable' });
+
+    const result = await service.confirm(REQUEST);
+
+    expect(result.outcome).toBe('retry');
+    expect(notifications.notifyConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('reports confirmed even when the notification service fails', async () => {
+    // A mail provider must not be able to fail a payment confirmation. The
+    // service is specified never to throw; this proves the caller survives if
+    // that contract is ever broken.
+    const { service, notifications } = build();
+    notifications.notifyConfirmed.mockRejectedValue(new Error('provider down'));
+
+    const result = await service.confirm(REQUEST);
+
+    expect(result.outcome).toBe('confirmed');
   });
 });

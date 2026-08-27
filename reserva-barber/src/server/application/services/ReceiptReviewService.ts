@@ -6,6 +6,7 @@ import type {
 import type { IOwnerReceiptStorage } from '@/server/domain/repositories/IReceiptStorage';
 import type { IClock } from '@/server/domain/repositories/IClock';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
+import type { BookingConfirmationNotificationService } from './BookingConfirmationNotificationService';
 
 /**
  * The owner's review queue, and the two decisions it leads to.
@@ -34,7 +35,15 @@ export class ReceiptReviewService {
     private readonly receipts: ITransferReceiptRepository,
     private readonly storage: IOwnerReceiptStorage,
     private readonly clock: IClock,
-    private readonly logger: ILogger
+    private readonly logger: ILogger,
+    /**
+     * Telling the client their turn is real (N1). Required, not optional (T57).
+     *
+     * **This is the path where the email is the only channel.** A Mercado Pago
+     * client is looking at a page when their booking confirms; this one closed
+     * the tab after uploading a receipt and was told a human would decide.
+     */
+    private readonly notifications: BookingConfirmationNotificationService
   ) {}
 
   /**
@@ -84,6 +93,24 @@ export class ReceiptReviewService {
     });
 
     this.logDecision('approve', receiptId, result);
+
+    /**
+     * **Only when this call is the one that applied it** (N1).
+     *
+     * The booking update inside that transaction is conditional on the status
+     * it expected, so a second submission — or a booking that moved underneath
+     * this one — matches zero rows and reports `notPending` instead. Hanging
+     * the email off `applied` rather than off the booking's status is what
+     * makes it exactly once, and it is the same rule the notification path
+     * follows for the same reason.
+     *
+     * After the transaction, never inside it: a mail provider's latency must
+     * not hold a pooled connection the owner's own dashboard is waiting on.
+     */
+    if (result.outcome === 'applied') {
+      await this.notifyConfirmed(result.bookingId);
+    }
+
     return result;
   }
 
@@ -97,6 +124,27 @@ export class ReceiptReviewService {
 
     this.logDecision('reject', receiptId, result);
     return result;
+  }
+
+  /**
+   * The confirmation email, behind a `catch` this service should never need.
+   *
+   * The notification service is specified never to throw and is tested for it.
+   * The guard exists because of what is on the other side: an exception here
+   * would surface to the owner as a failed approval over a booking the database
+   * has already confirmed — and the owner's only sensible response, retrying,
+   * would match zero rows and report the booking as no longer pending.
+   */
+  private async notifyConfirmed(bookingId: string): Promise<void> {
+    try {
+      await this.notifications.notifyConfirmed(bookingId);
+    } catch (error) {
+      this.logger.error('Confirmation email failed after an approval', {
+        operation: 'receipts.review',
+        bookingId,
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
+    }
   }
 
   /**

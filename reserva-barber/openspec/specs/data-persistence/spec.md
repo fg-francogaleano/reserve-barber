@@ -1225,7 +1225,6 @@ The prior booking migration carried a check constraint the ORM could not declare
 - **WHEN** the gate attempts a second non-rejected payment for one booking
 - **THEN** the database refuses it and the gate reports the refusal as expected
 
-
 ### Requirement: The sweep's two predicates are each served by a partial index
 
 `Booking` SHALL carry a partial index on `holdExpiresAt` restricted to `PENDING_PAYMENT` rows, and a partial index on `startTime` restricted to `PENDING_APPROVAL` rows.
@@ -1288,7 +1287,6 @@ The port SHALL NOT expose a method that returns booking rows for reporting; the 
 - **WHEN** the booking repository is reviewed after this change
 - **THEN** it has gained no reporting method
 
-
 ### Requirement: An owner-scoped aggregate joins through the barber relation and is computed in one statement
 
 Every aggregate in this capability SHALL reach the owner by joining `barber → location → ownerId`. A booking's location is deliberately not duplicated onto the booking row, so this is the only path, and it is the same one the receipt queue already takes.
@@ -1325,7 +1323,6 @@ There is no row-level security on these tables. Cross-owner isolation SHALL ther
 - **WHEN** one booking's hold is live and another's has lapsed
 - **THEN** an executable check against the live database counts the first as held and not the second
 
-
 ### Requirement: A monetary aggregate crosses the repository boundary as a canonical string
 
 A sum over a monetary column SHALL be converted at the repository boundary to a canonical decimal string, exactly as every individual monetary column in this project already is. It SHALL NOT cross a layer as a driver type and SHALL NOT be converted to a floating-point number.
@@ -1343,7 +1340,6 @@ An empty aggregate — no matching rows — SHALL be normalized to a canonical z
 
 - **WHEN** no payment matches the predicate
 - **THEN** the repository returns a canonical zero rather than a null
-
 
 ### Requirement: The dashboard aggregate predicates are indexed by measurement, not by assumption
 
@@ -1368,7 +1364,6 @@ Any index that ships SHALL be declared in a raw-SQL migration and SHALL carry a 
 - **WHEN** the migration is reviewed
 - **THEN** it contains no statement that inserts, updates or deletes a row
 
-
 ### Requirement: The dashboard aggregates are verified against the live database by a seeded gate
 
 This capability's figures SHALL be verified by an executable gate run against the real database, following the pattern the booking, payment and sweep tables already use.
@@ -1391,3 +1386,156 @@ A mock cannot certify this. The project has already recorded that a mocked query
 
 - **WHEN** the gate completes
 - **THEN** it prints the wall-clock duration of the page's reads
+
+### Requirement: The cancellation columns gain their first writers, with no migration
+
+`Booking.cancelledAt` and `Booking.cancelledBy` have existed since the booking tables were created and have never been written. This capability is their first writer, and it SHALL add **no migration**: the columns and the `CancelledBy` enum are already in place, declared whole rather than assembled across stories.
+
+Every path that writes `CANCELLED` SHALL write both columns. A cancelled booking with no recorded canceller cannot be attributed once more than one party can cancel, and no later read can recover the answer.
+
+`cancelledBy` SHALL be `OWNER` for both owner-initiated cancellation and receipt rejection — the owner is the actor in both — leaving `CLIENT` for the story that gives clients a cancellation of their own.
+
+Rows cancelled before this capability SHALL keep their nulls. **No backfill:** inventing a canceller for historical rows would be a guess presented as data, where a null honestly records that nobody was tracking it.
+
+#### Scenario: No migration is added
+- **WHEN** the change is reviewed
+- **THEN** it contains no migration directory and the schema file is unchanged
+
+#### Scenario: Both columns are written together
+- **WHEN** any path writes `CANCELLED`
+- **THEN** it writes `cancelledAt` and `cancelledBy` in the same statement
+
+#### Scenario: Historical rows are left alone
+- **WHEN** a booking cancelled before this capability is read
+- **THEN** its canceller and instant are null
+
+---
+
+### Requirement: The cancellation write touches one booking and nothing that describes another
+
+The cancellation SHALL be keyed by booking id, scoped to the caller's owner through the barber's location, and guarded on the status it expects.
+
+It SHALL NOT touch any monetary or temporal snapshot, the cancellation token, or either of the booking's foreign keys. It SHALL clear `holdExpiresAt`, because a finished booking has no hold left to describe — deliberately unlike an expired row, which preserves it as the evidence of why the row ended.
+
+The payment and receipt writes in the same transaction SHALL each be **conditional on the status they expect**, so a payment already `APPROVED` and a receipt already reviewed match zero rows rather than being rewritten.
+
+**Verification of what a write touched SHALL compare the stored row before and after**, not the arguments passed to the update. A test asserting the argument shape cannot see a column the ORM adds — which is how a related claim in a previous story was found to be false.
+
+#### Scenario: Snapshots and identity are untouched
+- **WHEN** a booking is cancelled
+- **THEN** its price, deposit, appointment instants, token and foreign keys are unchanged
+
+#### Scenario: The hold deadline is cleared, unlike an expiry
+- **WHEN** a `PENDING_PAYMENT` booking is cancelled
+- **THEN** its `holdExpiresAt` is null
+
+#### Scenario: An approved payment matches zero rows
+- **WHEN** the transaction attempts the payment write against an `APPROVED` payment
+- **THEN** zero rows match and the payment is unchanged
+
+#### Scenario: The comparison is against the database
+- **WHEN** the write is verified
+- **THEN** the stored row is read before and after and compared
+
+---
+
+### Requirement: The public booking projection carries the canceller
+
+The projection feeding the client's confirmation page SHALL carry `cancelledBy`, so the page can name who cancelled rather than inferring it from the status.
+
+It SHALL remain within its existing bounds: no client email, no telephone, no payment-configuration column. Adding the canceller widens the projection by one enum and nothing else.
+
+#### Scenario: The canceller reaches the page
+- **WHEN** the confirmation page reads a cancelled booking
+- **THEN** the projection carries who cancelled it
+
+#### Scenario: The projection is not otherwise widened
+- **WHEN** the projection is compared before and after this change
+- **THEN** the only added field is the canceller
+
+### Requirement: A booking records when its client was told it was confirmed
+
+`Booking` SHALL gain a nullable, zone-aware column recording the instant the email provider accepted the confirmation message, declared `@db.Timestamptz(3)` like every other instant on this table and for the reason `docs/data-model.md` gives: Prisma's zone-less default is the failure mode that convention exists to prevent.
+
+The column SHALL be added by its own migration. The migration SHALL be purely additive — one nullable column, no backfill, no altered column, no modified row — so that every booking that existed before this change reads as "never told", which is exactly what is true of them.
+
+**No index SHALL be added.** Nothing queries the column yet; the story that gives "confirmed but never told" a surface is the story that should measure and index it, in the way the dashboard aggregates were indexed by measurement rather than by assumption.
+
+The column SHALL NOT be used as an idempotency key. At-most-once delivery is a property of the guarded status transition, and a second mechanism claiming the same guarantee is a second thing to get wrong.
+
+`docs/data-model.md` §11 SHALL be updated in the same change, per the spec-first policy.
+
+#### Scenario: The migration is additive
+- **WHEN** the migration runs against the shared database
+- **THEN** one nullable column is added, no existing column is altered, no backfill occurs, and no existing row is modified
+
+#### Scenario: The instant is zone-aware
+- **WHEN** the schema is reviewed
+- **THEN** the column is `Timestamptz` rather than the zone-less default
+
+#### Scenario: Pre-existing bookings read as never told
+- **WHEN** a booking confirmed before this change is read
+- **THEN** its send instant is null
+
+#### Scenario: It is not an idempotency key
+- **WHEN** the send path is reviewed
+- **THEN** no code reads the column to decide whether to send
+
+---
+
+### Requirement: The confirmation message is composed from one named projection that deliberately carries the client's address
+
+The read that composes the confirmation email SHALL be a single explicit projection naming its columns, and SHALL be the only read in the notification and review paths that selects the client's email address.
+
+It SHALL carry exactly what the message needs: the client's name and email, the shop's public name and slug, the branch name and address, the barber's display name, the service name, the appointment's start instant, the price and deposit as canonical decimal strings, and the cancellation token.
+
+It SHALL NOT select the phone, SHALL NOT select the whole row, SHALL NOT include the client relation wholesale, and SHALL NOT carry any payment-configuration column — encrypted or otherwise.
+
+**This is a deliberate, named exception to the projection rule the public-flow reads follow.** That rule exists because the confirmation *page* can be opened on a shared device, so a projection that cannot carry contact detail cannot render it by accident. An email is addressed to that contact detail; the column is the destination rather than a leak. The exception SHALL be documented in the contract that declares it, so that a later reader finds a decision rather than an inconsistency.
+
+Monetary values SHALL cross the repository boundary as canonical decimal strings, like every other money column, because the driver returns a stored `2000.50` as `2000.5` and a message rendering the lone `5` as five centavos would be wrong in a place nobody can correct after sending.
+
+#### Scenario: The projection names its columns
+- **WHEN** the confirmation-message read runs
+- **THEN** it selects a named set of columns rather than the whole row or a wholesale client include
+
+#### Scenario: The phone is not selected
+- **WHEN** the projection is reviewed
+- **THEN** it carries no phone column
+
+#### Scenario: No credential can ride along
+- **WHEN** the projection's type is reviewed
+- **THEN** it has no field capable of holding an access token or any payment-configuration value
+
+#### Scenario: Money crosses as a canonical string
+- **WHEN** a booking with a stored deposit of `2000.50` is read for the message
+- **THEN** the value crosses the boundary as a canonical decimal string rather than as a driver number
+
+#### Scenario: The exception is documented where it is declared
+- **WHEN** the repository contract is read
+- **THEN** it states that this projection selects the client's email, and why that is correct for a message and not for a page
+
+---
+
+### Requirement: Recording the send is a guarded write that cannot alter a booking's state
+
+The write that records the send instant SHALL set that column and SHALL disturb nothing that describes what the booking is. It SHALL NOT touch `status`, `holdExpiresAt`, `cancelledAt`, `cancelledBy`, the cancellation token, either foreign key, or any monetary or temporal snapshot.
+
+**The ORM's own `updatedAt` moves with it, and the requirement is written to admit that rather than to forbid it.** An earlier form of this requirement said "that column and no other"; the live-database gate compared the whole row before and after and found Prisma bumping `updatedAt`, as it does on every write through the client. Expressing the write as raw SQL to make the stricter claim true would make it the only write in the product to bypass the client, for a property nothing depends on. The one reader of `updatedAt` — the page's proxy for the confirmation instant — consults it only when the send instant is null, which is exactly when this write did not run.
+
+It SHALL be keyed by booking id and SHALL run outside the confirming transaction.
+
+A failure of this write SHALL NOT roll anything back and SHALL NOT be surfaced as a failure to its caller; it SHALL be logged.
+
+#### Scenario: Nothing describing the booking moves
+- **WHEN** the send instant is recorded
+- **THEN** the whole row is unchanged except for that column and the ORM's `updatedAt`
+
+#### Scenario: The row is compared against the database, not against the query
+- **WHEN** the write is verified
+- **THEN** the comparison is of the stored row before and after, because a test asserting the update's arguments cannot see a column the ORM adds
+
+#### Scenario: A failed record does not undo a confirmation
+- **WHEN** the recording write fails
+- **THEN** the booking remains `CONFIRMED` and the caller's outcome is unchanged
+

@@ -81,25 +81,51 @@ The lock SHALL be acquired with a statement executed for its effect, not with a 
 
 Because a `PENDING_APPROVAL` booking has been blocking its slot the whole time, the slot cannot have been sold underneath it; the lock is taken so this caller cannot collide with a write that is in the middle of taking an adjacent slot.
 
+**An applied approval SHALL request the confirmation email** specified in the `booking-confirmation-email` capability, after the transaction has committed and never from inside it. This is the trigger that matters most in the product: the Mercado Pago client is at least looking at a page when their booking confirms, while a transfer client is told a human will decide and then learns the answer only if something reaches them. Without the email, **this path confirms appointments that the client never finds out about.**
+
+The email SHALL be requested only when the approval was applied. An approval that matched zero rows — a second submission, or a booking that moved underneath it — SHALL send nothing.
+
+**The approval SHALL NOT be reported as failed, retried, or rolled back because the email failed**, and the owner's success message SHALL NOT state that the client was notified unless the send was recorded. Telling an owner that a client has been informed, when they have not, is worse than saying nothing: it removes the owner's reason to make contact by hand, which is the only recovery this product offers.
+
 #### Scenario: An approval confirms
 - **WHEN** the owner approves a pending receipt
 - **THEN** the receipt is `APPROVED` with a `reviewedAt`, the payment is `APPROVED`, and the booking is `CONFIRMED`
 
+#### Scenario: An applied approval notifies the client
+- **WHEN** an approval is applied
+- **THEN** one confirmation email is requested for that booking, after the transaction has committed
+
 #### Scenario: A second approval changes nothing
 - **WHEN** the owner submits an approval twice for the same receipt
-- **THEN** the second matches zero rows, no state changes, and no error is presented
+- **THEN** the second matches zero rows, no state changes, no second email is requested, and no error is presented
 
 #### Scenario: Approving a booking that was cancelled in the meantime
 - **WHEN** the owner approves a receipt whose booking has since been cancelled
-- **THEN** the booking is not confirmed, and the owner is told plainly that the booking is no longer pending
+- **THEN** the booking is not confirmed, no email is requested, and the owner is told plainly that the booking is no longer pending
+
+#### Scenario: A failed email does not fail the approval
+- **WHEN** the email provider is unavailable at the moment an approval is applied
+- **THEN** the receipt, payment and booking remain approved and confirmed, and the owner's action succeeds
+
+#### Scenario: The owner is not told the client was notified when they were not
+- **WHEN** an approval is applied and the send fails
+- **THEN** the owner's success message confirms the approval without claiming that the client was informed
 
 ### Requirement: Rejection releases the slot and says what happened to the money
 
 Rejecting SHALL, in one transaction: set the receipt to `REJECTED` with a `reviewedAt`, set the parent `Payment` to `REJECTED`, and set the `Booking` to `CANCELLED`, releasing the slot.
 
+**The booking update SHALL also record `cancelledAt` and `cancelledBy` as `OWNER`.** It never has. Since B6 this path has written the status alone, which has three consequences that only became visible when a second canceller was designed:
+
+- **The dashboard's cancellations counter reads zero.** It bounds on `cancelledAt`, so a cancellation with no instant is invisible to it — and this was the only writer of `CANCELLED` in the product.
+- **The client-facing cancelled state cannot attribute the decision**, because attribution keys on `cancelledBy`. A booking rejected here would fall through to the generic form.
+- **Once a client can cancel their own booking, the two are indistinguishable.** A `CANCELLED` row with no canceller could be either, and no later read can recover which.
+
 Rejection SHALL require an explicit confirmation, because it is destructive and irreversible from the owner's side.
 
 The confirmation SHALL state that the client's slot will be released and that any money actually transferred is not returned by this system.
+
+**Rejection is no longer the only writer of `CANCELLED`.** The rules it holds — the conditional booking update, no advisory lock because a release cannot double-book, and an `APPROVED` payment left untouched — are now shared with owner cancellation rather than particular to this path.
 
 #### Scenario: A rejection frees the time
 - **WHEN** the owner rejects a pending receipt for a 15:00 appointment
@@ -108,6 +134,18 @@ The confirmation SHALL state that the client's slot will be released and that an
 #### Scenario: Rejection is confirmed before it happens
 - **WHEN** the owner activates the reject control
 - **THEN** an explicit confirmation is required before any row changes
+
+#### Scenario: The rejection records who cancelled and when
+- **WHEN** a rejection cancels a booking
+- **THEN** that booking carries a `cancelledAt` and a `cancelledBy` of `OWNER`
+
+#### Scenario: A rejection becomes visible to the cancellations counter
+- **WHEN** a receipt is rejected today
+- **THEN** the dashboard's cancellations counter includes it
+
+#### Scenario: Bookings cancelled before this change keep their nulls
+- **WHEN** a booking cancelled by an earlier version of this path is read
+- **THEN** its canceller is null and no value is invented for it
 
 ### Requirement: The review surface is owner-only and its writes are authenticated
 
@@ -150,3 +188,4 @@ Each approval and rejection SHALL be logged with the receipt id, the booking id 
 #### Scenario: A rejection is auditable without exposing anyone
 - **WHEN** a receipt is rejected
 - **THEN** the log records the operation, the ids and the outcome, and contains no contact detail, no filename and no destination
+

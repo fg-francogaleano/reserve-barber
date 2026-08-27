@@ -3,7 +3,9 @@ import {
   blocksAvailability,
   holdExpiresAtFor,
   holdSweepCutoff,
+  isCancellableByOwner,
   transferHoldExpiresAtFor,
+  BOOKING_STATUSES,
   type BlockingCandidate,
 } from './Booking';
 import { EXPIRY_GRACE_MINUTES } from './bookingHorizon';
@@ -250,5 +252,44 @@ describe('Booking - when a lapsed hold becomes sweepable', () => {
         NOW
       )
     ).toBe(false);
+  });
+});
+
+/**
+ * C2: which bookings the owner may cancel.
+ *
+ * The predicate exists because three callers need the same answer — the row
+ * deciding whether to render a control, the service deciding whether to try,
+ * and the write's own guard. Three copies of a status list is three chances for
+ * a control to appear where the write refuses.
+ */
+describe('isCancellableByOwner', () => {
+  it.each(['CONFIRMED', 'PENDING_PAYMENT', 'PENDING_APPROVAL'] as const)(
+    'should_admit_%s_because_it_still_holds_or_occupies_its_slot',
+    (status) => {
+      expect(isCancellableByOwner(status)).toBe(true);
+    }
+  );
+
+  it.each(['CANCELLED', 'EXPIRED'] as const)(
+    'should_refuse_%s_because_it_is_terminal',
+    (status) => {
+      expect(isCancellableByOwner(status)).toBe(false);
+    }
+  );
+
+  it('should_cover_every_member_of_the_status_enum', () => {
+    // A new status must force a decision here rather than defaulting to
+    // "not cancellable" by omission.
+    for (const status of BOOKING_STATUSES) {
+      expect(typeof isCancellableByOwner(status)).toBe('boolean');
+    }
+  });
+
+  it('should_not_consult_the_appointment_time', () => {
+    // A no-show is exactly a past appointment the owner wants off the books,
+    // and the list this is offered from is ordered by recency.
+    expect(isCancellableByOwner('CONFIRMED')).toBe(true);
+    expect(isCancellableByOwner.length).toBe(1);
   });
 });

@@ -333,12 +333,33 @@ export const COPY = {
     book: 'Reservar',
     bookUnavailable: 'Esta barbería todavía no está tomando reservas online.',
     loading: 'Cargando…',
-    notFoundHeading: 'No encontramos esta barbería',
-    // Says nothing about which of the two happened, because the system cannot
-    // tell either: the slug may never have existed, or the owner may have
-    // changed it and stranded this link (T33).
+    /**
+     * **It used to say "No encontramos esta barbería", and that was false half
+     * the time.** This one boundary serves the whole public namespace — the
+     * profile, the booking flow and the booking link — so it answers for a bad
+     * slug *and* for a booking that resolved nothing. Measured in production:
+     * a real slug with an unknown token rendered "the barbershop was not
+     * found", and then advised the client to ask that same shop for a new link.
+     *
+     * N1 is what raised the stakes. The booking link now travels by email, gets
+     * forwarded and gets truncated by mail clients, so it outlives the address
+     * bar it used to be confined to — and a permanent link deserves a failure
+     * that is true.
+     *
+     * **The subject is now the link, which is the one thing both cases share.**
+     * Route-specific wording would be better and is not currently available:
+     * nested `not-found` boundaries do not resolve in this app (T75), so this
+     * file is the only one that answers.
+     *
+     * It still says nothing about the cause, and for two reasons that survive
+     * unchanged: the system cannot tell a slug that never existed from one the
+     * owner changed (T33), and a booking token that never existed must be
+     * indistinguishable from one whose booking is gone, or this page becomes an
+     * oracle for which bookings exist (B4).
+     */
+    notFoundHeading: 'No encontramos este link',
     notFoundBody:
-      'El link puede estar mal escrito o haber cambiado. Pedile el link actualizado a la barbería.',
+      'Puede estar incompleto o haber cambiado. Escribile a la barbería para que te pase el link actualizado.',
     errorHeading: 'No pudimos cargar la página',
     errorBody: 'Puede ser un problema momentáneo. Probá de nuevo en un rato.',
     retry: 'Reintentar',
@@ -467,6 +488,27 @@ export const COPY = {
     apiValidationFailed: 'Revisá los datos ingresados.',
     apiBookingCreated: 'Turno reservado.',
 
+    /**
+     * The booking link resolved nothing.
+     *
+     * **Its own message, because the shared one told a lie.** Until this
+     * existed the booking route fell through to the public namespace's
+     * not-found — "No encontramos esta barbería" — so a client whose link was
+     * mistyped, truncated by a mail client, or whose booking had been removed
+     * was told the *shop* did not exist. It then advised them to ask that shop
+     * for a new link. N1 made it matter: the link now lives in inboxes and gets
+     * forwarded, so it outlives the address bar it used to be confined to.
+     *
+     * **It does not say why, and that is the same rule the shop-level page
+     * follows.** A token that never existed and one whose booking is gone must
+     * be indistinguishable from outside, or this page becomes an oracle for
+     * which bookings exist (B4). Naming both possibilities without asserting
+     * either is what keeps it honest and useless to a stranger.
+     */
+    linkNotFoundHeading: 'No encontramos esta reserva',
+    linkNotFoundBody:
+      'El link puede estar incompleto o el turno puede haber sido dado de baja. Escribile a la barbería para que te confirme cómo quedó.',
+
     // ---- B4: the hold confirmation page ----
     holdHeading: 'Te guardamos el turno',
     holdIntro: 'Reservamos este horario a tu nombre mientras completás el pago.',
@@ -486,16 +528,75 @@ export const COPY = {
     resumePaymentHelp: 'Ya empezaste a pagar esta seña. Podés retomarlo desde acá.',
 
     /**
-     * Returned from Mercado Pago, notification not processed yet. No spinner
-     * and no promise of automatic refresh: the page does not poll, and implying
-     * otherwise would leave someone staring at it.
+     * Returned from Mercado Pago, notification not processed yet.
+     *
+     * **N1 made the refresh real, so the help text stopped lying in the other
+     * direction.** B5 wrote this state with no spinner and an instruction to
+     * reload by hand, because the page did not poll and implying otherwise
+     * would leave someone staring at it. T62 then measured that this is what
+     * nearly every client sees — the redirect beats the notification — so the
+     * most important moment in the product ended by asking for a reload.
+     *
+     * There are now two help strings because there are two states: the page
+     * refreshes itself a bounded number of times, and then it stops. The
+     * spinner belongs only to the first; on the terminal one nothing further is
+     * going to happen and a spinner would be the same lie B5 refused.
      */
     paymentConfirming: 'Estamos confirmando tu pago',
-    paymentConfirmingHelp:
-      'Puede tardar un momento. Actualizá esta página en unos segundos para ver el estado.',
+    paymentConfirmingHelp: 'Puede tardar unos segundos. Esta página se actualiza sola.',
+    /** The terminal form, after the last attempt. B5's original sentence. */
+    paymentConfirmingHelpExhausted:
+      'Está tardando más de lo normal. Actualizá esta página en unos segundos para ver el estado.',
 
     paymentConfirmed: '¡Listo! Tu turno está confirmado',
     paymentConfirmedHelp: 'Te esperamos. Guardá este link por si necesitás cancelar.',
+
+    /**
+     * What happened to the confirmation email (N1).
+     *
+     * Three variants and not two, because "we have not recorded it yet" and "it
+     * failed" are different facts and only one of them is worth alarming
+     * somebody with. The page must never claim a message that was not sent: in
+     * the failed case the on-screen link stops being a convenience and becomes
+     * the client's only copy, which is the whole reason the third string is
+     * more emphatic than the first.
+     */
+    paymentConfirmedEmailSent: 'Te mandamos la confirmación a tu email.',
+    paymentConfirmedEmailFailed:
+      'No pudimos mandarte el mail de confirmación. Guardá este link: es tu única copia del turno.',
+
+    /**
+     * The shop ended the appointment (C2).
+     *
+     * **Never "venció".** Until C2 a cancelled booking fell through to the
+     * lapsed-hold copy and told its client the reservation had run out of time,
+     * when in fact somebody decided. The distinction is the entire reason this
+     * product has `CANCELLED` and `EXPIRED` as separate statuses, and it is the
+     * difference between "you were too slow" and "we cancelled on you".
+     *
+     * It apologises, because this is the one state on this page the shop caused
+     * deliberately. It does not invent a reason — the product does not capture
+     * one — and it does not promise a refund it cannot perform.
+     */
+    bookingCancelledByShop: 'La barbería canceló tu turno',
+    bookingCancelledByShopHelp:
+      'Lamentamos el inconveniente. El horario quedó libre, así que podés reservar otro cuando quieras.',
+    /**
+     * Added only when a deposit was actually approved. Same honesty as the
+     * slot-lost state: the money moved, and this system does not move it back.
+     */
+    bookingCancelledDepositNote:
+      'Tu seña no se devuelve por este sistema. Escribile a la barbería para coordinarla.',
+
+    /**
+     * Cancelled, with nothing recorded about who did it.
+     *
+     * Every booking cancelled before C2 is one of these. Attributing the
+     * decision to the shop would be inventing a fact, so this form states what
+     * is known and nothing more.
+     */
+    bookingCancelled: 'Este turno fue cancelado',
+    bookingCancelledHelp: 'El horario quedó libre. Podés reservar otro cuando quieras.',
 
     paymentRejected: 'El pago fue rechazado',
     paymentRejectedHelp: 'Podés intentar de nuevo con otro medio de pago.',
@@ -912,6 +1013,50 @@ export const COPY = {
     countersFailed: 'No pudimos cargar los indicadores. Actualizá la página.',
     recentFailed: 'No pudimos cargar las reservas recientes.',
 
+    // ---- C2: the owner cancels a booking ----
+
+    cancel: 'Cancelar turno',
+    cancelling: 'Cancelando…',
+    /** Named, so a row's control says which booking it ends. */
+    cancelLabel: (clientName: string) => `Cancelar el turno de ${clientName}`,
+
+    /**
+     * The confirmation, and it names the three things this system cannot undo.
+     *
+     * The same shape the receipt rejection uses: destructive, irreversible from
+     * the owner's side, and honest about the part the product does not perform.
+     * The slot is released **immediately** and may be taken while the owner is
+     * still looking at the page, which is the detail an owner would otherwise
+     * discover by trying to undo.
+     */
+    cancelConfirm:
+      '¿Cancelar este turno? El horario queda libre al instante y otra persona puede tomarlo. No se puede deshacer, y si el cliente ya pagó la seña, la devolución la coordinás vos.',
+
+    /**
+     * **It confirms the cancellation and claims nothing about the client.**
+     *
+     * The rule N1 established: telling an owner a client has been informed when
+     * they have not removes the owner's reason to phone them, which is the only
+     * recovery this product offers for a message that did not arrive.
+     */
+    cancelled: 'Turno cancelado. El horario quedó libre.',
+
+    /**
+     * The booking moved between the page render and the submission — confirmed
+     * by a notification, swept by the expiry job, or simply cancelled already
+     * in another tab. Not an error: the guard doing its job is the system
+     * working, and the owner needs the page refreshed rather than an apology.
+     */
+    cancelNotPossible: 'Este turno ya no se puede cancelar. Actualizá la página para ver su estado.',
+
+    /**
+     * A booking outside this owner's scope and one that never existed answer
+     * identically, so this string covers both. A differential message would
+     * make the dashboard an oracle for which bookings exist.
+     */
+    cancelNotFound: 'No encontramos ese turno.',
+    cancelFailed: 'No pudimos cancelar el turno. Intentá de nuevo más tarde.',
+
     recentHeading: 'Reservas recientes',
     recentEmpty: 'Todavía no recibiste reservas.',
     recentEmptyHelp: 'Compartí tu link de reservas para empezar a recibir turnos.',
@@ -954,5 +1099,92 @@ export const COPY = {
     credentialsError: 'Email o contraseña incorrectos.',
     infrastructureError: 'No pudimos iniciar sesión. Intentá de nuevo más tarde.',
     logout: 'Cerrar sesión',
+  },
+
+  /**
+   * The confirmation email (N1).
+   *
+   * **An email is user-facing copy that happens not to be rendered by React**,
+   * so it lives here like every other Spanish string rather than inline in the
+   * module that composes the message. The product's voice stays reviewable in
+   * one file.
+   *
+   * These values are static and trusted. Everything interpolated into the
+   * message — the client's name, the shop's, the branch's — is guest- or
+   * owner-supplied and is escaped by the builder at the point of assembly, not
+   * here: a template that pre-escaped its own literals would have to be undone
+   * for the plain-text part.
+   */
+  email: {
+    confirmation: {
+      /** Composed from server-held values only. A header never carries guest text. */
+      subject: (shopName: string, when: string) => `Tu turno en ${shopName} — ${when}`,
+      greeting: (clientName: string) => `Hola ${clientName},`,
+      heading: 'Tu turno está confirmado',
+      intro: 'Ya está todo listo. Estos son los datos de tu turno:',
+
+      whenLabel: 'Cuándo',
+      whereLabel: 'Dónde',
+      addressLabel: 'Dirección',
+      barberLabel: 'Barbero',
+      serviceLabel: 'Servicio',
+      depositLabel: 'Seña pagada',
+      balanceLabel: 'A pagar en el local',
+
+      /**
+       * The link block. The URL is also printed as text immediately below the
+       * control, because a plain-text rendering or a forward is exactly where a
+       * button-only link disappears.
+       */
+      linkIntro: 'Guardá este link. Desde ahí podés ver tu turno:',
+      linkLabel: 'Ver mi turno',
+
+      /**
+       * What the message says when no public origin is configured and there is
+       * therefore no link to give. It never apologises for a URL the reader
+       * cannot see — it tells them the one thing they can act on.
+       */
+      noLink: 'Si necesitás cambiar o cancelar el turno, escribile a la barbería.',
+
+      closing: '¡Te esperamos!',
+    },
+
+    /**
+     * The shop cancelled the appointment (C2).
+     *
+     * **This is the message N1 did not send.** T72 records the asymmetry it
+     * closes half of: until now the product emailed when nothing was wrong and
+     * stayed silent when something was — and here the cause is not a failure
+     * but a deliberate decision by the shop, which makes the silence worse.
+     *
+     * **It carries no link.** The confirmation's link exists so a client can
+     * reach a booking that is still theirs; a cancelled one has nothing to do
+     * there, and the link is a cancellation token — a credential (T69). Not
+     * sending it where it has no use is strictly better than sending it.
+     */
+    cancellation: {
+      subject: (shopName: string, when: string) => `Se canceló tu turno en ${shopName} — ${when}`,
+      greeting: (clientName: string) => `Hola ${clientName},`,
+      heading: 'La barbería canceló tu turno',
+      intro: 'Lamentamos el inconveniente. Este era el turno que quedó cancelado:',
+
+      whenLabel: 'Cuándo era',
+      whereLabel: 'Dónde',
+      barberLabel: 'Barbero',
+      serviceLabel: 'Servicio',
+
+      /**
+       * Added only when a deposit was actually approved. Same honesty the
+       * slot-lost page state uses: the money moved, and this system does not
+       * move it back — so it says who to talk to instead of implying a process
+       * that does not exist.
+       */
+      depositLabel: 'Seña pagada',
+      depositNote:
+        'Tu seña no se devuelve por este sistema. Escribile a la barbería para coordinar la devolución.',
+
+      /** No link, so the closing is the only call to action there is. */
+      closing: 'Podés reservar otro turno cuando quieras.',
+    },
   },
 } as const;

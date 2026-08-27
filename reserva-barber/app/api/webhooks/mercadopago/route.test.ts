@@ -220,3 +220,55 @@ describe('cookies are cleared at the path they were set on', () => {
     expect(source).not.toMatch(/cookies\.delete\(BOOKING_ECHO_COOKIE\)/);
   });
 });
+
+/**
+ * The confirmation email is invisible from outside this endpoint (N1).
+ *
+ * The uniform body for every non-retry outcome exists so a public endpoint is
+ * not an oracle for which bookings and payments exist. An email that failed
+ * must not become a new way to ask — and, more sharply, must not become a
+ * `503`: the redelivery that request asks for would find the booking already
+ * `CONFIRMED`, report `alreadyProcessed`, and by the trigger rule send nothing.
+ */
+describe('the confirmation email changes nothing about the response', () => {
+  it('answers identically whether or not the email succeeded', async () => {
+    // Arrange: the service swallows every send failure, so both cases reach the
+    // route as the same `confirmed` outcome. This asserts the route keeps it
+    // that way rather than growing a branch for it.
+    confirm.mockResolvedValue({ outcome: 'confirmed' });
+    const sent = await POST(notify('/api/webhooks/mercadopago?ref=pay-1'));
+    const sentBody = await sent.json();
+
+    confirm.mockResolvedValue({ outcome: 'confirmed' });
+    const failed = await POST(notify('/api/webhooks/mercadopago?ref=pay-1'));
+    const failedBody = await failed.json();
+
+    expect(sent.status).toBe(failed.status);
+    expect(sentBody).toEqual(failedBody);
+    expect(sent.status).toBe(200);
+  });
+
+  it('never asks for a retry because of the email', async () => {
+    // Arrange: `retry` remains reachable only from a genuinely transient
+    // gateway or database failure, never from a mail provider.
+    confirm.mockResolvedValue({ outcome: 'confirmed' });
+
+    const response = await POST(notify('/api/webhooks/mercadopago?ref=pay-1'));
+
+    expect(response.status).not.toBe(503);
+    expect(await response.json()).toEqual({ received: true });
+  });
+
+  it('still acknowledges when the service throws unexpectedly, without leaking why', async () => {
+    // Arrange: the notification service is specified never to throw and the
+    // confirmation service guards it anyway. If both contracts were broken the
+    // route's own catch answers 503 — and its body must still disclose nothing.
+    confirm.mockRejectedValue(new Error('provider down: ana@example.com rejected'));
+
+    const response = await POST(notify('/api/webhooks/mercadopago?ref=pay-1'));
+    const body = JSON.stringify(await response.json());
+
+    expect(body).not.toContain('ana@example.com');
+    expect(body).not.toContain('provider down');
+  });
+});

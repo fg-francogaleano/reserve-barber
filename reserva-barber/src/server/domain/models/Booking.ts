@@ -24,6 +24,23 @@ export const BOOKING_STATUSES = [
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
 /**
+ * Who ended a booking, when a human did (C2).
+ *
+ * Declared here rather than imported from the generated client, like
+ * `BOOKING_STATUSES`: the page's state table and the repository both need it,
+ * and only one of them may depend on Prisma.
+ *
+ * **`OWNER` covers both an owner cancelling directly and an owner rejecting a
+ * transfer receipt** — the owner is the actor in both. `CLIENT` belongs to C1
+ * and nothing writes it yet. Telling the two apart is the entire reason this
+ * column exists: `CANCELLED` alone cannot say whether a client walked away or a
+ * shop cancelled on them, and those are opposite messages.
+ */
+export const CANCELLED_BY = ['OWNER', 'CLIENT'] as const;
+
+export type CancelledBy = (typeof CANCELLED_BY)[number];
+
+/**
  * The projection availability reads. Four columns, and deliberately not one
  * more: no client id, no cancellation token, no price, no deposit.
  */
@@ -88,6 +105,40 @@ export function blocksAvailability(booking: BlockingCandidate, now: Date): boole
       // Half-open, like every other boundary here: the hold covers
       // [created, holdExpiresAt), so the expiry instant itself is past it.
       return booking.holdExpiresAt === null || booking.holdExpiresAt.getTime() > now.getTime();
+
+    case 'CANCELLED':
+    case 'EXPIRED':
+      return false;
+  }
+}
+
+/**
+ * Whether the owner may still cancel this booking (C2).
+ *
+ * **One definition, three callers**, for the same reason `blocksAvailability`
+ * has one: the row deciding whether to render a control, the service deciding
+ * whether to attempt the write, and the write's own guard all need this answer,
+ * and three copies of a status list is three chances for a control to appear
+ * where the write refuses.
+ *
+ * `CANCELLED` and `EXPIRED` are terminal — there is nothing left to release.
+ * The other three all occupy their slot in some way and are the whole point of
+ * the feature.
+ *
+ * **It deliberately takes no instant.** A no-show is precisely a past
+ * appointment the owner wants off the books, and the list this is offered from
+ * is ordered by recency rather than by future-ness. Forbidding a past booking
+ * would remove the most common real reason to reach for this control.
+ *
+ * A `switch` over the union rather than a set membership test, so a new status
+ * forces a decision here instead of defaulting to "not cancellable" by silence.
+ */
+export function isCancellableByOwner(status: BookingStatus): boolean {
+  switch (status) {
+    case 'CONFIRMED':
+    case 'PENDING_PAYMENT':
+    case 'PENDING_APPROVAL':
+      return true;
 
     case 'CANCELLED':
     case 'EXPIRED':

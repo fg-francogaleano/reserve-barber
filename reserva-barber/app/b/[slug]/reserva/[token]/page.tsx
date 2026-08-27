@@ -15,6 +15,11 @@ import {
   parsePaymentOutcomeCode,
 } from '@/server/application/booking/bookingOutcome';
 import {
+  resolveConfirmationRefresh,
+  CONFIRMATION_REFRESH_PARAM,
+} from '@/server/application/booking/confirmationRefresh';
+import { resolveConfirmationEmailNotice } from '@/server/application/booking/confirmationEmailNotice';
+import {
   resolvePaymentPageState,
   offersMercadoPago,
   offersTransfer,
@@ -91,7 +96,8 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
     notFound();
   }
 
-  const outcome = parsePaymentOutcomeCode((await searchParams)[BOOKING_OUTCOME_PARAM]);
+  const query = await searchParams;
+  const outcome = parsePaymentOutcomeCode(query[BOOKING_OUTCOME_PARAM]);
   const now = new Date();
 
   /**
@@ -117,6 +123,7 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
     paymentMethod: booking.paymentMethod,
     hasCheckout: booking.hasCheckout,
     receiptStatus: booking.receiptStatus,
+    cancelledBy: booking.cancelledBy,
     outcome,
     shopCanBePaid: canBePaid(methods),
     now,
@@ -134,10 +141,103 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
       ? null
       : Math.max(0, Math.ceil((booking.holdExpiresAt.getTime() - now.getTime()) / 60_000));
 
+  /**
+   * T62: the awaiting state refreshes itself, a bounded number of times.
+   *
+   * Emitted only for that state. The bound, the parse and the clamp all live in
+   * `resolveConfirmationRefresh` — a forged, malformed or out-of-range `intento`
+   * renders the terminal form, which is exactly this page's behaviour before
+   * this change, so the worst a hand-edited URL can do is get the old page.
+   *
+   * The URL is rebuilt from the resolved params rather than read from a header,
+   * because this flow does not trust a request for its own address.
+   */
+  const refresh =
+    state === 'awaitingConfirmation'
+      ? resolveConfirmationRefresh({
+          // Passed **raw**, array and all. Flattening it here first is how a
+          // repeated `?intento=2&intento=2` came to restart the counter: the
+          // page read the array as absent, which the clamp treats as a first
+          // arrival. The clamp is where that decision belongs, so it gets the
+          // value the framework actually produced.
+          attempt: query[CONFIRMATION_REFRESH_PARAM],
+          currentUrl: currentUrlOf(slug, token, query),
+        })
+      : null;
+
+  /**
+   * N1: what the confirmed state may claim about the email.
+   *
+   * Never a guess. A page that said "te mandamos la confirmación" over a send
+   * that failed would remove the client's reason to save the link, at the exact
+   * moment the link became their only record of the appointment.
+   */
+  const emailNotice =
+    state === 'confirmed'
+      ? resolveConfirmationEmailNotice({
+          sentAt: booking.confirmationEmailSentAt,
+          updatedAt: booking.updatedAt,
+          now,
+        })
+      : null;
+
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+      {/* Server-rendered, because the public flow assumes no JavaScript. */}
+      {refresh !== null && (
+        <meta httpEquiv="refresh" content={`${refresh.seconds};url=${refresh.url}`} />
+      )}
+
       <h1 className="text-2xl font-semibold tracking-tight">{headingFor(state)}</h1>
-      <p className="text-muted-foreground text-sm">{introFor(state)}</p>
+      <p className="text-muted-foreground text-sm">
+        {state === 'awaitingConfirmation'
+          ? // The one state whose help text depends on whether anything further
+            // is going to happen. B5's original sentence — asking for a manual
+            // reload — is now the terminal form rather than the only form.
+            refresh !== null
+            ? COPY.booking.paymentConfirmingHelp
+            : COPY.booking.paymentConfirmingHelpExhausted
+          : introFor(state)}
+      </p>
+
+      {/* Honest only because the refresh above is real. B5 forbade a progress
+          indicator on this state for precisely that reason, and the prohibition
+          survives on the terminal form, where nothing further will happen. */}
+      {refresh !== null && (
+        <p className="text-muted-foreground animate-pulse text-sm" aria-live="polite">
+          {COPY.booking.paymentConfirming}…
+        </p>
+      )}
+
+      {emailNotice !== null && emailNotice !== 'pending' && (
+        <p
+          className={
+            emailNotice === 'sent' ? 'text-muted-foreground text-sm' : 'text-sm font-medium'
+          }
+        >
+          {emailNotice === 'sent'
+            ? COPY.booking.paymentConfirmedEmailSent
+            : COPY.booking.paymentConfirmedEmailFailed}
+        </p>
+      )}
+
+      {/*
+        C2: the money, on the one cancelled state where any moved.
+
+        **The page is where this matters most and was the last place to say
+        it.** The owner's confirmation warned them before the write and the
+        email says it, but a client who still has their link open is the person
+        most likely to look and least likely to have read either — so a page
+        that mentioned only the released slot would be the quietest surface
+        about the only thing that costs them anything.
+
+        Guarded on the payment rather than on the state alone: a cancellation
+        with nothing charged has no money to explain, and raising a refund a
+        client never paid invites them to chase one.
+      */}
+      {isCancelled(state) && booking.paymentStatus === 'APPROVED' && (
+        <p className="text-sm font-medium">{COPY.booking.bookingCancelledDepositNote}</p>
+      )}
 
       <section className="border-border flex flex-col gap-2 rounded-md border p-4">
         <p className="text-lg font-medium break-words">
@@ -229,10 +329,59 @@ export default async function BookingConfirmationPage({ params, searchParams }: 
   );
 }
 
+/**
+ * One value from a query parameter that may arrive as an array.
+ *
+ * Next hands a repeated parameter over as `string[]`, and a repeated `intento`
+ * is the obvious way somebody would try to defeat the clamp. An array is
+ * treated as malformed rather than as its first element: this page has never
+ * emitted one, so its presence is not a value to interpret.
+ */
+function singleValue(raw: string | string[] | undefined): string | undefined {
+  return typeof raw === 'string' ? raw : undefined;
+}
+
+/**
+ * This page's own address, rebuilt from what it was routed with.
+ *
+ * **Never from a request header.** The public profile page already refuses a
+ * `Host` fallback for its canonical URL, because a forged one rewrites a shop's
+ * links to point elsewhere. Here the path carries a cancellation token, so a
+ * forged host would aim a refresh — token included — at somebody else's domain.
+ */
+function currentUrlOf(
+  slug: string,
+  token: string,
+  query: Record<string, string | string[] | undefined>
+): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    const single = singleValue(value);
+    if (single !== undefined) search.set(key, single);
+  }
+  const suffix = search.size > 0 ? `?${search.toString()}` : '';
+  return `/b/${encodeURIComponent(slug)}/reserva/${encodeURIComponent(token)}${suffix}`;
+}
+
+/**
+ * Whether this state is a cancellation, of either attribution (C2).
+ *
+ * A predicate rather than two comparisons inlined at the call site, because
+ * C1 adds a third member to this set and the page should gain it by editing
+ * one line rather than by somebody remembering every place that asks.
+ */
+function isCancelled(state: PaymentPageState): boolean {
+  return state === 'cancelledByShop' || state === 'cancelled';
+}
+
 function headingFor(state: PaymentPageState): string {
   switch (state) {
     case 'confirmed':
       return COPY.booking.paymentConfirmed;
+    case 'cancelledByShop':
+      return COPY.booking.bookingCancelledByShop;
+    case 'cancelled':
+      return COPY.booking.bookingCancelled;
     case 'awaitingConfirmation':
       return COPY.booking.paymentConfirming;
     case 'paymentRejected':
@@ -263,6 +412,10 @@ function introFor(state: PaymentPageState): string {
   switch (state) {
     case 'confirmed':
       return COPY.booking.paymentConfirmedHelp;
+    case 'cancelledByShop':
+      return COPY.booking.bookingCancelledByShopHelp;
+    case 'cancelled':
+      return COPY.booking.bookingCancelledHelp;
     case 'awaitingConfirmation':
       return COPY.booking.paymentConfirmingHelp;
     case 'paymentRejected':
