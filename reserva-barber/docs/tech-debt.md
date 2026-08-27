@@ -2782,3 +2782,87 @@ touching money it cannot move.
 
 - **Trigger:** the first owner cancellation of a paid booking in production, or **D5** (statistics),
   which will otherwise report deposit income that includes money the shop owes back.
+
+---
+
+### T75 — Nested `not-found` boundaries do not resolve, so every public 404 shares one message
+
+**Status:** accepted — worked around by making the shared copy true of every case · **Effort:** unbounded until the cause is understood · **Added:** C2 (2026-08-26, found while fixing a client-facing 404)
+
+`app/b/not-found.tsx` answers for **every** failure under the public namespace: a mistyped slug, a
+profile that does not exist, and a booking link whose token resolves nothing. A boundary closer to
+the route it serves would let each say something specific. **Placing one has no effect.**
+
+Measured, on Next 16.2.10 with an empty `next.config.ts`, against both `next dev` and a real
+`opennextjs-cloudflare` build:
+
+| boundary placed at | result |
+| --- | --- |
+| `app/b/[slug]/reserva/[token]/not-found.tsx` | ignored — `app/b/not-found.tsx` still rendered |
+| `app/b/[slug]/reserva/not-found.tsx` | ignored |
+| `app/b/[slug]/not-found.tsx` | ignored, **even for its own segment's page** |
+
+The file compiles — the built output contains
+`chunks/ssr/app_b_[slug]_reserva_[token]_not-found_tsx_*.js` — so it is registered and then not
+wired. The RSC payload shows `"notFound":"$undefined"` on every inner router segment, with the
+boundary attached only at `b`.
+
+**Two things contradict this and are worth recording rather than smoothing over.** Next's own
+documentation states that `not-found.js` "renders between `loading.js` and `page.js`" **in the same
+segment**, which is exactly the placement that was ignored. And this repository's own `app/b/not-found.tsx`
+carries a comment from B1 saying a `[slug]`-level boundary *did* catch that page's `notFound()` —
+behaviour this measurement could not reproduce. Either it regressed between Next versions, or B1's
+note recorded an inference rather than an observation.
+
+**The unexplored suspect** is the layout tree: `app/b/layout.tsx` is the nearest layout above all
+three attempted placements, and none of those segments has a layout of its own. If boundaries are
+wired per layout rather than per segment, that would explain every row in the table — and would mean
+the fix is a `layout.tsx` in the booking segment, which is a file added for a framework reason and
+should not be guessed at.
+
+**What was done instead**, because the defect was the message and not its location: the shared copy
+was rewritten to be true of every case it answers for. It said *"No encontramos esta barbería"* to
+clients whose shop was perfectly real and whose booking link was merely unknown — and then told them
+to ask that shop for a new link. The subject is now the link, which is what all these failures share.
+
+- **Trigger:** the next time a route wants 404 copy of its own — plausibly **C1**, or a Next upgrade.
+  Reproducing the table above takes one dev cycle per row.
+
+---
+
+### T76 — Confirmation emails reach exactly one person, and production cannot send them at all
+
+**Status:** accepted — the product is honest about it on every surface · **Effort:** ~30 min once a domain exists · **Added:** N1 (2026-08-26, at the close of its verification)
+
+N1's own spec required delivery proven against a real inbox before the story closed. **That was
+partly achieved and the remainder is worth naming precisely rather than rounding off.**
+
+**What was proven (2026-08-26).** A real message, composed from a real database read, sent by the
+real Resend adapter through the real approval trigger, arrived in a real mailbox — and its link
+opened the booking, which rendered as confirmed. That is the whole chain, end to end, once.
+
+**Three gaps remain, in descending order of consequence:**
+
+1. **No sending domain is verified, so the only usable sender is the provider's shared
+   `onboarding@resend.dev` — which delivers to the account owner and to nobody else.** Every real
+   client would get silence, with no error anywhere. This is why `RESEND_API_KEY` is deliberately
+   **not** set on the production Worker: with it set, production would start "sending" mail that
+   reaches one person. Confirmations are therefore disabled in production, and the booking page says
+   so truthfully rather than claiming a message nobody received.
+2. **The Resend call has never been made from `workerd`.** The verification ran under Node, against
+   the real API. B5's whole lesson is that a runtime can differ — its `Intl` and its `fetch` were
+   both measured rather than assumed — and this call has not had that treatment.
+3. **Delivery through the Mercado Pago trigger is unverified and cannot now be verified.** Both
+   sandbox payments B5 left behind are gone from the gateway, so no notification replay reaches the
+   confirming branch. The trigger itself is covered branch by branch in tests, and it calls the same
+   `notifyConfirmed` the transfer path exercised — every line after that call is shared.
+
+**None of these is a defect in the code.** They are the difference between "the chain works" and
+"clients receive mail", and the product currently tells the truth about being in the first state.
+
+**Closing it is one step and it is DNS:** verify a domain in Resend, set `EMAIL_FROM` in
+`wrangler.jsonc` to a sender on it, set the key as a Worker secret, and repeat the check — which
+also closes gap 2, since the send then happens inside the Worker.
+
+- **Trigger:** the first real client, which is also the first moment gap 1 costs anything. Do not
+  ship this product to a shop with confirmations in this state.

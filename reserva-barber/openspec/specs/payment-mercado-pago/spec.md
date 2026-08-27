@@ -263,6 +263,10 @@ The decrypted value SHALL exist only inside the infrastructure adapter that call
 
 No response body from either Mercado Pago endpoint SHALL be logged, because rejection payloads routinely echo the credential they rejected.
 
+**That root now also reads a booking, and the property it used to state about itself is revised rather than left standing.** It was documented as wiring no booking repository, on the grounds that the notification never reads a booking except through the payment's own projection — one that carries no client contact detail and no cancellation token. Confirmation now sends an email, and composing it requires the client's name and address, the appointment, the branch and the token. The narrowed guarantee that replaces it: **the notification path reads the booking through one named projection built for the confirmation message, and through no other read.** It SHALL NOT select the whole row, SHALL NOT include the client relation wholesale, and SHALL NOT gain any payment-configuration field. The credential rule above is unaffected — the projection and the access token remain reachable only through separate reads, and neither type can hold the other's value.
+
+The composition root's own documentation SHALL be updated to state the new shape and the reason, rather than leaving a comment that asserts a property the code no longer has.
+
 #### Scenario: The booking write still cannot decrypt
 - **WHEN** the booking creation composition root is constructed
 - **THEN** it builds no credential cipher and a token read through it would fail rather than return plaintext
@@ -270,6 +274,20 @@ No response body from either Mercado Pago endpoint SHALL be logged, because reje
 #### Scenario: A failed Mercado Pago call logs nothing from the request
 - **WHEN** a call to Mercado Pago fails or times out
 - **THEN** no log line contains the access token, the `Authorization` header, or the response body
+
+#### Scenario: The notification path reads a booking through one named projection
+- **WHEN** the notification composition root is constructed
+- **THEN** its booking read names its columns explicitly and is used only to compose the confirmation message
+
+#### Scenario: The two reads cannot be confused
+- **WHEN** the confirmation-message projection is reviewed
+- **THEN** it carries no payment-configuration field and no type in the send path can hold an access token
+
+#### Scenario: The stated guarantee matches the code
+- **WHEN** the notification composition root is read
+- **THEN** its documentation describes the booking read it now performs and why, rather than denying that one exists
+
+---
 
 ### Requirement: Mercado Pago is called over the platform fetch with bounded time
 
@@ -405,4 +423,24 @@ Unit tests alone cannot establish this. The prior story found two defects in the
 #### Scenario: A double cannot certify an impossible call
 - **WHEN** a test double stands in for the payment gateway or the transaction client
 - **THEN** it exposes only the methods the real collaborator provides, so calling a wrong one fails the test
+
+### Requirement: A confirmed notification hands off to the confirmation email and waits on nothing else
+
+When the notification path reports the `confirmed` outcome, it SHALL request the confirmation email specified in the `booking-confirmation-email` capability, after the confirming transaction has committed.
+
+The request SHALL be made for that outcome alone. The `alreadyProcessed`, `slotLost`, `bookingUnavailable`, `mismatch`, `notApproved`, `notAtGateway`, `unresolved`, `reversedAfterConfirmation` and `retry` outcomes SHALL each send nothing.
+
+The response policy of this endpoint SHALL be unchanged by the addition. A send failure SHALL NOT produce a `503`, SHALL NOT alter the acknowledged body, and SHALL NOT make any outcome distinguishable to the caller. The endpoint's uniform body for every non-retry outcome exists so that a public endpoint is not an oracle for which bookings exist, and an email that failed must not become a new way to ask.
+
+#### Scenario: Only the confirming outcome sends
+- **WHEN** each notification outcome is exercised
+- **THEN** only `confirmed` requests an email
+
+#### Scenario: A send failure does not become a retry request
+- **WHEN** the email provider fails after a confirmation
+- **THEN** the endpoint answers `200` with the same acknowledged body it answers for every other handled outcome
+
+#### Scenario: The email outcome is not observable from outside
+- **WHEN** two notifications are compared, one whose email succeeded and one whose email failed
+- **THEN** the two responses are identical in status and body
 

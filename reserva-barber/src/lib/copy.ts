@@ -333,12 +333,33 @@ export const COPY = {
     book: 'Reservar',
     bookUnavailable: 'Esta barbería todavía no está tomando reservas online.',
     loading: 'Cargando…',
-    notFoundHeading: 'No encontramos esta barbería',
-    // Says nothing about which of the two happened, because the system cannot
-    // tell either: the slug may never have existed, or the owner may have
-    // changed it and stranded this link (T33).
+    /**
+     * **It used to say "No encontramos esta barbería", and that was false half
+     * the time.** This one boundary serves the whole public namespace — the
+     * profile, the booking flow and the booking link — so it answers for a bad
+     * slug *and* for a booking that resolved nothing. Measured in production:
+     * a real slug with an unknown token rendered "the barbershop was not
+     * found", and then advised the client to ask that same shop for a new link.
+     *
+     * N1 is what raised the stakes. The booking link now travels by email, gets
+     * forwarded and gets truncated by mail clients, so it outlives the address
+     * bar it used to be confined to — and a permanent link deserves a failure
+     * that is true.
+     *
+     * **The subject is now the link, which is the one thing both cases share.**
+     * Route-specific wording would be better and is not currently available:
+     * nested `not-found` boundaries do not resolve in this app (T75), so this
+     * file is the only one that answers.
+     *
+     * It still says nothing about the cause, and for two reasons that survive
+     * unchanged: the system cannot tell a slug that never existed from one the
+     * owner changed (T33), and a booking token that never existed must be
+     * indistinguishable from one whose booking is gone, or this page becomes an
+     * oracle for which bookings exist (B4).
+     */
+    notFoundHeading: 'No encontramos este link',
     notFoundBody:
-      'El link puede estar mal escrito o haber cambiado. Pedile el link actualizado a la barbería.',
+      'Puede estar incompleto o haber cambiado. Escribile a la barbería para que te pase el link actualizado.',
     errorHeading: 'No pudimos cargar la página',
     errorBody: 'Puede ser un problema momentáneo. Probá de nuevo en un rato.',
     retry: 'Reintentar',
@@ -466,6 +487,27 @@ export const COPY = {
     apiInvalidRequest: 'Solicitud inválida.',
     apiValidationFailed: 'Revisá los datos ingresados.',
     apiBookingCreated: 'Turno reservado.',
+
+    /**
+     * The booking link resolved nothing.
+     *
+     * **Its own message, because the shared one told a lie.** Until this
+     * existed the booking route fell through to the public namespace's
+     * not-found — "No encontramos esta barbería" — so a client whose link was
+     * mistyped, truncated by a mail client, or whose booking had been removed
+     * was told the *shop* did not exist. It then advised them to ask that shop
+     * for a new link. N1 made it matter: the link now lives in inboxes and gets
+     * forwarded, so it outlives the address bar it used to be confined to.
+     *
+     * **It does not say why, and that is the same rule the shop-level page
+     * follows.** A token that never existed and one whose booking is gone must
+     * be indistinguishable from outside, or this page becomes an oracle for
+     * which bookings exist (B4). Naming both possibilities without asserting
+     * either is what keeps it honest and useless to a stranger.
+     */
+    linkNotFoundHeading: 'No encontramos esta reserva',
+    linkNotFoundBody:
+      'El link puede estar incompleto o el turno puede haber sido dado de baja. Escribile a la barbería para que te confirme cómo quedó.',
 
     // ---- B4: the hold confirmation page ----
     holdHeading: 'Te guardamos el turno',
