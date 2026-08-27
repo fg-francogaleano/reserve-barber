@@ -589,6 +589,74 @@ export const COPY = {
       'Tu seña no se devuelve por este sistema. Escribile a la barbería para coordinarla.',
 
     /**
+     * The client cancelled it themselves (C1).
+     *
+     * **A receipt, not an apology.** The shop-cancelled copy above says sorry
+     * because the shop caused it; saying sorry here would be the product
+     * apologising to somebody for their own decision. It confirms what was
+     * done, states that the slot is free, and invites them back — which is the
+     * shop's interest as much as theirs.
+     */
+    bookingCancelledByClient: 'Cancelaste tu turno',
+    bookingCancelledByClientHelp:
+      'Listo, el horario quedó libre. Cuando quieras volver, reservá de nuevo desde el link de la barbería.',
+
+    /**
+     * The cancellation control, and the confirmation standing in front of it
+     * (C1).
+     *
+     * **Two steps, because the token lives in an unverified mailbox** — the
+     * constraint `tech-debt.md` T69 places on this story. The link that opens
+     * this panel is a `GET` that writes nothing, so a scanner or a preview bot
+     * reaches a page and not a cancelled appointment.
+     */
+    cancelBookingCta: 'Cancelar mi turno',
+    cancelConfirmHeading: '¿Querés cancelar este turno?',
+    cancelConfirmSlot: 'El horario queda libre en el momento y lo puede tomar otra persona.',
+    cancelConfirmFinal: 'No se puede deshacer.',
+    /**
+     * Only when a deposit was actually approved. **The one surface that says it
+     * while the decision is still reversible** — the cancelled page and the
+     * owner's copy both say it afterwards, which is too late to be a choice.
+     */
+    cancelConfirmDeposit:
+      'Ya pagaste la seña: no se devuelve por este sistema y la tenés que coordinar con la barbería.',
+    /**
+     * Only when a payment attempt is live. Cancelling does not close an open
+     * Mercado Pago checkout — that would need the shop's credentials on this
+     * path, which the payment story forbids — so the client is told instead.
+     */
+    cancelConfirmOpenPayment:
+      'Si ya empezaste a pagar, no completes el pago: el turno se cancela igual. Y si ya transferiste, escribile a la barbería.',
+    cancelConfirmSubmit: 'Sí, cancelar el turno',
+    cancelConfirmBack: 'No, volver',
+
+    /**
+     * The two refusals, and they are two because the client acts on them
+     * differently.
+     *
+     * **Neither is rendered when the booking is actually cancelled.** A second
+     * submission, a lost response after a commit and a browser retry all reach
+     * this page with a refusal code over a booking that is cancelled — and
+     * "no pudimos cancelar" under a heading that says the turn is cancelled is
+     * the product contradicting itself in two adjacent sentences.
+     */
+    cancelRefusedStarted:
+      'No pudimos cancelarlo: el turno ya había empezado. Escribile a la barbería.',
+    cancelRefusedMoved:
+      'No pudimos cancelar el turno. El estado que ves arriba es el actual.',
+
+    /**
+     * The one state where the client is deliberately not offered the control.
+     *
+     * Without this sentence the absence reads as a bug. Their comprobante is
+     * waiting for a human, and a cancellation would take it out of the only
+     * queue anybody looks at — with the money already transferred.
+     */
+    receiptUnderReviewCancelHelp:
+      'Si necesitás cancelar, escribile a la barbería: tu comprobante todavía está esperando respuesta.',
+
+    /**
      * Cancelled, with nothing recorded about who did it.
      *
      * Every booking cancelled before C2 is one of these. Attributing the
@@ -1057,6 +1125,21 @@ export const COPY = {
     cancelNotFound: 'No encontramos ese turno.',
     cancelFailed: 'No pudimos cancelar el turno. Intentá de nuevo más tarde.',
 
+    /**
+     * Who ended a cancelled booking (C1).
+     *
+     * **This is the other half of the decision not to email the owner.** A
+     * client can now cancel their own turn, so "Cancelaciones de hoy" sums two
+     * different events and the status alone cannot separate them. No message is
+     * sent, so the surface that replaces the message has to carry the fact.
+     *
+     * A booking with no recorded canceller renders neither line: every such row
+     * predates the column being written, and inventing an actor would be
+     * inventing a fact.
+     */
+    cancelledByOwner: 'Cancelado por vos',
+    cancelledByClient: 'Cancelado por el cliente',
+
     recentHeading: 'Reservas recientes',
     recentEmpty: 'Todavía no recibiste reservas.',
     recentEmptyHelp: 'Compartí tu link de reservas para empezar a recibir turnos.',
@@ -1136,7 +1219,18 @@ export const COPY = {
        * control, because a plain-text rendering or a forward is exactly where a
        * button-only link disappears.
        */
-      linkIntro: 'Guardá este link. Desde ahí podés ver tu turno:',
+      /**
+       * **It names cancelling now that the page can do it (C1).** The
+       * sentence said only "ver" because that was all the page did; the same
+       * words in the same inbox now understate a control one click away, and a
+       * client who cannot come would go on writing to the shop instead of using
+       * the link they were sent.
+       *
+       * It does not say the link cancels anything — following it renders a
+       * page, and cancelling takes a further deliberate step. That distinction
+       * is the whole of T69's mitigation and the wording must not blur it.
+       */
+      linkIntro: 'Guardá este link. Desde ahí podés ver o cancelar tu turno:',
       linkLabel: 'Ver mi turno',
 
       /**

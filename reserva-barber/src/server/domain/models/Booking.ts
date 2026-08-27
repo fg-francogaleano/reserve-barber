@@ -147,6 +147,45 @@ export function isCancellableByOwner(status: BookingStatus): boolean {
 }
 
 /**
+ * Whether the **client** may still cancel this booking (C1).
+ *
+ * **Built on `blocksAvailability` rather than on a status list**, because that
+ * predicate already answers this question: is this booking still holding its
+ * time? A client cancels in order to give time back, so a booking holding none
+ * has nothing to release. The paid-slot-lost case falls out for free — an
+ * approved deposit against a hold that lapsed is a slot already gone, and
+ * cancelling it would convert the client's bad luck into their own recorded
+ * decision.
+ *
+ * **It takes an instant, and `isCancellableByOwner` deliberately does not.**
+ * That asymmetry is the whole difference between the two rules. A no-show is
+ * precisely the past appointment an owner wants off the books; for a client a
+ * past slot cannot be released, so cancelling one would only record an
+ * appointment that happened as cancelled — which D1's counter counts and D5's
+ * statistics will report as churn. The comparison is strict: "has not started"
+ * is false at the moment something begins.
+ *
+ * **`PENDING_APPROVAL` is excluded, and this is the one rule stricter than the
+ * owner's.** There the client has already transferred real money and uploaded
+ * proof of it, and a human owes them an answer. The review queue filters on the
+ * *booking's* status, so a client cancellation would remove that receipt from
+ * the only surface anybody would ever look at it on, leaving money in the
+ * shop's account with no row in this product asserting that it arrived. The
+ * page tells them to contact the shop instead, and the owner cancels with the
+ * comprobante in front of them. The exclusion lifts when T74 records the
+ * obligation this feature creates.
+ *
+ * **One definition, three callers** — the control that renders, the service
+ * that attempts, and the write's cheap rejection — for the reason
+ * `isCancellableByOwner` gives.
+ */
+export function isCancellableByClient(booking: BlockingCandidate, now: Date): boolean {
+  if (booking.status === 'PENDING_APPROVAL') return false;
+  if (!blocksAvailability(booking, now)) return false;
+  return booking.startTime.getTime() > now.getTime();
+}
+
+/**
  * When a new provisional hold lapses: the creation instant plus
  * `HOLD_DURATION_MINUTES`, **clamped so it never exceeds `startTime`**.
  *

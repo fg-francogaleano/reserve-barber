@@ -1916,6 +1916,20 @@ as meaning the endpoint is rate-limited.
 The real fix is the one T47 has been pointing at for three stories: a **Cloudflare rate-limiting
 rule**, which is edge-side, shared across isolates, and covers the read surface at the same time.
 
+
+> **C1 adds a fourth public endpoint under the same throttle, and one residual worth naming
+> (2026-08-27).** `POST /api/bookings/cancel` reuses `BookingThrottle` with the same per-isolate
+> limitation. It also refuses an oversized body by reading `Content-Length` — which is a header
+> check and nothing more: a **chunked** request that declares no length is still buffered before
+> anything measures it. The transfer endpoint carries the identical residual. Closing it properly
+> means reading the stream rather than the header, on both endpoints, and is deferred here rather
+> than left implied by the guard's existence.
+>
+> What actually bounds the cancellation endpoint is not the throttle but the credential: a 256-bit
+> token from `crypto.getRandomValues`, generated and never derived. Unlike the booking write, it has
+> **no second database-checked bound** behind the throttle — `MAX_LIVE_HOLDS_PER_CLIENT` has no
+> analogue for a write that only releases.
+
 - **Trigger:** any observed request spike on the public surface, or the first Cloudflare
   rate-limiting rule added for T47 — the two are the same work and should be done together.
 
@@ -2551,7 +2565,18 @@ is on the critical path of every story that touches the database.
 
 ### T69 — The address a confirmation is sent to has never been verified, and it now carries a credential
 
-**Status:** accepted — the mitigation it forces belongs to C1 · **Effort:** unbounded to fix properly, ~0 to constrain C1 · **Added:** N1 (2026-08-25)
+**Status:** accepted — **the mitigation shipped in C1; the debt itself did not close** · **Effort:** unbounded to fix properly · **Added:** N1 (2026-08-25) · **Re-costed:** C1 (2026-08-27)
+
+> **C1 did what this entry demanded and no more (2026-08-27).** The cancellation is a `POST` behind
+> a server-rendered confirmation reached by a safe `GET`, so a mail scanner, a link-preview bot, a
+> corporate security gateway or the framework's own link prefetching produces a rendered page and
+> no cancelled appointment. Proven at runtime on both engines: every URL on the page was fetched and
+> nothing changed status.
+>
+> **What did not change is the whole of this entry.** The address was never verified and still is
+> not. A human who received the message by mistake can read the appointment, and can now destroy it
+> — two deliberate steps are a bot filter, not an authorization check. **C1 must not be recorded as
+> closing this.**
 
 B4 takes an email address in a form and creates a booking with it. **Nothing confirms the address
 belongs to the person typing it**, and nothing ever has — until N1 that was harmless, because the
@@ -2751,7 +2776,19 @@ widening the payment filter. Then `receiptRejected` becomes reachable and this e
 
 ### T74 — Nothing returns a deposit, and nothing records that one is owed
 
-**Status:** accepted · **Effort:** ~2 h to record the obligation, unbounded to actually move money · **Added:** C2 (2026-08-26)
+**Status:** accepted — **worse after C1: the client can now open this door themselves** · **Effort:** ~2 h to record the obligation, unbounded to actually move money · **Added:** C2 (2026-08-26) · **Re-costed:** C1 (2026-08-27)
+
+> **C1 adds a third door, and it is the first one the shop does not control (2026-08-27).** C2 made
+> "this product owes somebody money" reachable from a button on the dashboard — a deliberate act by
+> the person who would have to pay it back. C1 makes it reachable by the person who would receive
+> it, from a link in their inbox, with the owner finding out only by looking at the dashboard (T77).
+>
+> C1 says it on the one surface that matters most and C2 did not have: the **confirmation step**,
+> before the irreversible click, while the decision is still the client's to reverse. That is three
+> sentences and still no record. **The cheap fix has not moved**: mark the payment refund-owed at
+> cancellation, and list the outstanding set. C1 has made it cheaper to justify and more expensive
+> to keep deferring — it is also what would let the `PENDING_APPROVAL` exclusion be lifted (see the
+> design note in C1) and what would give T79's captured payments a row.
 
 This product takes deposits and has no way to give one back. That was tolerable while every path to
 "money moved and the appointment did not happen" was either an accident or a refusal:
@@ -2866,3 +2903,95 @@ also closes gap 2, since the send then happens inside the Worker.
 
 - **Trigger:** the first real client, which is also the first moment gap 1 costs anything. Do not
   ship this product to a shop with confirmations in this state.
+
+---
+
+### T77 — An owner learns of a client cancellation only by looking
+
+**Status:** accepted — deliberate, and the surface that replaces the message was built with it · **Effort:** ~2 h to reuse the email port for a second recipient class · **Added:** C1 (2026-08-27)
+
+C1 lets a client cancel their own booking. **Nothing tells the shop.** No email, no push, no
+counter that moves in front of anybody's eyes — the appointment simply stops being on the calendar.
+
+**This was decided rather than overlooked**, and the reasoning is worth keeping because it is the
+kind that stops being true. No owner has ever been sent a message by this product. Introducing that
+recipient class means a projection, a builder, a second sender configuration question, and a share
+of T71's quota — for a fact the dashboard already carries. And T76 makes the timing worse: the
+sending domain is unverified, so an owner notification would today reach exactly one mailbox and
+silently drop for every real shop.
+
+**What C1 built instead, and it is not nothing.** `RecentBooking` gained `cancelledBy`, so the
+recent-bookings list now names who ended each cancelled booking, and "Cancelaciones de hoy" stops
+being a number an owner cannot decompose. That was moved into C1's scope *because* of this decision:
+choosing not to send a message is only defensible if the surface replacing it carries the fact.
+
+**What is still missing is the push.** An owner who does not open the dashboard between a
+cancellation and the appointment learns about it by standing in an empty shop at 15:00. A busy
+Saturday makes that likelier, not less.
+
+- **Trigger:** the first real shop. The moment a client cancellation happens to somebody who is not
+  watching the dashboard, this stops being theoretical.
+
+---
+
+### T78 — No minimum-notice policy exists, so a client may cancel one minute before their turn
+
+**Status:** accepted — deliberately not invented · **Effort:** ~1 h for the rule, unbounded for the surface an owner sets it on · **Added:** C1 (2026-08-27)
+
+`isCancellableByClient` admits a cancellation up to `startTime` and no further. There is no notice
+window: a client can release a 15:00 appointment at 14:59.
+
+**A number was not chosen here on purpose.** Whether that is acceptable is a **shop policy**, and
+this product has no surface on which an owner has ever expressed one. Picking two hours, or
+twenty-four, would turn one person's guess into a rule every shop inherits, on the story that first
+makes the question visible — and the shops most likely to want a window are exactly the ones nobody
+has spoken to yet.
+
+The direction chosen is the permissive one, which is also the recoverable one: a shop that wants a
+window can be given one later, while a shop given a window it did not ask for has clients who
+cannot cancel and start phoning instead.
+
+**A related asymmetry is deliberate and should not be "fixed" by symmetry.** The owner's predicate
+takes no instant at all — a no-show is precisely the past appointment they want off the books —
+while the client's refuses a started appointment, because a past slot cannot be released and
+cancelling one would only record an appointment that happened as cancelled.
+
+- **Trigger:** the first owner who asks for one, or the first complaint about a last-minute
+  cancellation. Both are conversations with a real shop, which is the input this decision lacks.
+
+---
+
+### T79 — Cancelling does not close the client's open checkout, and money can still be captured
+
+**Status:** accepted — warned about, not prevented · **Effort:** unbounded here; the cheap half is T74's record · **Added:** C1 (2026-08-27)
+
+A cancellation does not invalidate `mpInitPoint`. A client who cancels and then completes a Mercado
+Pago checkout they left open in another tab **captures real money for an appointment that no longer
+exists**. B5 anticipated the shape and logs it — *"Payment approved for a booking that no longer
+exists"*, at `error` — and **that log line is the entire record**. Nothing notifies anyone (T72) and
+nothing marks the money as owed (T74).
+
+There is a second door with no gateway involved at all: a `PENDING_PAYMENT` booking that committed
+to bank transfer has already been shown the CBU. A client can transfer, cancel without uploading a
+receipt, and leave **no row anywhere** asserting the money arrived. That one is worse than the
+`PENDING_APPROVAL` case C1 deliberately excludes, because there at least a receipt exists.
+
+**Closing the checkout was rejected, and the reason is structural.** It needs an authenticated call
+to Mercado Pago with the owner's access token, which would make the public cancellation path a
+**third** composition root permitted to decrypt that credential — against B5's fixed count of two —
+on a path whose failure must not undo a cancellation that has already committed.
+
+**What C1 does instead:** the confirmation step tells the client not to complete a payment they have
+already started, and to contact the shop if they have already transferred. Three sentences on the
+one surface shown while the decision is still reversible. That is a mitigation, not a fix.
+
+**A related interaction is now specified rather than accidental.** `confirmIfSlotFree` guards its
+approval on `mpPaymentId` being null, **not** on the payment's status, so a payment C1 sets to
+`REJECTED` can still be moved to `APPROVED` by a notification arriving afterwards. C1 keeps that
+behaviour deliberately — the money did move, and forcing the row to stay `REJECTED` would make the
+client's own page silent about cash that left their account, since the refund sentence is
+conditioned on an approved payment. It is now covered by tests in both orderings.
+
+- **Trigger:** T74's cheap half — marking a payment refund-owed at cancellation and listing the
+  outstanding set — which would give all of these a record without this product ever moving money.
+  Or the first client who reports paying for a turn they had cancelled.

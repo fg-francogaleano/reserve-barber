@@ -676,3 +676,322 @@ describe('a booking the shop cancelled', () => {
     expect(container.textContent).not.toMatch(/@/);
   });
 });
+
+/**
+ * C1: the client cancels their own booking.
+ *
+ * Two steps and no JavaScript: a link that writes nothing, then a `POST` from a
+ * form on the page it renders.
+ */
+describe('C1 - the cancellation control', () => {
+  const cancelLink = () => screen.queryByRole('link', { name: COPY.booking.cancelBookingCta });
+
+  it('offers it on a confirmed appointment that has not started', async () => {
+    await renderPage(booking({ status: 'CONFIRMED', holdExpiresAt: null }));
+
+    expect(cancelLink()).toBeInTheDocument();
+  });
+
+  it('offers it on a live, unpaid hold', async () => {
+    await renderPage();
+
+    expect(cancelLink()).toBeInTheDocument();
+  });
+
+  it('points at a GET that writes nothing', async () => {
+    // The property T69 requires: a scanner, a preview bot or the framework's
+    // own prefetching can fetch this and get a page, not a cancellation.
+    await renderPage(booking({ status: 'CONFIRMED', holdExpiresAt: null }));
+
+    expect(cancelLink()).toHaveAttribute('href', `/b/${SLUG}/reserva/${TOKEN}?cancelar=1`);
+  });
+
+  it('withholds it once the appointment has started', async () => {
+    await renderPage(
+      booking({
+        status: 'CONFIRMED',
+        holdExpiresAt: null,
+        startTime: new Date(Date.now() - 60 * 60_000),
+        endTime: new Date(Date.now() - 30 * 60_000),
+      })
+    );
+
+    expect(cancelLink()).not.toBeInTheDocument();
+  });
+
+  it('withholds it while a comprobante is under review, and says why', async () => {
+    await renderPage(booking({ status: 'PENDING_APPROVAL', receiptStatus: 'PENDING' }));
+
+    expect(cancelLink()).not.toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.receiptUnderReviewCancelHelp)).toBeInTheDocument();
+  });
+
+  it('withholds it on a lapsed hold', async () => {
+    await renderPage(booking({ holdExpiresAt: LAPSED_HOLD }));
+
+    expect(cancelLink()).not.toBeInTheDocument();
+  });
+
+  it('withholds it on an already cancelled booking', async () => {
+    await renderPage(booking({ status: 'CANCELLED', holdExpiresAt: null, cancelledBy: 'CLIENT' }));
+
+    expect(cancelLink()).not.toBeInTheDocument();
+  });
+});
+
+describe('C1 - the confirmation step', () => {
+  const confirmed = { status: 'CONFIRMED' as const, holdExpiresAt: null };
+
+  it('renders the confirmation for the expected parameter', async () => {
+    await renderPage(booking(confirmed), { cancelar: '1' });
+
+    expect(screen.getByText(COPY.booking.cancelConfirmHeading)).toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.cancelConfirmSlot)).toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.cancelConfirmFinal)).toBeInTheDocument();
+  });
+
+  it('posts to the fixed public path with the token in the body', async () => {
+    const { container } = await renderPage(booking(confirmed), { cancelar: '1' });
+    const form = container.querySelector('form[action="/api/bookings/cancel"]');
+
+    expect(form).not.toBeNull();
+    expect(form?.querySelector('input[name="token"]')).toHaveValue(TOKEN);
+    expect(form?.getAttribute('action')).not.toContain(TOKEN);
+  });
+
+  it('replaces the control rather than sitting beside it', async () => {
+    await renderPage(booking(confirmed), { cancelar: '1' });
+
+    expect(
+      screen.queryByRole('link', { name: COPY.booking.cancelBookingCta })
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers a plain way back that changes nothing', async () => {
+    await renderPage(booking(confirmed), { cancelar: '1' });
+
+    expect(screen.getByRole('link', { name: COPY.booking.cancelConfirmBack })).toHaveAttribute(
+      'href',
+      `/b/${SLUG}/reserva/${TOKEN}`
+    );
+  });
+
+  it.each(['0', 'true', '', 'si'])('ignores the truthy-looking value %s', async (value) => {
+    await renderPage(booking(confirmed), { cancelar: value });
+
+    expect(screen.queryByText(COPY.booking.cancelConfirmHeading)).not.toBeInTheDocument();
+  });
+
+  it('ignores it entirely for a booking that cannot be cancelled', async () => {
+    // A hand-edited URL gets the ordinary page, never a confirmation for
+    // something the write would then refuse.
+    await renderPage(booking({ status: 'PENDING_APPROVAL', receiptStatus: 'PENDING' }), {
+      cancelar: '1',
+    });
+
+    expect(screen.queryByText(COPY.booking.cancelConfirmHeading)).not.toBeInTheDocument();
+  });
+
+  it('names the deposit when one was approved', async () => {
+    await renderPage(booking({ ...confirmed, paymentStatus: 'APPROVED' }), { cancelar: '1' });
+
+    expect(screen.getByText(COPY.booking.cancelConfirmDeposit)).toBeInTheDocument();
+  });
+
+  it('raises no refund for a client who paid nothing', async () => {
+    await renderPage(booking(confirmed), { cancelar: '1' });
+
+    expect(screen.queryByText(COPY.booking.cancelConfirmDeposit)).not.toBeInTheDocument();
+  });
+
+  it('warns about a payment already started', async () => {
+    // Cancelling does not close an open checkout, so the client is told.
+    await renderPage(
+      booking({ paymentStatus: 'PENDING', paymentMethod: 'MERCADO_PAGO', hasCheckout: true }),
+      { cancelar: '1' }
+    );
+
+    expect(screen.getByText(COPY.booking.cancelConfirmOpenPayment)).toBeInTheDocument();
+  });
+});
+
+describe('C1 - the confirmation is never pulled away by the self-refresh', () => {
+  const awaiting = { paymentStatus: 'PENDING' as const, paymentMethod: 'MERCADO_PAGO' as const };
+
+  it('emits no refresh while the confirmation is on screen', async () => {
+    // The defect this closes: the awaiting state is client-cancellable, and the
+    // refresh URL was rebuilt from every parameter — so the page reloaded
+    // underneath somebody reading an irreversible warning.
+    await renderPage(booking(awaiting), {
+      estado: 'pago-pendiente',
+      cancelar: '1',
+    });
+
+    expect(refreshMeta()).toBeNull();
+  });
+
+  it('still refreshes when the confirmation is not on screen', async () => {
+    await renderPage(booking(awaiting), { estado: 'pago-pendiente' });
+
+    expect(refreshMeta()).not.toBeNull();
+  });
+
+  it('never carries the confirmation parameter into a refresh', async () => {
+    await renderPage(booking(awaiting), {
+      estado: 'pago-pendiente',
+      cancelar: '0',
+    });
+    const meta = refreshMeta();
+
+    expect(meta?.getAttribute('content')).not.toContain('cancelar');
+  });
+});
+
+describe('C1 - the refusal notice', () => {
+  /**
+   * **Inverted rather than deleted.** This case originally asserted the started
+   * wording over a booking whose appointment was still ahead — which is the
+   * defect the adversarial pass found: a forged code inventing a fact about the
+   * client's own appointment. It now asserts a started appointment, which is
+   * what the code is allowed to sharpen.
+   */
+  it('explains a refusal over a booking whose appointment really started', async () => {
+    await renderPage(
+      booking({
+        status: 'CONFIRMED',
+        holdExpiresAt: null,
+        startTime: new Date(Date.now() - 60 * 60_000),
+        endTime: new Date(Date.now() - 30 * 60_000),
+      }),
+      { estado: 'turno-empezado' }
+    );
+
+    expect(screen.getByText(COPY.booking.cancelRefusedStarted)).toBeInTheDocument();
+  });
+
+  it('uses the generic wording for a booking that moved', async () => {
+    await renderPage(booking({ status: 'CONFIRMED', holdExpiresAt: null }), {
+      estado: 'cancelacion-no-posible',
+    });
+
+    expect(screen.getByText(COPY.booking.cancelRefusedMoved)).toBeInTheDocument();
+  });
+
+  /**
+   * The contradiction this rule exists to prevent.
+   *
+   * With no JavaScript there is no disabled button, so a double tap is two
+   * POSTs — and the same shape comes from a lost response after a commit, and
+   * from a browser retry. The client wanted the booking cancelled and it is.
+   */
+  it('says nothing when the booking is actually cancelled', async () => {
+    await renderPage(booking({ status: 'CANCELLED', holdExpiresAt: null, cancelledBy: 'CLIENT' }), {
+      estado: 'cancelacion-no-posible',
+    });
+
+    expect(screen.queryByText(COPY.booking.cancelRefusedMoved)).not.toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.bookingCancelledByClient)).toBeInTheDocument();
+  });
+
+  it('says nothing when the shop cancelled it first', async () => {
+    // Losing the race to the owner is not the client's attempt failing at
+    // something that already happened.
+    await renderPage(booking({ status: 'CANCELLED', holdExpiresAt: null, cancelledBy: 'OWNER' }), {
+      estado: 'cancelacion-no-posible',
+    });
+
+    expect(screen.queryByText(COPY.booking.cancelRefusedMoved)).not.toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.bookingCancelledByShop)).toBeInTheDocument();
+  });
+
+  it('announces itself to a screen reader', async () => {
+    const { container } = await renderPage(booking({ status: 'CONFIRMED', holdExpiresAt: null }), {
+      estado: 'cancelacion-no-posible',
+    });
+
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain(
+      COPY.booking.cancelRefusedMoved
+    );
+  });
+});
+
+describe('C1 - the client cancelled it themselves', () => {
+  const byClient = {
+    status: 'CANCELLED' as const,
+    holdExpiresAt: null,
+    cancelledBy: 'CLIENT' as const,
+  };
+
+  it('reads as a receipt rather than an apology', async () => {
+    await renderPage(booking(byClient));
+
+    expect(screen.getByText(COPY.booking.bookingCancelledByClient)).toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.bookingCancelledByClientHelp)).toBeInTheDocument();
+  });
+
+  it('never blames the shop', async () => {
+    await renderPage(booking(byClient));
+
+    expect(screen.queryByText(COPY.booking.bookingCancelledByShop)).not.toBeInTheDocument();
+  });
+
+  it('never says the booking expired', async () => {
+    const { container } = await renderPage(booking(byClient));
+
+    expect(container.textContent).not.toContain('venció');
+  });
+
+  it('states the deposit when one was approved', async () => {
+    await renderPage(booking({ ...byClient, paymentStatus: 'APPROVED' }));
+
+    expect(screen.getByText(COPY.booking.bookingCancelledDepositNote)).toBeInTheDocument();
+  });
+
+  it('offers no payment control', async () => {
+    const { container } = await renderPage(booking(byClient));
+
+    expect(container.querySelector('form')).toBeNull();
+  });
+});
+
+/**
+ * Found by the adversarial pass: a forged code was able to invent a fact about
+ * the client's own appointment.
+ *
+ * The rule B5 established for every code on this page is that a code may
+ * sharpen a truth the database already tells and may never invent one. A
+ * hand-edited `turno-empezado` on a booking whose appointment is still ahead
+ * would have told its client the turn had already started — the exact mirror of
+ * the forged `transferencia-sin-lugar` B5 refused for telling somebody they had
+ * lost a slot they still held.
+ */
+describe('C1 - a forged refusal cannot invent a started appointment', () => {
+  it('degrades to the generic refusal when the appointment is still ahead', async () => {
+    await renderPage(booking({ status: 'CONFIRMED', holdExpiresAt: null }), {
+      estado: 'turno-empezado',
+    });
+
+    expect(screen.queryByText(COPY.booking.cancelRefusedStarted)).not.toBeInTheDocument();
+    expect(screen.getByText(COPY.booking.cancelRefusedMoved)).toBeInTheDocument();
+  });
+
+  it('keeps the started wording when the database agrees', async () => {
+    await renderPage(
+      booking({
+        status: 'CONFIRMED',
+        holdExpiresAt: null,
+        startTime: new Date(Date.now() - 60 * 60_000),
+        endTime: new Date(Date.now() - 30 * 60_000),
+      }),
+      { estado: 'turno-empezado' }
+    );
+
+    expect(screen.getByText(COPY.booking.cancelRefusedStarted)).toBeInTheDocument();
+  });
+
+  it('says nothing about the appointment having started on a live hold', async () => {
+    await renderPage(booking(), { estado: 'turno-empezado' });
+
+    expect(screen.queryByText(COPY.booking.cancelRefusedStarted)).not.toBeInTheDocument();
+  });
+});

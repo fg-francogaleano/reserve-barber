@@ -29,6 +29,8 @@ function booking(overrides: Partial<RecentBooking> = {}): RecentBooking {
     id: 'bkg-1',
     startTime: new Date('2026-08-23T13:00:00.000Z'),
     status: 'CONFIRMED',
+    // C1: nobody cancelled by default. Tests that need one opt in.
+    cancelledBy: null,
     clientName: 'Ana Pérez',
     serviceName: 'Corte',
     barberDisplayName: 'Leo',
@@ -366,5 +368,75 @@ describe('the cancel control', () => {
     });
 
     expect(container.querySelector('input[name="bookingId"]')).toHaveValue('bkg-42');
+  });
+});
+
+/**
+ * C1: the owner's only channel for learning that a client cancelled.
+ *
+ * The story decided not to email them — no owner has ever been sent a message
+ * by this product — which is defensible only if the surface that replaces the
+ * message actually carries the fact. "Cancelaciones de hoy" sums both kinds,
+ * and the badge says `CANCELLED` either way.
+ */
+describe('the canceller on a cancelled row', () => {
+  it('names the client when they cancelled it themselves', async () => {
+    await renderPage(
+      view({ recent: { ok: true, value: [booking({ status: 'CANCELLED', cancelledBy: 'CLIENT' })] } })
+    );
+
+    expect(screen.getByText(COPY.dashboard.cancelledByClient)).toBeInTheDocument();
+  });
+
+  it('names the owner when they cancelled it themselves', async () => {
+    await renderPage(
+      view({ recent: { ok: true, value: [booking({ status: 'CANCELLED', cancelledBy: 'OWNER' })] } })
+    );
+
+    expect(screen.getByText(COPY.dashboard.cancelledByOwner)).toBeInTheDocument();
+  });
+
+  it('renders the two differently, which is the whole point', async () => {
+    await renderPage(
+      view({
+        recent: {
+          ok: true,
+          value: [
+            booking({ id: 'a', status: 'CANCELLED', cancelledBy: 'CLIENT' }),
+            booking({ id: 'b', status: 'CANCELLED', cancelledBy: 'OWNER' }),
+          ],
+        },
+      })
+    );
+
+    expect(screen.getByText(COPY.dashboard.cancelledByClient)).toBeInTheDocument();
+    expect(screen.getByText(COPY.dashboard.cancelledByOwner)).toBeInTheDocument();
+  });
+
+  it('attributes nothing when no canceller was recorded', async () => {
+    // Every row cancelled before the column had a writer is one of these.
+    await renderPage(
+      view({ recent: { ok: true, value: [booking({ status: 'CANCELLED', cancelledBy: null })] } })
+    );
+
+    expect(screen.queryByText(COPY.dashboard.cancelledByClient)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.dashboard.cancelledByOwner)).not.toBeInTheDocument();
+  });
+
+  it('says nothing on a booking that was never cancelled', async () => {
+    await renderPage();
+
+    expect(screen.queryByText(COPY.dashboard.cancelledByClient)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.dashboard.cancelledByOwner)).not.toBeInTheDocument();
+  });
+
+  it('still offers no cancel control on a cancelled row', async () => {
+    // The canceller is a fact about a terminal booking, not an invitation to
+    // act on one.
+    await renderPage(
+      view({ recent: { ok: true, value: [booking({ status: 'CANCELLED', cancelledBy: 'CLIENT' })] } })
+    );
+
+    expect(screen.queryByRole('button', { name: COPY.dashboard.cancel })).not.toBeInTheDocument();
   });
 });

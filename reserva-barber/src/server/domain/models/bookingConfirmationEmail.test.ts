@@ -379,3 +379,39 @@ describe('buildBookingConfirmationEmail - what it must never contain', () => {
     expect(message.text).not.toMatch(/<[a-z][^>]*>/i);
   });
 });
+
+/**
+ * C1: the link's described purpose.
+ *
+ * The page it addresses can now cancel, so a message offering it only as
+ * somewhere to *see* the appointment understates a control one click away —
+ * and a client who cannot come goes on writing to the shop instead.
+ */
+describe('buildBookingConfirmationEmail - what the link claims (C1)', () => {
+  it('should_name_cancelling_as_something_the_page_can_do', () => {
+    const message = buildBookingConfirmationEmail({ booking: bookingWith(), origin: ORIGIN });
+
+    expect(message.text).toContain('cancelar');
+  });
+
+  it('should_not_claim_that_following_the_link_cancels_anything', () => {
+    // The distinction T69's mitigation rests on: the link renders a page, and
+    // cancelling takes a further deliberate step. Wording that blurred it would
+    // undo the reason the cancellation is a POST behind a confirmation.
+    const message = buildBookingConfirmationEmail({ booking: bookingWith(), origin: ORIGIN });
+
+    expect(message.text).not.toMatch(/cancel[áa] tu turno ac[áa]|hac[ée] clic para cancelar/i);
+  });
+
+  it('should_carry_no_url_that_performs_a_cancellation', () => {
+    // Every URL in the message addresses the booking page, which only renders.
+    const message = buildBookingConfirmationEmail({ booking: bookingWith(), origin: ORIGIN });
+    const urls = message.text.match(/https?:\/\/\S+/g) ?? [];
+
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url).not.toContain('/api/');
+      expect(url).not.toContain('cancelar=');
+    }
+  });
+});

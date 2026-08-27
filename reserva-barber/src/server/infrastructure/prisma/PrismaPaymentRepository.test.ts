@@ -712,3 +712,91 @@ describe('commitBankTransfer - concurrency and constraint translation', () => {
     expect(result).toEqual({ outcome: 'notPending', bookingStatus: 'MISSING' });
   });
 });
+
+/**
+ * C1: what a notification does to a payment a client cancellation rejected.
+ *
+ * **The guard here names `mpPaymentId`, not `status`** — a fact that had no
+ * consequence until a second writer of `REJECTED` existed. C1 sets a `PENDING`
+ * payment to `REJECTED` when its client cancels, and that row still has a null
+ * gateway id, so a notification arriving afterwards will approve it.
+ *
+ * **That is the intended outcome, and it is specified rather than left to
+ * whichever guard happens to fire first.** The money really did move. Forcing
+ * the row to stay `REJECTED` would make the client's own page silent about cash
+ * that left their account, because the sentence telling them a refund must be
+ * arranged with the shop is conditioned on the payment being approved.
+ *
+ * The booking's own guard is what protects the appointment: it names
+ * `PENDING_PAYMENT`, so a `CANCELLED` booking matches zero rows and is reported
+ * as one that no longer exists.
+ */
+describe('confirmIfSlotFree - a payment a client cancellation rejected', () => {
+  const LATE_AFTER_CANCEL = {
+    paymentId: PAYMENT,
+    bookingId: BOOKING,
+    barberId: 'barber-1',
+    startTime: new Date('2026-08-19T14:00:00.000Z'),
+    endTime: new Date('2026-08-19T14:30:00.000Z'),
+    gatewayPaymentId: 'mp-1',
+    approvedAt: NOW,
+    now: NOW,
+  };
+
+  it('approves it, because the money moved and the row is the only record of that', async () => {
+    const tx = createTx();
+    // The cancellation left it REJECTED with no gateway id.
+    tx.payment.updateMany.mockResolvedValue({ count: 1 });
+    // And left the booking CANCELLED, so the confirming update matches nothing.
+    tx.booking.updateMany.mockResolvedValue({ count: 0 });
+    tx.booking.findUnique.mockResolvedValue({ status: 'CANCELLED' });
+    const { db } = createDb(tx);
+
+    const result = await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE_AFTER_CANCEL);
+
+    expect(tx.payment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) })
+    );
+    expect(result).toEqual({ outcome: 'notPending', bookingStatus: 'CANCELLED' });
+  });
+
+  it('guards the approval on the gateway id and deliberately not on the status', async () => {
+    // Asserted so the behaviour above cannot change silently. If this guard
+    // ever gains a status, the client's cancelled page stops naming the money.
+    const tx = createTx();
+    const { db } = createDb(tx);
+
+    await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE_AFTER_CANCEL);
+
+    const where = (tx.payment.updateMany.mock.calls[0]?.[0] as { where: Record<string, unknown> })
+      .where;
+    expect(where).toEqual({ id: PAYMENT, mpPaymentId: null });
+    expect(where).not.toHaveProperty('status');
+  });
+
+  it('never confirms a cancelled booking', async () => {
+    const tx = createTx();
+    tx.booking.updateMany.mockResolvedValue({ count: 0 });
+    tx.booking.findUnique.mockResolvedValue({ status: 'CANCELLED' });
+    const { db } = createDb(tx);
+
+    const result = await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE_AFTER_CANCEL);
+
+    expect(result).toMatchObject({ outcome: 'notPending' });
+    expect(tx.booking.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: BOOKING, status: 'PENDING_PAYMENT' } })
+    );
+  });
+
+  it('confirms normally when the notification wins the race', async () => {
+    // The other ordering: the booking is confirmed first, and the client's
+    // cancellation then applies to a CONFIRMED booking whose payment is
+    // APPROVED — where `cancelByToken` leaves it untouched.
+    const tx = createTx();
+    const { db } = createDb(tx);
+
+    const result = await new PrismaPaymentRepository(db).confirmIfSlotFree(LATE_AFTER_CANCEL);
+
+    expect(result).toEqual({ outcome: 'confirmed' });
+  });
+});

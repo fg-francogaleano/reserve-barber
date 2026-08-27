@@ -224,6 +224,26 @@ function RecentRow({ booking }: { booking: RecentBooking }) {
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <StatusBadge status={booking.status} />
+          {/*
+            C1: who ended it, when the row records that.
+
+            **This is the other half of deciding not to notify the owner.** A
+            client can now cancel their own turn, so "Cancelaciones de hoy" sums
+            two different events and the badge alone cannot separate them —
+            leaving an owner unable to tell their own decisions from their
+            clients'. No message is sent, so this is the only surface that
+            carries the fact.
+
+            A null canceller renders nothing: every such row predates the column
+            having a writer, and naming an actor would be inventing one.
+          */}
+          {booking.cancelledBy !== null && (
+            <span className="text-muted-foreground text-xs">
+              {booking.cancelledBy === 'OWNER'
+                ? COPY.dashboard.cancelledByOwner
+                : COPY.dashboard.cancelledByClient}
+            </span>
+          )}
           <span className="text-muted-foreground text-sm">
             {COPY.dashboard.depositLabel} {formatCurrency(booking.depositAmount)}
           </span>

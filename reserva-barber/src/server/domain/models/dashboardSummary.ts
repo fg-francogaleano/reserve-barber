@@ -8,7 +8,7 @@
  * restated.
  */
 
-import type { BookingStatus } from './Booking';
+import type { BookingStatus, CancelledBy } from './Booking';
 
 /**
  * How many recent bookings the dashboard lists.
@@ -103,6 +103,20 @@ export interface RecentBooking {
   readonly barberDisplayName: string;
   /** The booking's snapshot, as a canonical decimal string. */
   readonly depositAmount: string;
+  /**
+   * Who cancelled, when somebody did (C1).
+   *
+   * **The projection grows by exactly one field, and this is the field.** The
+   * rule that this list's projection must not widen was written when the only
+   * thing being added was a control the row's existing columns already
+   * supported; it does not extend to a fact the row does not carry.
+   *
+   * It is here because C1 decided **not** to email the owner when a client
+   * cancels: the dashboard is then the only channel, and a channel that cannot
+   * tell "I cancelled this" from "my client did" is not carrying the fact. A
+   * null is every row written before the column had a writer.
+   */
+  readonly cancelledBy: CancelledBy | null;
 }
 
 /**

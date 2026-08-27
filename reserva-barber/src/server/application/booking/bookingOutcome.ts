@@ -107,14 +107,24 @@ export function parseEcho(raw: string | undefined): BookingEcho | null {
 }
 
 /**
- * The payment round trip's own outcome codes (B5).
+ * The codes the confirmation page reads (B5, widened by B6 and C1).
  *
- * A separate set from `BOOKING_OUTCOMES` rather than more members on it. The
- * booking codes are read by the wizard's steps and these are read by the
- * confirmation page; one union would let a step render a payment message it has
- * no state for, and a page render a validation message about a form it does not
- * contain. Two sets, two `parse` functions, and neither can answer the other's
- * question.
+ * **The name says "payment" and the contents no longer only do**, which is
+ * worth stating rather than leaving for the next reader to notice. B5 wrote
+ * this as "the payment round trip's own codes"; B6 added the transfer codes
+ * with the reasoning that both are read by one page with one state resolver,
+ * and C1 added two cancellation refusals under the same rule. The invariant
+ * that actually holds — and the one that matters — is **one page, one set**.
+ *
+ * The split B5 drew still holds and is the useful one: a separate set from
+ * `BOOKING_OUTCOMES` rather than more members on it. The booking codes are read
+ * by the wizard's steps and these by the confirmation page; one union would let
+ * a step render a message it has no state for, and a page render a validation
+ * message about a form it does not contain. Two sets, two `parse` functions,
+ * and neither can answer the other's question.
+ *
+ * The constant keeps its name deliberately: renaming it touches every caller to
+ * rename something that is still true of most of its members.
  */
 export const PAYMENT_OUTCOMES = [
   /** Returned from the gateway; the notification has not been processed yet. */
@@ -175,6 +185,33 @@ export const PAYMENT_OUTCOMES = [
    * instruction.
    */
   'transferencia-sin-lugar',
+
+  // ---------------------------------------------------------------- C1
+  //
+  // The client's own cancellation, and only its refusals. **There is no success
+  // code**: the page reads live state, so a cancelled booking renders the
+  // cancelled state by itself, and a code saying so could only agree with the
+  // database or be ignored.
+
+  /**
+   * The appointment had already started, so there was nothing left to release.
+   *
+   * Its own code rather than folded into the one below, because the client can
+   * act on it — by contacting the shop — and because "you were too late" and
+   * "somebody else changed this" are not the same fact.
+   */
+  'turno-empezado',
+  /**
+   * The booking moved between the confirmation and the submission: confirmed by
+   * a notification, swept by the expiry job, or already cancelled.
+   *
+   * **The page suppresses this whenever the resolved state is a cancelled one.**
+   * A repeated submission, a lost response after a commit and a browser retry
+   * all land here, and the client wanted the booking cancelled — telling them it
+   * failed under a heading that says it is cancelled is the product
+   * contradicting itself in two adjacent sentences.
+   */
+  'cancelacion-no-posible',
 ] as const;
 
 export type PaymentOutcomeCode = (typeof PAYMENT_OUTCOMES)[number];

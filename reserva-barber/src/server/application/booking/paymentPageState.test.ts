@@ -535,7 +535,7 @@ describe('a cancelled booking', () => {
   });
 
   it('does not attribute a client cancellation to the shop', () => {
-    // C1 will write this. Until it does, the generic form is the safe landing.
+    // C1 writes this, and it now has a state of its own — asserted below.
     expect(resolvePaymentPageState(cancelled({ cancelledBy: 'CLIENT' }))).not.toBe(
       'cancelledByShop'
     );
@@ -550,6 +550,73 @@ describe('a cancelled booking', () => {
 
   it('offers no payment control', () => {
     const state = resolvePaymentPageState(cancelled());
+    expect(offersMercadoPago(state, methods())).toBe(false);
+    expect(offersTransfer(state, methods())).toBe(false);
+  });
+});
+
+/**
+ * C1: the client cancelled it themselves.
+ *
+ * The third member of the cancelled set, and the reason `cancelledBy` was put
+ * on this input in the first place: `CANCELLED` alone cannot say whether the
+ * shop ended the appointment or its client did, and those are opposite
+ * messages — one is an apology, the other a receipt.
+ */
+describe('a booking the client cancelled', () => {
+  const byClient = (overrides: Partial<PaymentPageInput> = {}) =>
+    input({ bookingStatus: 'CANCELLED', holdExpiresAt: null, cancelledBy: 'CLIENT', ...overrides });
+
+  it('renders the client’s own state rather than the shop’s', () => {
+    expect(resolvePaymentPageState(byClient())).toBe('cancelledByClient');
+  });
+
+  it('never reports the shop as the canceller', () => {
+    // The failure this replaces: telling a client the shop cancelled a booking
+    // they cancelled themselves.
+    expect(resolvePaymentPageState(byClient())).not.toBe('cancelledByShop');
+  });
+
+  it('does not fall through to the lapsed hold, whatever the clock says', () => {
+    expect(
+      resolvePaymentPageState(
+        byClient({
+          startTime: new Date('2026-08-18T10:00:00.000Z'),
+          endTime: new Date('2026-08-18T10:30:00.000Z'),
+          holdExpiresAt: new Date('2026-08-18T09:00:00.000Z'),
+        })
+      )
+    ).toBe('cancelledByClient');
+  });
+
+  it('outranks a paid-but-slot-lost reading', () => {
+    // A client who cancelled a booking whose deposit was approved is owed the
+    // money sentence, not a story about losing a race.
+    expect(resolvePaymentPageState(byClient({ paymentStatus: 'APPROVED' }))).toBe(
+      'cancelledByClient'
+    );
+  });
+
+  it('still loses to a confirmed booking', () => {
+    expect(
+      resolvePaymentPageState(byClient({ bookingStatus: 'CONFIRMED', cancelledBy: 'CLIENT' }))
+    ).toBe('confirmed');
+  });
+
+  it('is not produced by any outcome code on a live booking', () => {
+    expect(resolvePaymentPageState(input({ outcome: 'pago-rechazado' }))).not.toBe(
+      'cancelledByClient'
+    );
+  });
+
+  it('leaves the other two attributions alone', () => {
+    // The three are chosen by the canceller and by nothing else.
+    expect(resolvePaymentPageState(byClient({ cancelledBy: 'OWNER' }))).toBe('cancelledByShop');
+    expect(resolvePaymentPageState(byClient({ cancelledBy: null }))).toBe('cancelled');
+  });
+
+  it('offers no payment control', () => {
+    const state = resolvePaymentPageState(byClient());
     expect(offersMercadoPago(state, methods())).toBe(false);
     expect(offersTransfer(state, methods())).toBe(false);
   });
