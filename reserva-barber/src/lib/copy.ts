@@ -1252,6 +1252,45 @@ export const COPY = {
     loadFailed: 'No pudimos cargar el calendario.',
     loadFailedHelp: 'Volvé a intentar en unos segundos.',
   },
+  /**
+   * The clients directory (D4).
+   *
+   * **The zero row never calls that person a customer.** A client record can
+   * exist with no booking of any kind — the booking flow creates it before it
+   * writes the booking, so a refused submission leaves one behind — and copy
+   * that read "0 turnos" beside the word "cliente" would report a failed
+   * checkout as business.
+   */
+  clients: {
+    nav: 'Clientes',
+    heading: 'Clientes',
+    intro: 'Todas las personas que reservaron alguna vez en tu barbería.',
+    columnName: 'Nombre',
+    columnPhone: 'Teléfono',
+    columnEmail: 'Email',
+    columnBookings: 'Turnos',
+    // Labelled, never a bare digit: two numbers share this cell and an
+    // unlabelled pair cannot be told apart.
+    confirmedCount: (count: number) => (count === 1 ? '1 turno cumplido' : `${count} turnos cumplidos`),
+    inactiveCount: (count: number) =>
+      count === 1 ? '1 cancelado o vencido' : `${count} cancelados o vencidos`,
+    // The row that is neither a customer nor a canceller: a checkout that
+    // reached the details step and never became a booking.
+    noBookings: 'Sin turnos',
+    noBookingsHint: 'Dejó sus datos pero nunca llegó a reservar.',
+    callLabel: (name: string) => `Llamar a ${name}`,
+    emailLabel: (name: string) => `Escribir a ${name}`,
+    // Three states that must never share copy.
+    empty: 'Todavía no reservó nadie.',
+    emptyHint: 'Cuando alguien reserve desde tu enlace público, va a aparecer acá.',
+    emptyLink: 'Ver mi perfil público',
+    loadFailed: 'No pudimos cargar tus clientes.',
+    loadFailedHelp: 'Volvé a intentar en unos segundos.',
+    previousPage: 'Anterior',
+    nextPage: 'Siguiente',
+    pageStatus: (page: number, lastPage: number) => `Página ${page} de ${lastPage}`,
+    totalStatus: (total: number) => (total === 1 ? '1 cliente' : `${total} clientes`),
+  },
   auth: {
     heading: 'Iniciar sesión',
     emailLabel: 'Email',

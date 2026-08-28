@@ -39,6 +39,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           >
             {COPY.services.nav}
           </Link>
+          {/*
+            Beside the people-and-catalogue group rather than with the payment
+            configuration: this is something the owner reads, not something
+            they set up once.
+          */}
+          <Link href="/clientes" className="text-sm font-medium underline-offset-4 hover:underline">
+            {COPY.clients.nav}
+          </Link>
           <Link href="/perfil" className="text-sm font-medium underline-offset-4 hover:underline">
             {COPY.businessProfile.nav}
           </Link>
