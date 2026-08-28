@@ -138,6 +138,18 @@ export default async function BarbersPage() {
                   >
                     {COPY.timeOff.manage}
                   </Link>
+                  {/* D3. This list is the card-per-barber surface the brief
+                      describes as the way into a barber's own calendar, so the
+                      route is added here rather than on a second card grid
+                      elsewhere in the dashboard. It costs no query: the id is
+                      already on the row. */}
+                  <Link
+                    href={`/barberos/${barber.id}/calendario`}
+                    aria-label={COPY.barberCalendar.manageLabel(barber.displayName)}
+                    className="text-primary text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    {COPY.barberCalendar.manage}
+                  </Link>
                 </div>
               </CardContent>
             </Card>
