@@ -40,7 +40,7 @@
 - [x] 5.3 Run the gate, remove its fixture afterwards, and record the result — reporting any probe that could not run as **not run**, never as passed.
 - [x] 5.4 Drive the page over HTTP on `next dev` and on `wrangler dev` against the live database: the guard, the 404 for a foreign id, both empty states, the badge, the two lanes, and the failure card.
 - [x] 5.5 Force the runtime/business calendar disagreement and confirm the day rendered is the business's. Done on Node by running the server in a timezone already on the next date (`TZ=Pacific/Kiritimati`, UTC+14) rather than by waiting for the 21:00–00:00 ART window — what the check needs is the disagreement, not the hour.
-- [ ] 5.6 Confirm the same on `workerd` inside the real 21:00–00:00 ART window. Its clock is UTC and ignores `TZ`, so only the real hour produces the disagreement there. The rest of the timezone path is already proven on that runtime — it renders ART-local times from stored instants — so this closes the date-boundary sliver and nothing else.
+- [x] 5.6 Confirm the same on `workerd` inside the real 21:00–00:00 ART window. Its clock is UTC and ignores `TZ`, so only the real hour produces the disagreement there. The rest of the timezone path is already proven on that runtime — it renders ART-local times from stored instants — so this closes the date-boundary sliver and nothing else.
 
 ## 6. Quality gates and documentation
 
