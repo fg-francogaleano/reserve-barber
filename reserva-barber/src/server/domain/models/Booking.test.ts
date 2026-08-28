@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   blocksAvailability,
+  calendarPresence,
+  CALENDAR_PRESENCES,
+  OCCUPYING_PRESENCES,
   holdExpiresAtFor,
   holdSweepCutoff,
   isCancellableByClient,
@@ -407,5 +410,91 @@ describe('isCancellableByClient', () => {
     const underReview = booking({ status: 'PENDING_APPROVAL', ...future });
     expect(isCancellableByOwner(underReview.status)).toBe(true);
     expect(isCancellableByClient(underReview, NOW)).toBe(false);
+  });
+});
+
+describe('Booking - how a booking appears on the owner calendar', () => {
+  it('should_present_a_confirmed_booking_as_confirmed', () => {
+    expect(calendarPresence(booking({ status: 'CONFIRMED' }), NOW)).toBe('confirmed');
+  });
+
+  it('should_present_a_cancelled_booking_as_cancelled', () => {
+    expect(calendarPresence(booking({ status: 'CANCELLED' }), NOW)).toBe('cancelled');
+  });
+
+  it('should_present_a_swept_booking_as_lapsed', () => {
+    expect(calendarPresence(booking({ status: 'EXPIRED' }), NOW)).toBe('lapsed');
+  });
+
+  it('should_present_a_live_hold_as_holding', () => {
+    expect(
+      calendarPresence(booking({ status: 'PENDING_PAYMENT', holdExpiresAt: IN_TEN_MINUTES }), NOW)
+    ).toBe('holding');
+  });
+
+  it('should_present_a_lapsed_hold_as_lapsed_even_before_the_sweep_runs', () => {
+    // The slot is back on sale the instant the hold lapses. A calendar drawing
+    // it as taken would show the owner a booked time a client can still buy.
+    expect(
+      calendarPresence(booking({ status: 'PENDING_PAYMENT', holdExpiresAt: AN_HOUR_AGO }), NOW)
+    ).toBe('lapsed');
+  });
+
+  it('should_treat_the_hold_deadline_itself_as_lapsed', () => {
+    // Half-open, like every other boundary in this feature: the hold covers
+    // [created, holdExpiresAt), so the expiry instant is already past it.
+    expect(calendarPresence(booking({ status: 'PENDING_PAYMENT', holdExpiresAt: NOW }), NOW)).toBe(
+      'lapsed'
+    );
+  });
+
+  it('should_present_a_hold_with_no_deadline_as_holding', () => {
+    // Mirrors `blocksAvailability`: reading a missing deadline as "expired long
+    // ago" would erase a booking the instant a write set the status without it.
+    expect(
+      calendarPresence(booking({ status: 'PENDING_PAYMENT', holdExpiresAt: null }), NOW)
+    ).toBe('holding');
+  });
+
+  it('should_present_an_unanswered_receipt_as_awaiting_approval_whatever_the_clock_says', () => {
+    // **The reason this predicate exists at all.** `blocksAvailability` answers
+    // `false` here — correctly, since nothing can be sold into a time already
+    // being used — so reusing it would file yesterday's real appointment under
+    // "no effect" and tell the owner it never happened.
+    const yesterday = {
+      startTime: new Date('2026-08-16T13:00:00.000Z'),
+      endTime: new Date('2026-08-16T13:30:00.000Z'),
+    };
+    const stale = booking({ status: 'PENDING_APPROVAL', holdExpiresAt: AN_HOUR_AGO, ...yesterday });
+
+    expect(blocksAvailability(stale, NOW)).toBe(false);
+    expect(calendarPresence(stale, NOW)).toBe('awaitingApproval');
+  });
+
+  it('should_present_a_future_receipt_as_awaiting_approval_too', () => {
+    expect(
+      calendarPresence(booking({ status: 'PENDING_APPROVAL', holdExpiresAt: AN_HOUR_AGO }), NOW)
+    ).toBe('awaitingApproval');
+  });
+
+  it('should_answer_for_every_member_of_the_status_enum', () => {
+    for (const status of BOOKING_STATUSES) {
+      expect(CALENDAR_PRESENCES).toContain(calendarPresence(booking({ status }), NOW));
+    }
+  });
+
+  it('should_occupy_the_day_whenever_the_time_is_still_off_sale', () => {
+    // The two rules are allowed to differ in one direction only: anything the
+    // availability rule still blocks must occupy the calendar, or the owner
+    // would see free time a client cannot buy. The converse is false, and the
+    // past receipt above is the case that makes it false.
+    for (const status of BOOKING_STATUSES) {
+      for (const holdExpiresAt of [null, IN_TEN_MINUTES, AN_HOUR_AGO]) {
+        const candidate = booking({ status, holdExpiresAt });
+        if (blocksAvailability(candidate, NOW)) {
+          expect(OCCUPYING_PRESENCES).toContain(calendarPresence(candidate, NOW));
+        }
+      }
+    }
   });
 });

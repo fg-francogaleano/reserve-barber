@@ -1174,6 +1174,85 @@ export const COPY = {
     },
   },
   /**
+   * The per-barber day calendar (D3).
+   *
+   * **"Libre" rather than "disponible" throughout, deliberately.** This page
+   * shows free *time*, not bookable slots: a slot needs a service's duration and
+   * a lead time, and no service is chosen here. Copy promising availability
+   * would make the page state something it cannot know.
+   */
+  barberCalendar: {
+    manage: 'Calendario',
+    manageLabel: (barberName: string) => `Ver el calendario de ${barberName}`,
+    heading: (barberName: string) => `Calendario de ${barberName}`,
+    // The heading when the read failed: the barber's name arrives with the day,
+    // so a failure has no name to use and must not render "Calendario de ".
+    headingUnknown: 'Calendario',
+    previousDay: 'Día anterior',
+    nextDay: 'Día siguiente',
+    today: 'Hoy',
+    pickDayLabel: 'Ir a un día',
+    goToDay: 'Ir',
+    pastDay: 'Día pasado',
+    freeHeading: 'Tiempo libre',
+    range: (from: string, to: string) => `${from} a ${to}`,
+    // Not 'disponible': see the note above this namespace.
+    noFreeTime: 'Sin tiempo libre en este día.',
+    absence: 'Ausencia',
+    // Four sentences rather than one range, because an absence can begin before
+    // this day and end after it — and a chip showing only its wall-clock times
+    // would say "10:00 a 18:00" about a day the barber is away for all of.
+    absenceWholeDay: 'Todo el día',
+    absenceUntil: (time: string) => `Hasta las ${time}`,
+    absenceFrom: (time: string) => `Desde las ${time}`,
+    appointmentsHeading: 'Turnos del día',
+    // Two empty states that must never share copy. "Closed" and "open and
+    // empty" are opposite facts, and one message for both sends the owner to
+    // fix a schedule that is not broken.
+    noSchedule: 'Este día el barbero no trabaja.',
+    noScheduleHint: 'No tiene horario cargado para este día de la semana.',
+    manageSchedule: 'Editar horarios',
+    emptyDay: 'Sin turnos en este día.',
+    // Only true of a day nothing else touches. An absence makes it false, and
+    // on a day an absence covers entirely it directly contradicts the free-time
+    // region below it — which is what the runtime pass caught.
+    emptyDayHint: 'El horario está libre de punta a punta.',
+    emptyDayAway: 'El barbero está ausente este día.',
+    // The badge T29 exists for. It describes the appointment's relation to the
+    // schedule as it stands now — it does not accuse anybody of an error.
+    outsideHours: 'Fuera del horario laboral',
+    outsideHoursHint: 'Quedó fuera del horario actual del barbero.',
+    recordedHeading: (count: number) =>
+      count === 1 ? '1 turno sin efecto' : `${count} turnos sin efecto`,
+    recordedHelp: 'Cancelados o vencidos. No ocupan el horario.',
+    cancelledByOwner: 'Cancelado por la barbería',
+    cancelledByClient: 'Cancelado por el cliente',
+    // No third string for a cancellation with no recorded actor. Every booking
+    // cancelled before C2 gave the column a writer is one, and the row's own
+    // presence label already reads "Cancelado" — a second line saying the same
+    // word is noise, and any wording naming an actor would be invented.
+    dayNavigation: 'Navegación de días',
+    /**
+     * How a booking appears on this day, in the owner's words.
+     *
+     * Deliberately not the dashboard's status labels: this page names a
+     * *presence*, not a status. "Esperando pago" would be wrong for a hold that
+     * has lapsed, and "Sin confirmar a tiempo" would be wrong for one still
+     * live — and the two share a status.
+     */
+    presence: {
+      confirmed: 'Confirmado',
+      awaitingApproval: 'Comprobante por revisar',
+      holding: 'Reservando (pago en curso)',
+      lapsed: 'Sin confirmar a tiempo',
+      cancelled: 'Cancelado',
+    },
+    // Zero and failure never render alike: an empty day here would be a false
+    // statement about the barber's schedule.
+    loadFailed: 'No pudimos cargar el calendario.',
+    loadFailedHelp: 'Volvé a intentar en unos segundos.',
+  },
+  /**
    * The clients directory (D4).
    *
    * **The zero row never calls that person a customer.** A client record can

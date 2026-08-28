@@ -630,6 +630,27 @@ did not.**
   whose per-barber calendar renders appointments _against_ a schedule and is therefore the first
   place where a stranded one looks wrong rather than merely being present.
 
+**D3 shipped and answered half of it (2026-08-27).** The trigger above is now satisfied in the
+direction it named: the per-barber calendar compares every occupying appointment against the
+schedule as it stands and badges the ones that fall outside it — *"Fuera del horario laboral"* —
+including on a weekday the barber no longer works at all, where nothing contains the appointment and
+it is rendered with no window to sit inside. The check is a pure containment test
+(`fallsOutsideWorkingHours`) over data the same read already returned, so it costs no query, and
+`scripts/d3-gate.ts` §6.6–6.8 proves it by **actually narrowing a window underneath an existing
+booking** and reading the day back through the real repository rather than asserting against a
+fixture that was told the answer.
+
+**What remains is the whole write side, and it is the larger half.** The edit still succeeds
+silently. Nothing warns the owner at the moment they narrow a window that appointments are inside
+it, nothing refuses, and nothing lists them. The owner now has a surface that will *eventually* show
+them the damage — if they think to open that barber, on that day — which is strictly better than the
+dashboard's silence and is not the same thing as being told.
+
+- **Trigger (re-stated):** the first owner report of an appointment discovered this way, or any story
+  that touches the schedule editor. The read that finds the affected appointments now exists twice —
+  in B4's transaction and in D3's day composition — so the remaining work is a warning surface on the
+  editor, not a new query.
+
 ### T30 — Per-barber absence cap is advisory, not guaranteed
 
 **Status:** accepted · **Effort:** ~1–2 h if it becomes real · **Added:** M5b (2026-08-11)
@@ -2400,6 +2421,21 @@ that answering is still the only thing that resolves it.
 - **Trigger (unchanged for what remains):** **N1**, or the first owner who reports a slot they could
   not sell because a receipt sat unanswered. The visibility trigger is spent.
 
+**D3 gives the blocked slot its first surface (2026-08-27).** The counter said *how many* receipts
+were unanswered; the calendar is the first place the owner can see **which slot one of them is
+holding** — the appointment renders in the day's timeline as *"Comprobante por revisar"*, at the time
+it occupies.
+
+It also forced the product to state a rule it had never needed: **an unanswered receipt occupies the
+calendar independently of the clock.** `blocksAvailability` stops blocking a `PENDING_APPROVAL`
+booking once its appointment has started — correctly, since nothing can be sold into a time already
+in use — so reusing that predicate for the calendar would have filed yesterday's unanswered
+appointment, which the shop may well have served, under "no effect". `calendarPresence` is a second
+predicate for exactly this case, and `Booking.ts` records why the two must not be merged.
+
+Nothing here changes what the entry is about: the slot is still blocked, and answering is still the
+only thing that resolves it.
+
 ---
 
 ### T65 — Transfer receipts accumulate with no retention or deletion rule
@@ -2610,6 +2646,27 @@ is on the critical path of every story that touches the database.
   comes first. Until then, `readSummary`-shaped probes still work and the gates keep most of their
   value.
 
+**D3 arrived, and the prediction was wrong in the useful direction (2026-08-27).** The fault itself
+is unchanged and was re-confirmed before the gate was written — `repeat('x', 1000)` returns in 59 ms
+and `repeat('x', 1400)` never returns, on the same connection in the same second. But
+`scripts/d3-gate.ts` ran **every one of its 23 probes to completion**, including the composed day
+read, the two-owner isolation pair and the schedule narrowed under a booking. Nothing was skipped.
+
+The reason is worth keeping, because it is a design property rather than luck: **this entry assumed
+"a calendar returns more rows", and what decides the response size is the projection, not the row
+count.** D3's appointment projection is eight narrow columns with no price, no deposit, no
+cancellation token, no client id, no email, no telephone and no absence reason — each omitted for its
+own reason, none of them this one — and a barber-day is a handful of appointments. The whole response
+stays under the ceiling.
+
+So the entry's cost is smaller than it has been reading: it is *"a gate returning a large **payload**
+cannot run here"*, not *"a gate over real volume cannot run here"*. D1's ten-row, seven-column
+recent-bookings read is still the shape that fails. D4's client table and D5's statistics are still
+squarely at risk — a client row carries email and telephone by definition, which is the opposite of
+what saved this one.
+
+The migration half of this entry is untouched and remains the expensive part: `prisma migrate` still
+cannot run from this machine. D3 needed no migration, so it did not exercise it.
 **The fault was not present when D4 ran, and it had been present hours earlier the same day
 (2026-08-27).** This entry is now **intermittent**, which is a different and more dangerous shape
 than "broken here", so the measurements are recorded rather than the conclusion:

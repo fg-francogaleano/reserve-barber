@@ -259,3 +259,72 @@ describe('BarbersPage — absences route', () => {
     );
   });
 });
+
+describe('BarbersPage — calendar route (D3)', () => {
+  function oneBarber() {
+    mockListBarbers.mockResolvedValue([
+      {
+        barber: {
+          id: 'barber-1',
+          locationId: 'loc-1',
+          displayName: 'Ana',
+          bio: null,
+          isActive: true,
+        },
+        locationName: 'Sucursal Centro',
+        locationIsActive: true,
+      },
+    ]);
+    mockListOwnerLocations.mockResolvedValue([
+      { id: 'loc-1', name: 'Sucursal Centro', isActive: true, ownerId: 'owner-1', address: null },
+    ]);
+  }
+
+  it('should_link_to_the_calendar_with_an_accessible_name', async () => {
+    oneBarber();
+
+    render(await BarbersPage());
+
+    expect(
+      screen.getByRole('link', { name: COPY.barberCalendar.manageLabel('Ana') })
+    ).toHaveAttribute('href', '/barberos/barber-1/calendario');
+  });
+
+  it('should_offer_the_route_for_every_barber', async () => {
+    mockListBarbers.mockResolvedValue(
+      ['Ana', 'Nico'].map((displayName, index) => ({
+        barber: {
+          id: `barber-${index + 1}`,
+          locationId: 'loc-1',
+          displayName,
+          bio: null,
+          isActive: true,
+        },
+        locationName: 'Sucursal Centro',
+        locationIsActive: true,
+      }))
+    );
+    mockListOwnerLocations.mockResolvedValue([
+      { id: 'loc-1', name: 'Sucursal Centro', isActive: true, ownerId: 'owner-1', address: null },
+    ]);
+
+    render(await BarbersPage());
+
+    expect(screen.getAllByRole('link', { name: /Ver el calendario de/ })).toHaveLength(2);
+  });
+
+  it('should_add_no_query_to_the_page', async () => {
+    // The route is composed from the id the row already carries. Four reads for
+    // the whole page, not one per barber — the property this list has held
+    // since M4, asserted here because a fifth would be easy to add and
+    // invisible in a render.
+    oneBarber();
+
+    render(await BarbersPage());
+
+    expect(mockListBarbers).toHaveBeenCalledTimes(1);
+    expect(mockListOwnerLocations).toHaveBeenCalledTimes(1);
+    expect(mockCountServicesByBarber).toHaveBeenCalledTimes(1);
+    expect(mockFindBarberIdsWithSchedule).toHaveBeenCalledTimes(1);
+  });
+});
