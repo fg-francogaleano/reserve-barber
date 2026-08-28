@@ -1892,6 +1892,33 @@ second is correct and is more work than the entry has ever priced.
   question when D4 renders the client table, because that is the surface that makes the wrong answer
   visible.
 
+**D4 arrived, answered the backfill question, and corrected this entry about itself (2026-08-27).**
+
+**The correction first, because it changes what this entry is for.** The paragraphs above say
+*"D4's client table and D3's calendar are where it bites"*. **For D4 that is wrong.** This debt is
+about a rename propagating backwards through *historical bookings*; the clients table renders the
+`Client` row itself, which is current by definition — the newest name is the correct thing to show
+there, and showing it is not a defect. **D3's calendar and D1's recent list are where it bites**, and
+D3 shipped without addressing it. D4 is where the *cause* is visible without the damage being
+visible, which is a weaker claim than the one recorded and was worth catching before somebody
+"fixed" a page that was already right.
+
+**The decision, which is what the trigger actually asked for:** nullable `clientName` and
+`clientPhone` snapshot columns on `Booking`, **no backfill**, and readers falling back to the join
+when the snapshot is null. Backfilling existing rows from the current `Client` stamps today's
+possibly-wrong name onto every historical booking at once — which is this entry's own defect, applied
+universally, rather than the fix for it. Nullable columns mean history written before the change
+keeps saying "we do not know", which is true, and history written after it is immutable, which is the
+point.
+
+**Not implemented in D4**, and the reason is D1's own: the fix is a write-path change to B4's
+booking transaction — the concurrency-critical one — and D4 contains no writes. Riding a schema
+decision into a read-only story is how a transaction gets edited without a transaction review.
+
+- **Trigger (re-stated):** the next change that touches B4's booking write for any reason, or the
+  first owner report of a historical booking showing the wrong name. The decision above is made;
+  what remains is one migration and one edit inside the transaction.
+
 ### T55 — The booking write's throttle is per-isolate and does not defeat a distributed attempt
 
 **Status:** accepted · **Effort:** ~2 h (a Cloudflare rate-limiting rule, shared with T47) · **Added:**
@@ -1996,6 +2023,28 @@ than imply otherwise.
 - **Trigger:** the first real shop taking real bookings, or any request from a client to be removed.
   Also **N1**, which is when these addresses start receiving email and the data stops being merely
   stored.
+
+**D4 gave this entry a home, and made its absence visible for the first time (2026-08-27).** Until
+now a guest's contact details were stored and never displayed: the owner could not have asked to
+remove a client because they could not see one. The clients directory shows every name, email address
+and telephone number this product holds, on one page, and the control an owner will reach for next is
+"remove this person" — which does not exist.
+
+Nothing changed about the difficulty. The policy question is still first, and it is still unanswered:
+a booking is a financial record the owner has a legitimate reason to keep, `Client` is
+`onDelete: Restrict` from `Booking`, and anonymising (blanking name, email and telephone while keeping
+the row for referential integrity) remains the shape that satisfies both. D4 deliberately ships **no**
+edit and **no** delete control rather than inventing that policy inside a read-only story.
+
+What D4 does add is the constraint set that makes displaying this data acceptable in the first place,
+and it is worth listing because a future deletion feature must not weaken any of it: the page is
+uncached and unindexed, no personal data appears in any URL (which is why the table has no search), no
+log line may carry a name, address or telephone number, and the projection carries nothing beyond
+what is rendered.
+
+- **Trigger (narrowed):** **the clients directory is now the natural place for it.** The next request
+  from a client to be removed, or the first real shop, decides the policy; the surface to attach it
+  to already exists.
 
 ### T57 — An optional constructor dependency is a hole the type system stops guarding
 
@@ -2561,6 +2610,33 @@ is on the critical path of every story that touches the database.
   comes first. Until then, `readSummary`-shaped probes still work and the gates keep most of their
   value.
 
+**The fault was not present when D4 ran, and it had been present hours earlier the same day
+(2026-08-27).** This entry is now **intermittent**, which is a different and more dangerous shape
+than "broken here", so the measurements are recorded rather than the conclusion:
+
+| time (ART)  | `repeat('x', 1000)` | `repeat('x', 1400)` | `repeat('x', 2000000)` |
+| ----------- | ------------------- | ------------------- | ---------------------- |
+| ~11:30, D3  | 59 ms               | **never returns**   | not attempted          |
+| ~17:40, D4  | 42 ms               | **36 ms**           | **347 ms**             |
+
+Two megabytes in 347 ms on the same connection string, from the same machine, on the same day. Nobody
+applied any of the fixes this entry lists — no MTU change, no VPN toggle, no split tunnel — so the
+path changed underneath the project rather than being repaired.
+
+**What that costs, and it is not nothing:** a gate that passes here is no longer evidence that the
+fault is gone, and a gate that hangs here is no longer evidence of a product defect. Every future
+gate must keep `probeOrSkip` and must run the `repeat('x', 1400)` check **first**, so its result
+carries the state of the path it ran on. `scripts/d4-gate.ts` does both, and its header records that
+the check was run before the file was written.
+
+**D4 ran every probe.** Nineteen, nothing skipped, including the twenty-tied-client paging probe that
+returns three full pages of contact details — squarely the payload this entry says cannot arrive.
+That is a fact about the network on 27 August, not about the product.
+
+- **Trigger (revised):** unchanged in substance, but the entry can no longer be closed by a green
+  gate. It closes when somebody diagnoses the path — the hotspot test is still the cheapest first
+  step — or stays open as a known intermittent that every gate is built to survive.
+
 ---
 
 ### T69 — The address a confirmation is sent to has never been verified, and it now carries a credential
@@ -2995,3 +3071,104 @@ conditioned on an approved payment. It is now covered by tests in both orderings
 - **Trigger:** T74's cheap half — marking a payment refund-owed at cancellation and listing the
   outstanding set — which would give all of these a record without this product ever moving money.
   Or the first client who reports paying for a turn they had cancelled.
+
+---
+
+### T80 — A refused checkout leaves a client record behind, and the directory shows it
+
+**Status:** open — **surfaced, not caused, by D4** · **Effort:** ~1 h for the write-path fix; the
+question of what to do with the rows already stored is separate · **Added:** D4 (2026-08-27)
+
+`BookingCreationService` resolves the client **before** it writes the booking, and the two are not in
+a shared transaction:
+
+```
+const client = await this.clients.resolve({ … });   // creates the row
+const liveHolds = await this.bookings.countLiveHoldsForClient(…);
+if (liveHolds >= MAX_LIVE_HOLDS_PER_CLIENT) return { outcome: 'holdLimitReached' };
+const result = await this.bookings.createProvisional({ … });
+```
+
+So a submission refused by the hold cap — or one whose slot is taken in the interval, or which fails
+for any infrastructure reason after that point — **leaves a `Client` with no booking of any kind**. A
+stranger who never completed anything is now stored with their name, email address and telephone
+number, indefinitely (T56).
+
+**The flow already knows this is undesirable and guards the other path.** The repeat-submission branch
+uses `findByEmail`, which deliberately does *not* create, with the comment: *"on a genuinely lost race
+the submitter may be someone this shop has never seen, and a failed booking must not leave a `Client`
+row behind."* The refusal paths **after** `resolve` do exactly what that comment forbids.
+
+**D4 is why this is worth writing down rather than living in the code.** Until the clients directory
+there was no surface where such a row appeared, so its existence cost nothing visible. Now it is a
+row in the owner's customer table, and the table has to carry copy specifically to stop it being read
+as business — *"Sin turnos · Dejó sus datos pero nunca llegó a reservar"*. That copy is correct and it
+is a workaround: the product is explaining a row it should probably not have created.
+
+**No naturally-occurring instance has been observed.** D4's runtime pass rendered a seeded one to
+prove the state is handled; the two real clients in the database both have bookings. The mechanism is
+read from the code, not from data.
+
+The plausible fixes, in rising cost:
+
+- **Move the hold-cap check above `resolve`** — it needs a client id today, so it would need to key on
+  the email address instead. Closes the most likely refusal path, not the rest.
+- **Create the client inside the booking transaction**, so a failed booking rolls the row back. The
+  honest fix, and it touches B4's concurrency-critical write, which is exactly the review this project
+  keeps declining to ride along on.
+- **Sweep client rows that have no bookings and no recent activity** — cheap, but it is a deletion
+  policy, and that is T56's unanswered question.
+
+- **Trigger:** the next change that touches B4's booking write — the same trigger T54's decision now
+  waits on, and the two should be done together since both are edits to that transaction. Or the
+  first owner who asks why somebody with no appointments is in their client list.
+
+---
+
+### T81 — The clients directory reads every booking of the shop to draw one page
+
+**Status:** open — **measured, not suspected** · **Effort:** ~15 min for the index; the rest is a
+design change · **Added:** D4 (2026-08-27)
+
+The directory's statement aggregates confirmed and inactive counts per client, orders by the
+confirmed count, and takes the total from `count(*) OVER ()`. All three are computed **before**
+`LIMIT` can apply, so the page size bounds what is *returned* and not what is *done*.
+
+`EXPLAIN (ANALYZE, BUFFERS)` against the live database, on the real owner:
+
+```
+Limit  (actual time=0.738..0.741 rows=2)
+  ->  Sort  (Sort Key: (count(b.id) FILTER (…)) DESC, c.id)
+        ->  WindowAgg
+              ->  HashAggregate  (Group Key: c.id)
+                    ->  Hash Right Join  (Hash Cond: (b."clientId" = c.id))
+                          ->  Seq Scan on "Booking" b        ← every booking, all owners
+                          ->  Hash  ->  Seq Scan on "Client" c
+```
+
+**`Booking` has no index on `clientId`.** PostgreSQL does not create one for a foreign key, and the
+schema declares none — the only booking indexes are `@@index([barberId, startTime])` and the
+`cancellationToken` unique. So the join has nothing to seek on, and the planner scans the table.
+
+At today's volume this is correct and fast: 20 bookings, 0.74 ms, 9 shared buffers. The planner is
+right to prefer a sequential scan at this size, and adding an index now would produce one nothing
+uses — **D1 set the rule that indexes are added by measurement rather than assumption, and this
+measurement says "not yet"**.
+
+What the measurement does establish is the shape: the cost of drawing page one is proportional to the
+shop's entire booking history, and it does not fall as the owner pages deeper. D4's own design got
+this wrong in its risk section, calling it "offset degradation at very deep pages" — the degradation
+is on **every** page, and offset depth is the smaller half.
+
+The fixes, in rising cost:
+
+- **An index on `Booking.clientId`**, which turns the scan into a lookup per client on the page. The
+  cheap and obvious first move, once there is enough data for the planner to choose it.
+- **Drop `count(*) OVER ()`** and accept not knowing the total, or compute it separately with its own
+  cheap `COUNT` — the window is what forces the aggregate over every group before the limit.
+- **Stop ordering by an aggregate.** Ordering by "most bookings" is what makes the whole set have to
+  be computed. A stored `confirmedBookingCount` on `Client`, maintained by the booking write, makes
+  the ordering indexable — and is a write-path change of the same family as T54 and T80.
+
+- **Trigger:** measure again when `Booking` passes a few thousand rows, or on the first owner report
+  that the clients page is slow. Re-run the `EXPLAIN` above rather than assuming which fix applies.
