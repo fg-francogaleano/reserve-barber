@@ -233,6 +233,31 @@ Still true and worth carrying forward: unlayered CSS defeats every Tailwind v4 u
 specificity. If a control ever renders unstyled again with its class present and the stylesheet
 intact, check a clean browser profile **before** touching the code.
 
+**D5 hit it again (2026-08-28), and the advice above did its job.** The statistics page marks the
+selected period with `bg-primary text-primary-foreground` on a `<Link>`; in the developer's ordinary
+Chrome the current item rendered as dark text on the dark background — reading as *disabled*, which
+is the opposite of what it must communicate. Every symptom matched: the class is in `classList`,
+`bg-primary` resolves to `rgb(237,237,237)` on a fresh `<div>` on the same page, `h-9`, `rounded-md`,
+`px-3` and `text-primary-foreground` all apply, and only the background is transparent.
+
+The decisive test reproduced exactly, sixteen days after this entry closed: the **identical** rule
+`a.bg-primary{background-color:…}` loses inside `@layer utilities` and wins unlayered, an inline
+style paints, `document.adoptedStyleSheets` is empty, and `style[data-styled]` is present on a page
+this project builds without styled-components.
+
+**No code was changed**, which is the whole value of this entry — the same symptom cost M1 a
+workaround, M3 a second one, and three milestones of hunting. Recognition took one measurement.
+
+**Confirmed the same evening: in a clean profile the button paints white**, exactly as this entry
+predicted. So D5 added no fourth workaround, and the closing note above has now earned its keep once
+in production use rather than only in the milestone that wrote it.
+
+Worth stating for whoever meets this next, because it is the part that does not generalise from the
+P1 closing note: the affected control was a **`<Link>` styled as a selected pill**, and the failure
+mode reads as *disabled* rather than as *unstyled* — dark text on a dark ground, with every other
+utility in the same class string applying normally. That is a more plausible-looking defect than a
+missing button, and therefore a more tempting one to "fix" in code.
+
 ### T11 — Cross-owner isolation has no executable proof
 
 **Status:** **needs a test when it becomes possible** · **Effort:** ~1 h
@@ -2132,9 +2157,26 @@ The general defence is the one B3 established and B4 leaned on: **a gate script 
 call against the live database**. This entry exists to say that the gate is not optional garnish on
 raw SQL — it is the only thing that tests it.
 
-- **Trigger:** the next raw-SQL call added anywhere (**B5**, **D5**), or any `P2010` /
+- **Trigger:** the next raw-SQL call added anywhere (**B5**, ~~**D5**~~), or any `P2010` /
   `UnsupportedNativeDataType` seen in logs. When it fires, add the call to the relevant gate script in
   the same change rather than after it.
+
+**D5 fired this trigger and answered it in the same change (2026-08-28).** The statistics aggregate
+carries `count(*) FILTER`, `count(DISTINCT …) FILTER` and `COALESCE(sum(numeric), 0)` — the shapes
+this entry predicted would be the risky ones. `scripts/d5-gate.ts` §2 executes them against the live
+database and asserts the deserialized **types**, not the values: `uniqueClients` comes back an
+integer, the sum comes back a canonical decimal string, and no `bigint` escapes the repository
+boundary. All four probes passed on the first run.
+
+So the prediction was right about *where* to look and wrong about the outcome — none of these
+aggregates troubled the adapter. The entry stays open as a **pattern**, unchanged: what made that
+knowable was the gate, and the next raw call gets one too.
+
+> One thing the run added to this entry's method, and it belongs here rather than under T68: the
+> gate's `EXPLAIN` probe **hung** rather than erroring, so `probeOrSkip` never received an exception
+> to classify — and the `finally` that removes the fixture never ran, leaving two marked owners
+> behind. A hung read is not a caught read. Every gate from here on wraps its probes in a client-side
+> timeout (`withTimeout` in `scripts/d5-gate.ts`) so a skip is reported and the cleanup still runs.
 
 ### T59 — A repeat submission over a CONFIRMED booking is reported as a live hold
 
@@ -2694,6 +2736,27 @@ That is a fact about the network on 27 August, not about the product.
   gate. It closes when somebody diagnoses the path — the hotspot test is still the cheapest first
   step — or stays open as a known intermittent that every gate is built to survive.
 
+**D5 (2026-08-28) — the fault flipped inside one working day, on one branch.** The third independent
+confirmation, and the tightest window yet:
+
+- **~15:05 ART** — `repeat('x', 1000)` returned in 926 ms; `repeat('x', 1400)` never returned at all.
+  The D5 gate reported its `EXPLAIN` probe as **NOT RUN** and the query plan had to be captured over
+  the Supabase SQL API instead.
+- **~19:23 ART** — same machine, same connection string, nothing reconfigured. The identical probe
+  returned a 27-line plan over the pooler in **0.163 ms**.
+
+Two things follow, and both are about how gates are written rather than about the network:
+
+- **A hung read is not a caught read.** D5's `EXPLAIN` probe did not error, it never returned — so
+  `probeOrSkip` got no exception to classify, and the `finally` that removes the fixture never ran,
+  leaving two marked owners in the database. Gates now wrap every probe in a client-side timeout
+  (`withTimeout` in `scripts/d5-gate.ts`) so a skip is *reported* and the cleanup still happens.
+  Copy that helper, not just `probeOrSkip`.
+- **The HTTPS path is a real fallback.** When the pooler blocks a large read, `execute_sql` over the
+  Supabase API is unaffected and is the way to get a plan out. The two plans matched in shape when
+  both eventually ran (recorded against T81), so a measurement taken over either transport can be
+  trusted.
+
 ---
 
 ### T69 — The address a confirmation is sent to has never been verified, and it now carries a credential
@@ -3229,3 +3292,103 @@ The fixes, in rising cost:
 
 - **Trigger:** measure again when `Booking` passes a few thousand rows, or on the first owner report
   that the clients page is slow. Re-run the `EXPLAIN` above rather than assuming which fix applies.
+
+**D5 re-measured, and the answer does not transfer (2026-08-28).** D5's design predicted the
+statistics aggregate would share this shape and might want the same index. It does not. The
+statistics statement joins `Booking` on **`barberId`**, which is the leading column of the existing
+`Booking_barberId_startTime_idx`, so the planner uses it:
+
+```
+Aggregate  (actual time=0.342..0.346 rows=1)  Buffers: shared hit=40
+  ->  Sort  (Sort Key: b."clientId")  Sort Method: quicksort  Memory: 26kB   ← the DISTINCT
+        ->  Nested Loop
+              ->  Hash Join (Barber ⋈ Location, ownerId)
+              ->  Index Scan using "Booking_barberId_startTime_idx" on "Booking" b
+                    Index Cond: ("barberId" = br.id)
+Execution Time: 0.622 ms   (Planning Time: 12.973 ms)
+```
+
+No `Seq Scan on "Booking"` anywhere, and **`count(DISTINCT "clientId")` does not want an index on
+`clientId`**: the rows are already selected by barber, so the sort is over the owner's own bookings
+rather than over the table. The index this entry proposes would not be used by D5's statement.
+
+Two properties worth recording while the measurement is fresh:
+
+- **The income sub-query pushes the range into the index** (`Index Cond` carries `barberId` *and*
+  `startTime`), while the outer query's does not — it carries `barberId` only. That is the price of
+  `hasAnyBookingEver`, which has no range filter and therefore forces every figure to be computed
+  over the owner's whole history rather than over the period. At 21 bookings it costs 40 shared
+  buffer hits and 0.6 ms. **The trigger for revisiting is the same few-thousand-row mark**, and the
+  cheap fix if it bites is to drop the all-time flag to its own tiny query rather than to add an
+  index.
+- **Planning time is twenty times execution time** (12.97 ms against 0.62 ms) at this size. Not
+  actionable — it is what a nine-relation plan costs on tiny tables — but it means any future
+  measurement comparing wall-clock totals is measuring the planner, not the data.
+
+> Captured over the **Supabase SQL API rather than the pooler**, because T68 was present that day and
+> a query plan is exactly the multi-line payload it blocks. The gate reported its own `EXPLAIN` probe
+> as NOT RUN, and this plan came back over a different transport in under a second. That is a
+> generally useful move: when T68 blocks a large read, the HTTPS path is not affected.
+>
+> **Four hours later the pooler returned the plan too** (see T68), and it matches in shape: the same
+> `Index Scan using "Booking_barberId_startTime_idx"`, the same `clientId` sort for the `DISTINCT`, no
+> sequential scan on `Booking`. The conclusion — add no index — holds on both transports, which is
+> worth knowing before anyone re-measures over one of them and treats the result as transport-specific.
+
+### T82 — Money the owner owes back is now invisible on every surface that reports money
+
+**Status:** open — **created by making the rest of the reporting correct** · **Effort:** ~3 h (a
+surface and its copy); the read is one predicate · **Added:** D5 (2026-08-28)
+
+B5's defining case produces an `APPROVED` payment whose booking is not `CONFIRMED`: the hold lapsed,
+the slot was resold, and the charge nonetheless happened. `data-model.md` §Payment states what that
+is — *"money the owner owes back, not money they earned"* — and both income figures are required to
+exclude it. D1 excludes it. D5 excludes it, and `scripts/d5-gate.ts` §3 proves both directions
+against real rows.
+
+**The consequence is that such money exists in the database and appears on no dashboard surface at
+all.** The only trace is one `error` line the B7 sweep writes with the amount, in a log nobody reads
+on a schedule. Before D5 that gap was theoretical: the owner had one income counter and no reason to
+reconcile it against anything. Now they have a statistics page with five figures and a period
+selector, so the question *"where did that payment go"* has somewhere to be asked and no answer.
+
+The fix is not a change to either income figure — both are right, and folding this into them is
+precisely the defect the exclusion exists to prevent. It is a **third** figure or a small list,
+labelled as what it is: charges collected against appointments that did not happen. The predicate is
+already written twice; it is `p.status = 'APPROVED' AND pb.status <> 'CONFIRMED'`.
+
+Where it goes is an open question. **D6** is the natural home if it becomes a figure on the income
+chart's page. A standalone "pendientes de devolución" list is the more honest surface and has no
+story.
+
+- **Trigger:** the first owner asking about a payment they cannot find, or the first refund. Also
+  reconsider when D6 lands, since that story opens the page this would live on.
+
+### T83 — The statistics page reports deposits by appointment; the dashboard home reports them by approval
+
+**Status:** accepted — **two correct figures that will not agree** · **Effort:** ~4 h (a second
+figure with its own time axis, inside D6) · **Added:** D5 (2026-08-28)
+
+D5's design decision D1 keys every statistics figure on `Booking.startTime`, because the page divides
+one figure by another — `señas ÷ turnos` — and a quotient whose numerator and denominator cover
+different populations means nothing. D1's dashboard counter stays on `Payment.approvedAt`, because
+that card is cash-in an owner reconciles against a bank statement.
+
+Both are correct and they answer different questions. **A deposit approved on 25 August for a
+3 September appointment is in the home's August and in the statistics page's September.** Nothing is
+wrong; the two numbers simply are not the same number.
+
+**What this change did about it:** amended the `dashboard-home` spec so its income requirement carries
+a fourth condition — the label must state that the month is the month of **approval** — and gave the
+statistics card its own basis sentence. Copy is the entire mitigation, which is why it was specified
+rather than left to the implementer.
+
+**What is still missing:** the cash-collected figure, over a *chosen period* rather than the current
+month. An owner who wants "how much money arrived last week" cannot get it from either surface today.
+It belongs to **D6**, where the income-evolution chart gives it a time axis and a place to live
+without competing with the average for space on a card.
+
+- **Trigger:** D6, or the first time the two figures are reported as a bug. If someone reads this
+  entry while shipping D6: the figure to add is `sum(p.amount)` over `p.status = 'APPROVED' AND
+  pb.status = 'CONFIRMED'` bounded on **`p."approvedAt"`** within the selected range — the same
+  predicate as D1's, with the range substituted for the month.

@@ -11,6 +11,7 @@ import { RECENT_BOOKINGS_LIMIT } from '@/server/domain/models/dashboardSummary';
 import { businessToday, dayBoundsOf, monthBoundsOf } from '@/server/domain/models/bookingCalendar';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
 import { resolveBarberFilter } from '@/server/application/dashboard/recentBookingsParams';
+import type { Loaded } from './loaded';
 
 /**
  * The dashboard home's reads, assembled.
@@ -31,16 +32,11 @@ import { resolveBarberFilter } from '@/server/application/dashboard/recentBookin
  */
 
 /**
- * A region of the page that either loaded or did not.
- *
- * **A discriminated union rather than a nullable value**, because the page has
- * to render three things and only two of them are a value: loaded, and could not
- * load. Collapsing the failure into `null` or into a zero is the defect this
- * type exists to make unrepresentable — an income card silently reading `$ 0,00`
- * is a false statement about money, and it is indistinguishable from a shop that
- * earned nothing.
+ * Re-exported so existing importers keep working. The type itself moved to
+ * `loaded.ts` when D5's statistics page needed the same shape for the same
+ * reason — one argument in one file rather than two copies that can drift.
  */
-export type Loaded<T> = { readonly ok: true; readonly value: T } | { readonly ok: false };
+export type { Loaded };
 
 export interface DashboardHomeView {
   /** The six figures, or the fact that they could not be read. */

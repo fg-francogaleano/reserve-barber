@@ -95,6 +95,23 @@ describe('the counters', () => {
     expect(screen.getByText(COPY.dashboard.monthIncomeHelp)).toBeInTheDocument();
   });
 
+  /**
+   * Added by D5. A second income figure now exists on the statistics page,
+   * bounded on the booking's `startTime` rather than on `Payment.approvedAt`,
+   * so the two will not agree — a deposit approved on 25 August for a
+   * 3 September appointment is in this month here and in next month there.
+   *
+   * The assertion is on the **claim**, not on the constant, because asserting
+   * that a string renders proves nothing about what it says. If the label
+   * stops naming the month of approval, this fails.
+   */
+  it('states that its month is the month of approval, not of the appointment', async () => {
+    await renderPage();
+
+    expect(COPY.dashboard.monthIncomeHelp).toMatch(/aprobadas durante este mes/i);
+    expect(screen.getByText(/aprobadas durante este mes/i)).toBeInTheDocument();
+  });
+
   it('keeps held bookings as a separate figure from confirmed ones', async () => {
     await renderPage();
 
