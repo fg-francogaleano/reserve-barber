@@ -23,9 +23,30 @@ export default function Loading() {
       <RangeNav />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {[0, 1, 2, 3, 4].map((index) => (
+        {[0, 1, 2, 3, 4, 5].map((index) => (
           <div key={index} className="bg-muted h-32 w-full animate-pulse rounded-xl" />
         ))}
+      </div>
+
+      {/*
+        Shaped like the two charts, not just like the cards. Without these the
+        page grows by several hundred pixels the moment the real markup arrives,
+        which on a control whose whole purpose is switching periods means the
+        content jumps under the cursor on every selection.
+
+        The tall block is the income chart and the thin one the method split;
+        their heights track the real components rather than being round numbers.
+      */}
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-2">
+          <div className="bg-muted h-6 w-48 animate-pulse rounded-md" />
+          <div className="bg-muted h-56 w-full animate-pulse rounded-xl" />
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="bg-muted h-6 w-40 animate-pulse rounded-md" />
+          <div className="bg-muted h-4 w-full animate-pulse rounded-md" />
+          <div className="bg-muted h-12 w-full animate-pulse rounded-md" />
+        </div>
       </div>
     </main>
   );

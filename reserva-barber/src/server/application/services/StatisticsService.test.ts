@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { StatisticsService } from './StatisticsService';
 import type { IStatisticsRepository } from '@/server/domain/repositories/IStatisticsRepository';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
-import type { BusinessStatistics } from '@/server/domain/models/statistics';
+import type { BusinessCharts, BusinessStatistics } from '@/server/domain/models/statistics';
 
 /**
  * 23:30 in Buenos Aires on Sunday 2026-08-16 is 02:30 UTC on Monday the 17th.
@@ -24,11 +24,17 @@ const FIGURES: BusinessStatistics = {
   hasAnyBookingEver: true,
 };
 
+const CHARTS: BusinessCharts = {
+  rows: [{ bucket: 2, method: 'MERCADO_PAGO', total: '9000.00', payments: 4 }],
+  cashCollected: '7500.00',
+};
+
 function makeService(overrides?: { statistics?: Partial<IStatisticsRepository> }) {
   const logger: ILogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
   const statistics = {
     readStatistics: vi.fn().mockResolvedValue(FIGURES),
+    readCharts: vi.fn().mockResolvedValue(CHARTS),
     ...overrides?.statistics,
   } as unknown as IStatisticsRepository;
 
@@ -182,5 +188,97 @@ describe('StatisticsService - what it hands the page', () => {
     // here would be a second place to round a centavo.
     expect(view).not.toHaveProperty('average');
     expect(view.statistics.ok && view.statistics.value).not.toHaveProperty('average');
+  });
+});
+
+describe('StatisticsService - the charts load and fail on their own', () => {
+  it('should_keep_the_figures_when_the_heavier_chart_read_fails', async () => {
+    // The property the shared transaction would have destroyed (design D4,
+    // revised). The chart read is the heavier of the two against a pooler on
+    // record hanging rather than raising, so this is the likely failure — and
+    // the owner keeps five real figures through it.
+    const { service } = makeService({
+      statistics: { readCharts: vi.fn().mockRejectedValue(new Error('statement timeout')) },
+    });
+
+    const view = await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect(view.statistics.ok).toBe(true);
+    expect(view.charts.ok).toBe(false);
+  });
+
+  it('should_keep_the_charts_when_the_figures_read_fails', async () => {
+    const { service } = makeService({
+      statistics: { readStatistics: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+
+    const view = await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect(view.statistics.ok).toBe(false);
+    expect(view.charts.ok).toBe(true);
+  });
+
+  it('should_never_report_a_failed_chart_read_as_an_empty_period', async () => {
+    // Zero and failure never render alike. A flat zero series is a statement
+    // about the business and is indistinguishable from a period that earned
+    // nothing.
+    const { service } = makeService({
+      statistics: { readCharts: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+
+    const view = await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect(view.charts).toEqual({ ok: false });
+  });
+
+  it('should_log_a_failed_chart_read_without_any_monetary_value', async () => {
+    const { service, logger } = makeService({
+      statistics: { readCharts: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect(logger.error).toHaveBeenCalled();
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('9000');
+  });
+});
+
+describe('StatisticsService - one clock governs the figures and the axis', () => {
+  it('should_bound_the_bucket_edges_by_the_same_range_it_asked_the_figures_for', async () => {
+    // Any drift here is money in a bar that is in no figure. The edges span the
+    // interval exactly, from the same single clock read.
+    const { service, statistics } = makeService();
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    const { range } = vi.mocked(statistics.readStatistics).mock.calls[0]![0];
+    const charts = vi.mocked(statistics.readCharts).mock.calls[0]![0];
+
+    expect(charts.range).toEqual(range);
+    expect(charts.edges[0]?.getTime()).toBe(range.start.getTime());
+    expect(charts.edges[charts.edges.length - 1]?.getTime()).toBe(range.end.getTime());
+  });
+
+  it('should_ask_for_hourly_edges_on_a_single_day_and_daily_edges_on_a_month', async () => {
+    const { service, statistics } = makeService();
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'hoy' });
+    expect(vi.mocked(statistics.readCharts).mock.calls[0]![0].edges).toHaveLength(25);
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'mes' });
+    expect(vi.mocked(statistics.readCharts).mock.calls[1]![0].edges).toHaveLength(32);
+  });
+
+  it('should_read_the_clock_once_for_both_reads', async () => {
+    // Two reads at 23:59:59.9 would let the figures and the axis describe
+    // different days.
+    const { service, statistics } = makeService();
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'hoy' });
+
+    const figures = vi.mocked(statistics.readStatistics).mock.calls[0]![0].range;
+    const charts = vi.mocked(statistics.readCharts).mock.calls[0]![0].range;
+    expect(charts.start.getTime()).toBe(figures.start.getTime());
+    expect(charts.end.getTime()).toBe(figures.end.getTime());
   });
 });

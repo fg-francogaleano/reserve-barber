@@ -2,8 +2,9 @@
 description: >
   Frontend development standards, best practices, and conventions for Reserva Barber.
   The frontend is a Next.js (App Router) application in TypeScript, styled with Tailwind CSS
-  and shadcn/ui, with Recharts/Tremor for dashboard charts. Covers both the private owner
-  dashboard and the public guest booking flow.
+  and shadcn/ui. Dashboard charts are server-rendered SVG; Recharts/Tremor remain available but
+  are not the default (see Charts). Covers both the private owner dashboard and the public guest
+  booking flow.
 globs: []
 alwaysApply: true
 ---
@@ -56,6 +57,22 @@ frontend. The application has two surfaces built with the same framework:
 - **Component library:** **shadcn/ui** — accessible, unstyled-by-default components copied into the repo (`src/components/ui/`) and owned by the project.
 - **Icons:** **lucide-react** (ships with shadcn/ui).
 - **Charts:** **Recharts** (and/or **Tremor**) for the Estadísticas dashboard (income evolution, payment methods, hourly distribution).
+  > **Neither is installed, and the first two charts shipped without them (D6).** `/estadisticas`
+  > carries a tested requirement that the page depend on **no client JavaScript**, and every
+  > client-side charting library is disqualified by the same mechanism: its layout is computed by
+  > measuring the browser, so it renders nothing on the server and different markup on hydration —
+  > on a surface displaying money, which is the exact failure the page's "all `Intl` on the server"
+  > rule exists to prevent. Behind `next/dynamic({ ssr: false })` it would still need the accessible
+  > data table written as the real content, so it buys nothing the hand-rolled SVG does not and
+  > costs ~90–110 KiB gzip for it.
+  >
+  > **What shipped instead:** inline SVG drawn by Server Components, from pure value-to-geometry
+  > functions with no DOM access. See `IncomeChart.tsx` and `PaymentMethodsChart.tsx`.
+  >
+  > These libraries remain **available to the project** — this is not a ban. They stopped being the
+  > default *for this page*. What would bring one back is genuine interaction (hover tooltips, zoom,
+  > brushing), or D7 arriving with chart shapes that are not bars. The repository port returns data
+  > rather than markup, so swapping the renderer would touch neither the domain nor the SQL.
 - **Date/calendar:** a shadcn/ui + `react-day-picker` calendar for date selection; a custom slot grid for barber availability.
   > **Neither has been installed, and two surfaces have now shipped without them.** The public flow's
   > date step (B3) is a strip of server-rendered links, and the owner's per-barber calendar (D3) is a
@@ -229,7 +246,7 @@ import { cn } from '@/lib/utils';
 - Use shadcn/ui components (`Button`, `Card`, `Dialog`, `Table`, `Tabs`, `Select`…) instead of raw HTML where an equivalent exists.
 - Style with Tailwind utilities and design tokens (theme colors, spacing) — avoid arbitrary magic-number values and one-off CSS files.
 - Use `cn()` to merge conditional classes; let `prettier-plugin-tailwindcss` order them.
-- **Charts:** use Recharts/Tremor for the Estadísticas views (Evolución de Ingresos, Métodos de Pago, Distribución Horaria).
+- **Charts:** on `/estadisticas`, charts are **server-rendered inline SVG** — no client charting library. That page's no-client-JavaScript requirement is tested, and a library that measures the browser cannot satisfy it (see the Charts note under Core Libraries). Keep the geometry as pure functions and give every chart a text equivalent carrying the identical numbers: a chart is an image to a screen reader, and colour is never the sole encoder of a distinction.
 - **Responsive first:** the dashboard and booking flow must work on mobile — clients open the booking link primarily on phones.
 
 ### Internationalization / Copy
@@ -368,7 +385,7 @@ export default defineConfig({
 ## Performance Best Practices
 
 ### Component Optimization
-- Favor Server Components to ship less JS to the client. Lazy-load heavy client components (`next/dynamic`) — e.g., charts on the Estadísticas page.
+- Favor Server Components to ship less JS to the client. Lazy-load heavy client components (`next/dynamic`) where one is genuinely needed — **not** for the Estadísticas charts, which are Server Components rendering SVG and have no client bundle to defer.
 - Memoize expensive client computations (`useMemo`, `useCallback`, `React.memo`) deliberately.
 - Use `next/image` for profile/cover/avatars (served from Supabase Storage) for automatic optimization.
 

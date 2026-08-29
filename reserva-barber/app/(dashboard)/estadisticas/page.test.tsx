@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { COPY } from '@/lib/copy';
 import type { StatisticsView } from '@/server/application/services/StatisticsService';
-import type { BusinessStatistics } from '@/server/domain/models/statistics';
+import type { BusinessCharts, BusinessStatistics } from '@/server/domain/models/statistics';
+import { bucketEdgesFor } from '@/server/application/dashboard/statisticsRangeParams';
 
 const requireOwner = vi.fn(async () => ({
   id: 'owner-root',
@@ -38,11 +39,28 @@ function figures(overrides: Partial<BusinessStatistics> = {}): BusinessStatistic
   };
 }
 
+/**
+ * The default view's edges are `hoy`'s real 24 hourly buckets, resolved from the
+ * same date the view names — so a test that renders the income chart draws the
+ * axis the page would actually draw, rather than one invented here.
+ */
+const TODAY = { year: 2026, month: 8, day: 16 } as const;
+
+function charts(overrides: Partial<BusinessCharts> = {}): BusinessCharts {
+  return {
+    rows: [{ bucket: 12, method: 'MERCADO_PAGO', total: '9000.00', payments: 4 }],
+    cashCollected: '7500.00',
+    ...overrides,
+  };
+}
+
 function view(overrides: Partial<StatisticsView> = {}): StatisticsView {
   return {
     range: 'hoy',
-    today: { year: 2026, month: 8, day: 16 },
+    today: TODAY,
+    edges: bucketEdgesFor('hoy', TODAY),
     statistics: { ok: true, value: figures() },
+    charts: { ok: true, value: charts() },
     ...overrides,
   };
 }
@@ -271,7 +289,12 @@ describe('StatisticsPage - the cancellation breakdown', () => {
 
 describe('StatisticsPage - three states that must not look alike', () => {
   it('should_report_a_failed_read_as_a_failure_and_never_as_zeros', async () => {
-    loadPage.mockResolvedValue(view({ statistics: { ok: false } }));
+    // **Both datasets fail here, and that is the change D6 made to this test.**
+    // Before the charts existed, "the read failed" was one state; now there are
+    // two independent reads and this is the case where neither answered — the
+    // one the page's own try/catch produces. The partial cases are asserted
+    // separately below, because they are the ones that are new.
+    loadPage.mockResolvedValue(view({ statistics: { ok: false }, charts: { ok: false } }));
     await renderPage();
 
     expect(screen.getByText(COPY.statistics.loadFailed)).toBeInTheDocument();
@@ -478,5 +501,282 @@ describe('StatisticsPage - what it must not render or log', () => {
     // The projection has none by construction; this pins that the page never
     // grows one, since nothing here would look wrong if it did.
     expect(document.body.textContent).not.toMatch(/@/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D6 — the charts, the sixth figure, and the states they can be in
+// ---------------------------------------------------------------------------
+
+describe('StatisticsPage - the charts', () => {
+  it('should_name_the_income_chart_after_the_period_it_actually_drew', async () => {
+    await renderPage();
+
+    expect(
+      screen.getByRole('img', {
+        name: COPY.statistics.incomeChartLabel(COPY.statistics.rangesInPhrase.hoy),
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('should_name_the_method_split_when_there_is_a_split_to_draw', async () => {
+    // Only when there is more than one part. The default fixture has a single
+    // method and is asserted below as a sentence rather than a picture.
+    loadPage.mockResolvedValue(
+      view({
+        charts: {
+          ok: true,
+          value: charts({
+            rows: [
+              { bucket: 12, method: 'MERCADO_PAGO', total: '7500.00', payments: 3 },
+              { bucket: 12, method: 'BANK_TRANSFER', total: '2500.00', payments: 1 },
+            ],
+          }),
+        },
+      })
+    );
+    await renderPage();
+
+    expect(screen.getByRole('img', { name: COPY.statistics.methodsChartLabel })).toBeInTheDocument();
+  });
+
+  it('should_carry_every_drawn_value_in_text_as_well', async () => {
+    // A chart is an image to a screen reader. The table is the equivalent, not
+    // a debugging aid, so it has to be present and complete.
+    await renderPage();
+
+    const table = screen.getByRole('table', { name: COPY.statistics.incomeChartTableCaption });
+    // 24 hourly buckets plus the header row.
+    expect(within(table).getAllByRole('row')).toHaveLength(25);
+  });
+
+  it('should_draw_one_bucket_per_hour_for_a_single_day_and_one_per_day_for_a_month', async () => {
+    await renderPage();
+    expect(
+      within(
+        screen.getByRole('table', { name: COPY.statistics.incomeChartTableCaption })
+      ).getAllByRole('row')
+    ).toHaveLength(25);
+
+    cleanup();
+    loadPage.mockResolvedValue(
+      view({ range: 'mes', edges: bucketEdgesFor('mes', TODAY), charts: { ok: true, value: charts() } })
+    );
+    await renderPage({ rango: 'mes' });
+
+    // August 2026 has 31 days.
+    expect(
+      within(
+        screen.getByRole('table', { name: COPY.statistics.incomeChartTableCaption })
+      ).getAllByRole('row')
+    ).toHaveLength(32);
+  });
+
+  it('should_render_a_quiet_bucket_as_zero_rather_than_omitting_it', async () => {
+    // The defect this exists to prevent draws a plausible shape on a shorter
+    // axis. Only one of the 24 hours has money; the other 23 must be present.
+    await renderPage();
+
+    const table = screen.getByRole('table', { name: COPY.statistics.incomeChartTableCaption });
+    expect(within(table).getAllByText('$ 0,00')).toHaveLength(23);
+    expect(within(table).getAllByText(/9\.000,00/).length).toBeGreaterThan(0);
+  });
+
+  it('should_state_the_single_method_case_instead_of_drawing_a_share_of_one_part', async () => {
+    // The permanent state of every owner who configured one payment method.
+    await renderPage();
+
+    expect(
+      screen.getByText(
+        COPY.statistics.methodsChartSingle(
+          COPY.statistics.methods.MERCADO_PAGO,
+          '$ 9.000,00',
+          COPY.statistics.methodPaymentCount(4)
+        )
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('should_draw_the_split_when_both_methods_were_used', async () => {
+    loadPage.mockResolvedValue(
+      view({
+        charts: {
+          ok: true,
+          value: charts({
+            rows: [
+              { bucket: 12, method: 'MERCADO_PAGO', total: '7500.00', payments: 3 },
+              { bucket: 12, method: 'BANK_TRANSFER', total: '2500.00', payments: 1 },
+            ],
+          }),
+        },
+      })
+    );
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.methods.MERCADO_PAGO)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.methods.BANK_TRANSFER)).toBeInTheDocument();
+    // Colour is never the only encoder: each part states its amount and count.
+    expect(screen.getByText(COPY.statistics.methodPaymentCount(3))).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.methodPaymentCount(1))).toBeInTheDocument();
+  });
+
+  it('should_say_so_when_the_period_had_appointments_but_collected_nothing', async () => {
+    // An answer, not an absence — so the axis is still drawn, at zero.
+    loadPage.mockResolvedValue(
+      view({ charts: { ok: true, value: charts({ rows: [], cashCollected: '0.00' }) } })
+    );
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.incomeChartAllZero)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.methodsChartEmpty)).toBeInTheDocument();
+  });
+});
+
+describe('StatisticsPage - the charts and the figures fail apart', () => {
+  it('should_keep_the_figures_when_only_the_charts_failed', async () => {
+    // The property the rejected shared transaction would have destroyed. The
+    // chart read is the heavier one, so this is the likely failure.
+    loadPage.mockResolvedValue(view({ charts: { ok: false } }));
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.confirmedCount)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.chartsFailed)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.chartsFailedHelp)).toBeInTheDocument();
+  });
+
+  it('should_never_draw_a_zero_series_for_a_failed_chart_read', async () => {
+    // A flat line at zero is a statement about the business and is
+    // indistinguishable from a period that earned nothing.
+    loadPage.mockResolvedValue(view({ charts: { ok: false } }));
+    await renderPage();
+
+    expect(
+      screen.queryByRole('table', { name: COPY.statistics.incomeChartTableCaption })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('should_hide_the_cash_figure_rather_than_zero_it_when_the_chart_read_failed', async () => {
+    // It comes from the failed read. A money card reading `$ 0,00` because a
+    // query timed out is a false statement about the business.
+    loadPage.mockResolvedValue(view({ charts: { ok: false } }));
+    await renderPage();
+
+    expect(screen.queryByText(COPY.statistics.cashCollected)).not.toBeInTheDocument();
+  });
+
+  it('should_show_no_chart_at_all_for_a_shop_that_has_never_had_a_booking', async () => {
+    loadPage.mockResolvedValue(
+      view({ statistics: { ok: true, value: figures({ hasAnyBookingEver: false }) } })
+    );
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.emptyShop)).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.incomeChartHeading)).not.toBeInTheDocument();
+  });
+});
+
+describe('StatisticsPage - the sixth figure states its own basis', () => {
+  it('should_render_the_cash_collected_figure_from_the_chart_read', async () => {
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.cashCollected)).toBeInTheDocument();
+    expect(screen.getAllByText(/7\.500,00/).length).toBeGreaterThan(0);
+  });
+
+  it('should_warn_that_it_will_not_match_the_deposits_figure', async () => {
+    // T83's entire mitigation. Both figures are right and they disagree; an
+    // owner who finds that out alone concludes one of them is broken.
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.cashCollectedHelp)).toBeInTheDocument();
+  });
+});
+
+describe('StatisticsPage - a period with no appointments claims nothing about turnos', () => {
+  /**
+   * **Found by D6's adversarial pass, and it is a false statement rather than
+   * a layout complaint.**
+   *
+   * `Figures` returns the empty-period card when a period has neither confirmed
+   * appointments nor cancellations. `Charts` did not know that, so it rendered
+   * beneath it — and every bucket being zero triggered the copy *"Hubo turnos,
+   * pero todavía no se cobró ninguna seña"*. There were no turnos. The page said
+   * there were.
+   *
+   * Every existing test missed it because they all render a period that has
+   * figures. The empty-period case had never been rendered with the charts
+   * present.
+   */
+  const quiet = { ok: true as const, value: figures({ confirmedCount: 0, cancelledCount: 0, cancelledByOwner: 0, cancelledByClient: 0, uniqueClients: 0, depositTotal: '0.00' }) };
+
+  it('should_not_claim_there_were_appointments_when_the_period_had_none', async () => {
+    loadPage.mockResolvedValue(
+      view({ statistics: quiet, charts: { ok: true, value: charts({ rows: [], cashCollected: '0.00' }) } })
+    );
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.emptyPeriod(COPY.statistics.rangesInPhrase.hoy))).toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.incomeChartAllZero)).not.toBeInTheDocument();
+  });
+
+  it('should_draw_no_chart_at_all_for_a_period_with_no_appointments', async () => {
+    // The same rule the empty-business state already follows: an empty axis
+    // under a message saying the period was empty is noise at best.
+    loadPage.mockResolvedValue(
+      view({ statistics: quiet, charts: { ok: true, value: charts({ rows: [], cashCollected: '0.00' }) } })
+    );
+    await renderPage();
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.incomeChartHeading)).not.toBeInTheDocument();
+  });
+
+  it('should_still_draw_the_zero_series_when_appointments_happened_and_collected_nothing', async () => {
+    // The neighbouring case, and the one that must NOT be swept up by the fix:
+    // appointments happened and earned nothing is an answer, and the axis says so.
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 2, depositTotal: '0.00' }) },
+        charts: { ok: true, value: charts({ rows: [], cashCollected: '0.00' }) },
+      })
+    );
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.incomeChartAllZero)).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: COPY.statistics.incomeChartLabel(COPY.statistics.rangesInPhrase.hoy) })).toBeInTheDocument();
+  });
+});
+
+describe('StatisticsPage - a double failure does not vouch for numbers that are absent', () => {
+  /**
+   * **The second finding of D6's adversarial pass, and the same shape as the
+   * first: copy asserting a state nothing checked.**
+   *
+   * `chartsFailedHelp` reassures the owner that *"los números de arriba sí están
+   * actualizados"* — which is the right thing to say when only the chart read
+   * failed, and false when both did. The figures' own failure card is already on
+   * screen saying the opposite.
+   *
+   * Independent failure is the feature; claiming a half succeeded when neither
+   * did is not.
+   */
+  it('should_show_only_the_figures_failure_when_both_reads_failed', async () => {
+    loadPage.mockResolvedValue(view({ statistics: { ok: false }, charts: { ok: false } }));
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.loadFailed)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.chartsFailed)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.chartsFailedHelp)).not.toBeInTheDocument();
+  });
+
+  it('should_still_reassure_about_the_figures_when_only_the_charts_failed', async () => {
+    // The case the sentence was written for, and it must survive the fix.
+    loadPage.mockResolvedValue(view({ charts: { ok: false } }));
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.confirmedCount)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.chartsFailedHelp)).toBeInTheDocument();
   });
 });

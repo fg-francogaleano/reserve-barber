@@ -148,3 +148,63 @@ describe('RangeNav - the arrangement design D9 settled on', () => {
     expect(source).toMatch(/searchParams/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// D6 — the segment stays a Server Component route
+// ---------------------------------------------------------------------------
+
+describe('the statistics segment ships no client component', () => {
+  /**
+   * **The claim D6 is most likely to have quietly broken.**
+   *
+   * This page's no-client-JavaScript requirement is tested for the figures and
+   * the period control, and D6 extended it to the charts. The way it would be
+   * lost is not a deliberate decision — it is one `'use client'` added to make
+   * a tooltip work, or a charting library imported for "just this one chart".
+   * Both compile, both render, and every behavioural test in this directory
+   * keeps passing, because jsdom runs the client bundle happily.
+   *
+   * So the assertion is over the source of the whole segment rather than over
+   * any behaviour, and it is the same shape as the composition root's
+   * source-level tests.
+   */
+  const SOURCE_FILES = readdirSync(SEGMENT).filter(
+    (entry) => entry.endsWith('.tsx') && !entry.endsWith('.test.tsx')
+  );
+
+  it('should_carry_no_use_client_directive_anywhere_in_the_segment', () => {
+    for (const file of SOURCE_FILES) {
+      expect(readFileSync(join(SEGMENT, file), 'utf8')).not.toMatch(/['"]use client['"]/);
+    }
+  });
+
+  it('should_import_no_charting_library', () => {
+    // The stack decision named Recharts/Tremor and this page deliberately does
+    // not use them (see `chartGeometry.ts`). If one is ever added, the
+    // no-JavaScript requirement above becomes false at the same moment.
+    for (const file of SOURCE_FILES) {
+      const source = readFileSync(join(SEGMENT, file), 'utf8');
+      expect(source).not.toMatch(/from\s+['"](recharts|@tremor\/|chart\.js|victory|nivo)/);
+    }
+  });
+
+  it('should_reach_for_no_browser_api_while_drawing_a_chart', () => {
+    // A chart that measures its container cannot render on the server. This is
+    // the mechanism that disqualified every client charting library here, and
+    // it would disqualify a hand-rolled component just as completely.
+    for (const file of [...SOURCE_FILES, 'chartGeometry.ts']) {
+      const source = readFileSync(join(SEGMENT, file), 'utf8');
+      expect(source).not.toMatch(/\bwindow\.|\bdocument\.|getBoundingClientRect|ResizeObserver/);
+      expect(source).not.toMatch(/\buse(State|Effect|Ref|LayoutEffect)\s*\(/);
+    }
+  });
+
+  it('should_keep_the_chart_geometry_free_of_react', () => {
+    // The half of a hand-rolled chart that can be wrong is the arithmetic, and
+    // it is only cheap to test while it is pure.
+    const source = readFileSync(join(SEGMENT, 'chartGeometry.ts'), 'utf8');
+
+    expect(source).not.toMatch(/from\s+['"]react['"]/);
+    expect(source).not.toMatch(/<[A-Za-z]/);
+  });
+});

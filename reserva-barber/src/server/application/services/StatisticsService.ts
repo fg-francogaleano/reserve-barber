@@ -1,10 +1,15 @@
 import type { IStatisticsRepository } from '@/server/domain/repositories/IStatisticsRepository';
 import type { IClock } from '@/server/domain/repositories/IClock';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
-import type { BusinessStatistics, StatisticsRange } from '@/server/domain/models/statistics';
+import type {
+  BusinessCharts,
+  BusinessStatistics,
+  StatisticsRange,
+} from '@/server/domain/models/statistics';
 import { businessToday, type LocalDate } from '@/server/domain/models/bookingCalendar';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
 import {
+  bucketEdgesFor,
   intervalFor,
   resolveStatisticsRange,
 } from '@/server/application/dashboard/statisticsRangeParams';
@@ -45,6 +50,28 @@ export interface StatisticsView {
   readonly today: LocalDate;
   /** The figures, or the fact that they could not be read. */
   readonly statistics: Loaded<BusinessStatistics>;
+  /**
+   * The charts and the cash-collected figure, or the fact that they could not
+   * be read.
+   *
+   * **Its own `Loaded` rather than a widening of the one above** (design D4, as
+   * revised during implementation). The two come from two independent reads
+   * that deliberately share no transaction, and the heavier of them is the one
+   * more likely to fail — so an owner whose chart read timed out keeps five real
+   * figures instead of a page-wide apology.
+   */
+  readonly charts: Loaded<BusinessCharts>;
+  /**
+   * The instants bounding each bucket of the income chart, `n + 1` of them for
+   * `n` buckets.
+   *
+   * Carried on the view rather than recomputed by the chart, so the axis is
+   * built from the **same** clock read and the same range the figures were
+   * counted over. A component resolving its own edges would be a second place
+   * the business calendar is decided, and the disagreement would show up as
+   * money in a bar that is in no figure.
+   */
+  readonly edges: readonly Date[];
 }
 
 export class StatisticsService {
@@ -71,12 +98,19 @@ export class StatisticsService {
   }): Promise<StatisticsView> {
     const today = businessToday(new Date(this.clock.now()));
     const range = resolveStatisticsRange(input.rawRange);
+    const interval = intervalFor(range, today);
+    const edges = bucketEdgesFor(range, today);
 
-    return {
-      range,
-      today,
-      statistics: await this.read(input.ownerId, intervalFor(range, today)),
-    };
+    // Issued together but recovered apart. `allSettled` is not needed because
+    // each read catches its own failure and answers with `{ ok: false }` — what
+    // this concurrency buys is one round trip of latency rather than two,
+    // against a pool the public booking flow shares (T47).
+    const [statistics, charts] = await Promise.all([
+      this.read(input.ownerId, interval),
+      this.readCharts(input.ownerId, interval, edges),
+    ]);
+
+    return { range, today, edges, statistics, charts };
   }
 
   /**
@@ -100,6 +134,37 @@ export class StatisticsService {
       this.logger.error(
         'Failed to read the business statistics',
         toErrorLogContext('dashboard.statistics', error)
+      );
+      return { ok: false };
+    }
+  }
+
+  /**
+   * The charts, or the fact that they could not be read.
+   *
+   * **Caught separately from the figures on purpose.** This is the heavier of
+   * the two statements and the pooler is on record hanging rather than raising
+   * (T68), so it is the one that will fail — and when it does the owner should
+   * lose two charts, not the whole page. The alternative considered was one
+   * repeatable-read transaction over both, which would have made this failure
+   * take the figures with it; `IStatisticsRepository` rule 9 records why it was
+   * rejected and what skew that accepts.
+   *
+   * A failure is never collapsed into an empty series. A flat line at zero is a
+   * statement about the business, and it is indistinguishable from a period
+   * that earned nothing.
+   */
+  private async readCharts(
+    ownerId: string,
+    range: { start: Date; end: Date },
+    edges: readonly Date[]
+  ): Promise<Loaded<BusinessCharts>> {
+    try {
+      return { ok: true, value: await this.statistics.readCharts({ ownerId, range, edges }) };
+    } catch (error) {
+      this.logger.error(
+        'Failed to read the business charts',
+        toErrorLogContext('dashboard.statistics.charts', error)
       );
       return { ok: false };
     }

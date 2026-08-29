@@ -1,5 +1,5 @@
 import type { Interval } from '../models/availability';
-import type { BusinessStatistics } from '../models/statistics';
+import type { BusinessCharts, BusinessStatistics } from '../models/statistics';
 
 /**
  * The statistics page's read: one aggregate over a period the owner chose.
@@ -63,6 +63,48 @@ import type { BusinessStatistics } from '../models/statistics';
  *    count; the division happens in the domain over integer cents, because
  *    `toCanonicalDecimal`'s two branches disagree about a value with more than
  *    two decimals and a quotient is exactly that (design D8).
+ *
+ * ---
+ *
+ * **What D6 adds, and the two rules it makes load-bearing.**
+ *
+ * 9. **The two reads are independent, and SHALL NOT share a transaction.** The
+ *    obvious move is a repeatable-read transaction, so the bars and the figure
+ *    beside them come from one snapshot. It was considered and rejected: an
+ *    interactive transaction holds a connection open across round trips against
+ *    a transaction-mode pooler — the thing every other repository here is
+ *    careful not to do — on the pool the public booking flow shares (T47); and
+ *    `readCharts` is the heavier statement against a pooler on record *hanging*
+ *    rather than raising (T68), so inside a shared transaction its failure would
+ *    cost the owner the five figures too. The likelier failure is asymmetric,
+ *    which makes independent recoverability worth more than the snapshot.
+ *
+ *    **The accepted cost:** a booking confirming into the period between the two
+ *    reads leaves the bars one deposit short of the figure until the next
+ *    render. Reconciliation is instead proven where it is decidable — the filled
+ *    series sums to the total the same rows represent, in the domain, with no
+ *    database — which is the property a reader actually depends on.
+ * 10. **The chart read filters payments by status in its own right.** Rule 4
+ *    keeps `Payment` out of the *counted* row set; this read is a payment read
+ *    and must instead exclude the rejected rows explicitly. The partial unique
+ *    index admits unlimited `REJECTED` attempts beside one live payment,
+ *    deliberately — a declined card is exactly the client who will try again —
+ *    so a client who retried three times becomes three Mercado Pago payments in
+ *    the method split unless `p.status = 'APPROVED'` is present. The result is
+ *    wrong in the direction that flatters the gateway the shop pays fees to.
+ * 11. **Bucket assignment may happen in SQL; bucket boundaries may not.** The
+ *    edges arrive as instants computed in the domain, for the reason rule 5
+ *    already gives, and the statement only compares a row against them. Bucket
+ *    indexes are `width_bucket`'s 1-based convention and are narrowed from the
+ *    driver's wide integer type at this boundary like every other count.
+ * 12. **`cashCollected` is the one value in this port bounded on
+ *    `Payment.approvedAt`**, and it is required to be: it answers how much money
+ *    *arrived* in the period, which is what an owner reconciles against a bank
+ *    statement and what no surface answered before D6 (T83). Every other figure
+ *    and every bucket stays on the appointment's `startTime`. Nothing may divide
+ *    it by an appointment-keyed figure, and whatever renders it SHALL state its
+ *    basis — it will not equal the deposits figure beside it, and both are
+ *    right.
  */
 export interface IStatisticsRepository {
   /**
@@ -84,4 +126,30 @@ export interface IStatisticsRepository {
    * result guards it for a wrong *shape*, never for an empty shop.
    */
   readStatistics(input: { ownerId: string; range: Interval }): Promise<BusinessStatistics>;
+
+  /**
+   * Both charts and the cash-collected figure, from **one grouped read**.
+   *
+   * One read rather than two because the two questions share a row set: grouped
+   * by bucket and by method, summed over methods it is the income series, and
+   * summed over buckets it is the payment-method split. Splitting them would put
+   * two charts on one screen that cannot be reconciled against each other, which
+   * is the same defect rule 9 describes between the charts and the figures.
+   *
+   * **It returns rows, not a series.** Only buckets that have payments come
+   * back; filling the empty ones is `fillIncomeSeries`'s job in the domain. That
+   * is deliberate — a chart that silently omits a quiet Tuesday draws a
+   * plausible shape on an axis a day too short, and the rule that prevents it
+   * belongs somewhere a test can reach without a database.
+   *
+   * `edges` bounds the buckets and SHALL span exactly `range`: same first
+   * instant, same last. A row assigned outside that span is the caller's bug and
+   * the domain drops it rather than clamping it into a bucket it does not belong
+   * to.
+   */
+  readCharts(input: {
+    ownerId: string;
+    range: Interval;
+    edges: readonly Date[];
+  }): Promise<BusinessCharts>;
 }

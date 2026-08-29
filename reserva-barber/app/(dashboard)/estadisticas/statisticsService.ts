@@ -25,6 +25,14 @@ import { logger } from '@/server/infrastructure/logger';
  * email address and telephone number, so the logger stayed with the page. This
  * projection is five integers and a decimal, and the service is the layer that
  * knows a read failed.
+ *
+ * **D6 added a second read and no fourth collaborator**, which is worth stating
+ * because a charting story is exactly where one would be expected. The charts
+ * are drawn from this same repository's rows by Server Components, so nothing
+ * here reaches a rendering library, a browser API or a client bundle — and the
+ * read-only and no-cipher claims above are unchanged by it. Both reads go
+ * through the one repository constructed below, and they deliberately share no
+ * transaction (`IStatisticsRepository` rule 9).
  */
 export function statisticsService(): StatisticsService {
   return new StatisticsService(

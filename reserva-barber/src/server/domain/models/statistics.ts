@@ -10,6 +10,7 @@
  */
 
 import { fromCents, toCents } from './money';
+import { PAYMENT_METHODS, type PaymentMethod } from './Payment';
 
 /**
  * The periods the page offers, in the order it offers them.
@@ -178,4 +179,158 @@ export function averageDepositPerBooking(
   const remainder = totalCents - whole * confirmedCount;
 
   return fromCents(remainder * 2 >= confirmedCount ? whole + 1 : whole);
+}
+
+// ---------------------------------------------------------------------------
+// D6 — the income series over time, and the payment-method split
+// ---------------------------------------------------------------------------
+
+/**
+ * How a period is partitioned for the income chart.
+ *
+ * **A property of the range, never of the data.** A day is drawn by hour and a
+ * week or a month by day, whatever the rows happen to contain — granularity
+ * chosen from the data would change the axis between two periods the owner is
+ * comparing, which is the one thing this page exists to let them do.
+ */
+export type BucketGranularity = 'hour' | 'day';
+
+/**
+ * One grouped row as the repository returns it, before anything is filled.
+ *
+ * `bucket` is **1-based**, which is `width_bucket`'s own convention: it answers
+ * `0` below the first threshold and `n` at or above the last. Both are
+ * unreachable while the statement carries the range predicate, and
+ * `fillIncomeSeries` drops them rather than trusting that to stay true.
+ *
+ * The row set is deliberately grouped by bucket **and** method, so one read
+ * serves both charts: summed over methods it is the series, summed over buckets
+ * it is the split. Two reads would answer from two instants and could not be
+ * reconciled on screen.
+ */
+export interface IncomeByBucketAndMethod {
+  readonly bucket: number;
+  readonly method: PaymentMethod;
+  /** Canonical decimal string, never a number. */
+  readonly total: string;
+  readonly payments: number;
+}
+
+/** One bar. `start` is the instant the bucket opens, in the business's calendar. */
+export interface IncomeBucket {
+  readonly start: Date;
+  readonly total: string;
+}
+
+/** One part of the split. `payments` is a count of payments, never of bookings. */
+export interface PaymentMethodShare {
+  readonly method: PaymentMethod;
+  readonly total: string;
+  readonly payments: number;
+}
+
+/**
+ * Everything the two charts need, as one snapshot.
+ *
+ * `cashCollected` rides along because it comes from the same read: it is the
+ * **only** value in this capability bounded on `Payment.approvedAt` rather than
+ * on the appointment, and it exists so an owner can ask "how much money arrived
+ * in this period" — which, before D6, no surface answered (T83).
+ *
+ * It is carried beside the series and never inside it. Two series on one axis
+ * invite a point-by-point reading, and the gap between them at any single
+ * bucket is a deposit for an appointment in another period rather than a
+ * shortfall. Nothing may divide it by an appointment-keyed figure.
+ */
+export interface BusinessCharts {
+  readonly rows: readonly IncomeByBucketAndMethod[];
+  readonly cashCollected: string;
+}
+
+/**
+ * The sum of canonical decimal strings, over integer cents.
+ *
+ * Adding these as floats is how `1000.25 + 2000.25` becomes `3000.4999…`, and
+ * the whole money convention in `data-model.md` exists to keep that arithmetic
+ * away from the values a shop is told it earned.
+ */
+export function sumAmounts(amounts: readonly string[]): string {
+  return fromCents(amounts.reduce((cents, amount) => cents + toCents(amount), 0));
+}
+
+/**
+ * The grouped rows as one bar per bucket, **with the empty buckets present**.
+ *
+ * ---
+ *
+ * **The filling is the point, and the defect it prevents is invisible.** The
+ * statement returns only buckets that have rows, so a week in which deposits
+ * arrived on Monday and Friday comes back as two rows. Rendered as-is that is a
+ * two-bar chart — a plausible shape, on an axis three fifths too short,
+ * describing a week that did not happen. Nothing looks wrong, which is why this
+ * lives in the domain with a test rather than in a component with a comment.
+ *
+ * Both methods of a bucket are added together: the series is income over time,
+ * and the split is the other chart's question.
+ *
+ * `edges` has one more element than the series has buckets — bucket `i` spans
+ * `[edges[i], edges[i + 1])`. A row whose index falls outside that span is
+ * dropped rather than clamped: clamping would move real money into a bucket it
+ * does not belong to, and the conservative direction for a guard that should be
+ * unreachable is to draw nothing rather than to draw the wrong bar.
+ */
+export function fillIncomeSeries(
+  rows: readonly IncomeByBucketAndMethod[],
+  edges: readonly Date[]
+): readonly IncomeBucket[] {
+  const bucketCount = Math.max(edges.length - 1, 0);
+  const cents = new Array<number>(bucketCount).fill(0);
+
+  for (const row of rows) {
+    const index = row.bucket - 1;
+    if (index < 0 || index >= bucketCount) continue;
+    cents[index] += toCents(row.total);
+  }
+
+  return cents.map((total, index) => ({
+    start: edges[index] as Date,
+    total: fromCents(total),
+  }));
+}
+
+/** The period's total, from the filled series. */
+export function sumIncomeSeries(series: readonly IncomeBucket[]): string {
+  return sumAmounts(series.map((bucket) => bucket.total));
+}
+
+/**
+ * The split between payment rails, over the whole period.
+ *
+ * **Only the methods actually used appear.** A part reading zero is not a share
+ * of anything, and a two-part chart where one part is empty is the permanent
+ * state of every owner who configured a single payment method — the surface has
+ * to say that in words rather than draw it as a whole.
+ *
+ * The order comes from `PAYMENT_METHODS` rather than from the rows, so the two
+ * parts do not swap places between two periods the owner is comparing.
+ *
+ * `payments` counts payments and only `APPROVED` ones reach here, which is what
+ * keeps a client's declined retries from reading as three Mercado Pago
+ * customers — the multiplicity the partial unique index admits on purpose.
+ */
+export function paymentMethodSplit(
+  rows: readonly IncomeByBucketAndMethod[]
+): readonly PaymentMethodShare[] {
+  return PAYMENT_METHODS.flatMap((method) => {
+    const own = rows.filter((row) => row.method === method);
+    if (own.length === 0) return [];
+
+    return [
+      {
+        method,
+        total: sumAmounts(own.map((row) => row.total)),
+        payments: own.reduce((count, row) => count + row.payments, 0),
+      },
+    ];
+  });
 }

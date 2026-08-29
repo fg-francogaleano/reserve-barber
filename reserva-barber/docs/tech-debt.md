@@ -248,6 +248,32 @@ this project builds without styled-components.
 **No code was changed**, which is the whole value of this entry — the same symptom cost M1 a
 workaround, M3 a second one, and three milestones of hunting. Recognition took one measurement.
 
+**D6 found the same profile doing something far worse (2026-08-29): the streamed page never
+arrives.** The dashboard renders its `loading.tsx` skeleton and stays there — indefinitely, with no
+console error, no failed request and a `200` from the server. Where the D5 symptom was a control that
+looked disabled, this one is a page that looks hung, and the natural first suspicion is that the
+change under test broke React streaming.
+
+**Four controls separate the environment from the code, and every one of them should be run before
+touching anything:**
+
+1. **Ask the server what it sent.** A same-origin `fetch()` of the page from the page returned
+   **49 KB with the real content in it** — the figure labels and the chart headings both present
+   alongside the skeleton. The server is not the problem when this happens.
+2. **Open a page the change never touched.** `/clientes` (D4) hung identically, with the same marker.
+3. **Try the other engine.** `next dev` hung too — and it shares no build artifact with the worker,
+   which clears the OpenNext build in one step.
+4. **Look for the marker.** `style[data-styled]` present and `document.adoptedStyleSheets` empty, on
+   every affected page. Same two signatures as the D5 occurrence.
+
+It is **intermittent**, like T68: the same pages rendered fully in the same profile ninety minutes
+earlier, in the same session, with no restart in between. So a page that renders is not evidence the
+fault is gone, and a page that hangs is not evidence of a regression.
+
+- **Trigger:** none for the product. For the next person who meets it: run the four controls above,
+  **in that order** — the first one costs ten seconds and answers the question almost every time —
+  and then open a clean profile. Do not change code.
+
 **Confirmed the same evening: in a clean profile the button paints white**, exactly as this entry
 predicted. So D5 added no fourth workaround, and the closing note above has now earned its keep once
 in production use rather than only in the milestone that wrote it.
@@ -894,6 +920,24 @@ surface now **writes**. Three things follow that were not true when this entry w
   these two entries naming it.
 
 The bet itself is unchanged: still no real traffic, still deliberate. What changed is the downside.
+
+**D6 measured what the dashboard side now costs (2026-08-29).** The statistics page went from one
+statement to three: D5's aggregate, D6's grouped chart read, and the differently-bounded cash figure.
+Two things keep that from being a straight tripling of the page's draw on this pool:
+
+- **They are issued concurrently and share no transaction.** An interactive transaction was
+  considered for snapshot coherence and rejected partly *because* of this entry — it would hold a
+  connection open across round trips against a transaction-mode pooler, which is what every other
+  repository here avoids (`IStatisticsRepository` rule 9). Three short statements in parallel occupy
+  the pool for roughly the span of the slowest, not the sum of all three.
+- **The chart read is cheap**: 0.184 ms execution, 8 shared buffer hits, 77–95 ms wall clock over the
+  pooler (measured in `scripts/d6-gate.ts` §8). The round trip dominates, as it does everywhere in
+  this deployment.
+
+What genuinely worsened is the **burst shape**, not the steady state. The six period buttons are
+links, so an owner comparing periods issues three statements per click with no client-side caching and
+no `revalidate` — six clicks in ten seconds is eighteen statements against the pool the booking flow
+shares. That is still nothing at this scale, and it is the dashboard half of the same missing rule.
 
 - **Trigger:** the first time the owner shares the link somewhere with reach (an Instagram bio, a
   story, printed cards), any measured growth in requests to `/b/**`, any Supavisor pool saturation,
@@ -3335,6 +3379,42 @@ Two properties worth recording while the measurement is fresh:
 > sequential scan on `Booking`. The conclusion — add no index — holds on both transports, which is
 > worth knowing before anyone re-measures over one of them and treats the result as transport-specific.
 
+**D6 measured its own statement, and it is a third shape again (2026-08-29).** The chart read starts
+from `Payment` rather than from `Booking`, so neither of the two answers above transfers. Captured
+over the **pooler** this time — T68 was absent all morning, which is the fourth independent
+confirmation that the fault is intermittent rather than positional:
+
+```
+GroupAggregate  (actual time=0.103..0.107 rows=3)   Buffers: shared hit=8
+  Group Key: width_bucket(extract(epoch FROM pb."startTime")::float8, '{…8 edges…}'::float8[]), p.method
+  ->  Sort  (Sort Key: width_bucket(…), p.method)  quicksort  Memory: 25kB
+        ->  Nested Loop  (Join Filter: pb.id = p."bookingId")   Rows Removed by Join Filter: 56
+              ->  Index Scan using "Booking_barberId_startTime_idx" on "Booking" pb
+                    Index Cond: ("barberId" = pbr.id AND "startTime" >= $2 AND "startTime" < $3)
+              ->  Seq Scan on "Payment" p   (Filter: status = 'APPROVED')   rows=15, loops=4
+Execution Time: 0.184 ms   (Planning Time: 0.450 ms)
+```
+
+Three things worth recording while it is fresh:
+
+- **`width_bucket` over a `float8[]` costs nothing measurable.** It appears only in the `Group Key`
+  and the sort — no functional-index question arises, because the buckets are recomputed per row from
+  a value the range predicate has already narrowed.
+- **The range *does* reach the index here** (`Index Cond` carries `barberId` **and** `startTime`),
+  unlike D5's outer query. That is the direct consequence of this statement having no `hasAnyBookingEver`
+  equivalent: nothing in it is unbounded, so the planner can push the whole predicate down. It is the
+  clearest evidence yet for the fix this entry proposes for D5 — move the all-time flag to its own
+  tiny query.
+- **`Payment` is sequentially scanned, and that is correct at this size** — 27 rows, 4 loops, 4
+  buffer hits. It is also the one thing here that will not stay correct: `Payment` grows with every
+  checkout attempt including the abandoned ones, and this is a nested loop over it per matched
+  booking. **The index to reach for when it bites is `Payment(bookingId) WHERE status = 'APPROVED'`**,
+  not a plain one — the partial unique index already on the table covers a different predicate and
+  cannot serve this join.
+
+- **Trigger (D6's half):** the same few-thousand-row mark, measured on `Payment` rather than on
+  `Booking`. Re-run the `EXPLAIN` in `scripts/d6-gate.ts` §9 rather than assuming which fix applies.
+
 ### T82 — Money the owner owes back is now invisible on every surface that reports money
 
 **Status:** open — **created by making the rest of the reporting correct** · **Effort:** ~3 h (a
@@ -3361,13 +3441,23 @@ Where it goes is an open question. **D6** is the natural home if it becomes a fi
 chart's page. A standalone "pendientes de devolución" list is the more honest surface and has no
 story.
 
-- **Trigger:** the first owner asking about a payment they cannot find, or the first refund. Also
-  reconsider when D6 lands, since that story opens the page this would live on.
+**D6 looked at this and declined it** (2026-08-29). The entry offered the statistics page as the
+natural home *"if it becomes a figure on the income chart's page"*, and shipping that page's charts
+is the moment to decide. Three reasons it did not land there: the figure is not a trend, so it has
+nothing to do on a time axis; it does not share that page's clock, and D6 already spends its one
+permitted exception on T83's cash-collected figure; and placing money-owed-back beside revenue
+invites precisely the reading the exclusion exists to prevent — an owner adding the two and calling
+it income. **The entry's own better answer still stands**: a standalone "pendientes de devolución"
+list, which remains without a story. Recorded here so the next reader does not re-litigate it.
+
+- **Trigger:** the first owner asking about a payment they cannot find, or the first refund. **No
+  longer D6** — that story considered it and said no, for the reasons above. The next opening is a
+  story that owns a refund surface, or the first real refund forcing one.
 
 ### T83 — The statistics page reports deposits by appointment; the dashboard home reports them by approval
 
-**Status:** accepted — **two correct figures that will not agree** · **Effort:** ~4 h (a second
-figure with its own time axis, inside D6) · **Added:** D5 (2026-08-28)
+**Status:** **closed in D6 (2026-08-29)** — the missing figure shipped; the two figures still will not
+agree, and now say so · **Effort:** ~4 h, as estimated · **Added:** D5 (2026-08-28)
 
 D5's design decision D1 keys every statistics figure on `Booking.startTime`, because the page divides
 one figure by another — `señas ÷ turnos` — and a quotient whose numerator and denominator cover
@@ -3388,7 +3478,24 @@ month. An owner who wants "how much money arrived last week" cannot get it from 
 It belongs to **D6**, where the income-evolution chart gives it a time axis and a place to live
 without competing with the average for space on a card.
 
-- **Trigger:** D6, or the first time the two figures are reported as a bug. If someone reads this
-  entry while shipping D6: the figure to add is `sum(p.amount)` over `p.status = 'APPROVED' AND
-  pb.status = 'CONFIRMED'` bounded on **`p."approvedAt"`** within the selected range — the same
-  predicate as D1's, with the range substituted for the month.
+**What D6 shipped, and the one place it diverged from this entry's own advice.** The predicate is
+exactly the one recorded below — `sum(p.amount)` over `p.status = 'APPROVED' AND pb.status =
+'CONFIRMED'`, bounded on **`p."approvedAt"`** within the selected range. It rides on the chart read
+because it is a payment read like the rest of it.
+
+**It is a sixth card, not a series on the income chart.** This entry proposed the chart *"where the
+income-evolution chart gives it a time axis"*; D6 rejected that half. Two series on one axis invite a
+point-by-point reading, and the distance between them at any bucket is a deposit for an appointment in
+another period rather than a shortfall — which is D5's original defect wearing different clothes. The
+card carries its own basis sentence instead, the mitigation D5 already established for
+`dashboard-home`. `statistics.cashCollectedHelp` states both that it is bounded on approval and that it
+will not match the deposits card beside it.
+
+**Proven against real rows.** `scripts/d6-gate.ts` §7 seeds a deposit approved *inside* the range for
+an appointment three days *after* it and asserts the two figures differ by exactly that amount —
+5288.50 against 4511.50, a difference of 777.00. If they ever agree on that row, one figure has
+silently moved onto the other's column, and the probe fails rather than the owner noticing.
+
+- **Trigger:** none — closed. The residual risk is not a defect but a support question: an owner
+  comparing the two cards and asking which is right. The answer is both, and the copy says so. If that
+  question is asked anyway, the fix is the wording, not the arithmetic.

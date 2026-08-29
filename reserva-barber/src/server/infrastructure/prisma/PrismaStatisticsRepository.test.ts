@@ -233,3 +233,142 @@ describe('PrismaStatisticsRepository - the mapping', () => {
     expect(result.hasAnyBookingEver).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// D6 — the grouped chart read
+// ---------------------------------------------------------------------------
+
+/** Four edges: three hourly buckets across the range above. */
+const EDGES = [
+  new Date('2026-08-10T03:00:00.000Z'),
+  new Date('2026-08-10T04:00:00.000Z'),
+  new Date('2026-08-10T05:00:00.000Z'),
+  new Date('2026-08-10T06:00:00.000Z'),
+];
+
+function createChartsDb(rows: Record<string, unknown>[], cash: unknown = '0') {
+  const db = {
+    $queryRaw: vi
+      .fn()
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([{ cashCollected: cash }]),
+    $transaction: vi.fn(),
+  };
+  return { db: db as unknown as PrismaClient, raw: db };
+}
+
+async function readCharts(rows: Record<string, unknown>[], cash: unknown = '0') {
+  const { db, raw } = createChartsDb(rows, cash);
+  const result = await new PrismaStatisticsRepository(db).readCharts({
+    ownerId: OWNER,
+    range: RANGE,
+    edges: EDGES,
+  });
+  return { result, raw };
+}
+
+describe('PrismaStatisticsRepository - the chart read', () => {
+  it('narrows the driver wide integers at this boundary', async () => {
+    // A bigint reaching a React prop is `TypeError: Do not know how to
+    // serialize a BigInt` at render — a blank page rather than a chart.
+    const { result } = await readCharts([
+      { bucket: BigInt(2), method: 'MERCADO_PAGO', total: '1500.5', payments: BigInt(3) },
+    ]);
+
+    expect(result.rows[0]?.bucket).toBe(2);
+    expect(result.rows[0]?.payments).toBe(3);
+    expect(Number.isInteger(result.rows[0]?.bucket)).toBe(true);
+  });
+
+  it('canonicalizes every amount, including the trailing zero the driver drops', async () => {
+    const { result } = await readCharts(
+      [{ bucket: BigInt(1), method: 'BANK_TRANSFER', total: '2000.5', payments: BigInt(1) }],
+      '4000.5'
+    );
+
+    expect(result.rows[0]?.total).toBe('2000.50');
+    expect(result.cashCollected).toBe('4000.50');
+  });
+
+  it('returns no rows rather than throwing when the period collected nothing', async () => {
+    const { result } = await readCharts([]);
+
+    expect(result.rows).toEqual([]);
+    expect(result.cashCollected).toBe('0.00');
+  });
+
+  it('scopes both statements to the owner in their own right', async () => {
+    // There is no row-level security on these tables, so this join *is* the
+    // tenancy boundary. A leaked aggregate produces no row that can look wrong
+    // — only a plausible bar.
+    const { raw } = await readCharts([]);
+
+    for (const call of raw.$queryRaw.mock.calls) {
+      expect(call.slice(1)).toContain(OWNER);
+    }
+    expect(raw.$queryRaw.mock.calls).toHaveLength(2);
+  });
+
+  it('passes the bucket edges as values rather than building them in SQL', async () => {
+    const { raw } = await readCharts([]);
+
+    expect(raw.$queryRaw.mock.calls[0].slice(1)).toContainEqual(EDGES.map((e) => e.getTime() / 1000));
+  });
+
+  it('excludes rejected payment attempts from the method split', async () => {
+    // `Payment_one_live_per_booking` is ON ("bookingId") WHERE status <>
+    // 'REJECTED', so a booking carries any number of declined attempts on
+    // purpose. Without this predicate a client who retried three times reads as
+    // three Mercado Pago customers — wrong in the direction that flatters the
+    // gateway the shop pays fees to.
+    const { raw } = await readCharts([]);
+    const sql = (raw.$queryRaw.mock.calls[0][0] as string[]).join('?');
+
+    expect(sql).toContain("p.status = 'APPROVED'");
+  });
+
+  it('joins income through the booking status rather than counting approved payments', async () => {
+    const { raw } = await readCharts([]);
+
+    for (const call of raw.$queryRaw.mock.calls) {
+      expect((call[0] as string[]).join('?')).toContain("pb.status = 'CONFIRMED'");
+    }
+  });
+
+  it('bounds the buckets on the appointment and the cash figure on the approval', async () => {
+    // The one deliberate divergence in this capability (T83). Both are right,
+    // they will not agree, and each states its basis where it is rendered.
+    const { raw } = await readCharts([]);
+    const series = (raw.$queryRaw.mock.calls[0][0] as string[]).join('?');
+    const cash = (raw.$queryRaw.mock.calls[1][0] as string[]).join('?');
+
+    expect(series).toContain('pb."startTime"');
+    expect(series).not.toContain('approvedAt');
+    expect(cash).toContain('p."approvedAt"');
+  });
+
+  it('computes no date of its own in either statement', async () => {
+    // `date_trunc`'s unit is an identifier position that parameterisation does
+    // not cover, and it truncates in the session's timezone — UTC on Supavisor
+    // and workerd — so a 21:30 appointment would land in the next day's bar.
+    const { raw } = await readCharts([]);
+
+    for (const call of raw.$queryRaw.mock.calls) {
+      const sql = (call[0] as string[]).join('?');
+      expect(sql).not.toMatch(/date_trunc/i);
+      expect(sql).not.toMatch(/\binterval\b/i);
+      expect(sql).not.toMatch(/\bnow\s*\(/i);
+      expect(sql).not.toMatch(/current_(date|timestamp)/i);
+    }
+  });
+
+  it('issues both reads outside any shared transaction', async () => {
+    // Design D4, revised during implementation. An interactive transaction
+    // holds a connection open across round trips against a transaction-mode
+    // pooler, and the heavier read failing inside one would cost the owner the
+    // five figures as well as the charts (T47, T68).
+    const { raw } = await readCharts([]);
+
+    expect(raw.$transaction).not.toHaveBeenCalled();
+  });
+});

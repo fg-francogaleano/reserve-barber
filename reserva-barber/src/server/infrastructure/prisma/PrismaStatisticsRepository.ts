@@ -1,6 +1,11 @@
 import type { PrismaClient } from '@/generated/prisma/client';
 import type { IStatisticsRepository } from '@/server/domain/repositories/IStatisticsRepository';
-import type { BusinessStatistics } from '@/server/domain/models/statistics';
+import type {
+  BusinessCharts,
+  BusinessStatistics,
+  IncomeByBucketAndMethod,
+} from '@/server/domain/models/statistics';
+import type { PaymentMethod } from '@/server/domain/models/Payment';
 import type { Interval } from '@/server/domain/models/availability';
 import { toCanonicalDecimal } from './canonicalDecimal';
 
@@ -14,6 +19,19 @@ import { toCanonicalDecimal } from './canonicalDecimal';
  * aggregate is the worst place to forget it: a leaked figure produces no row
  * that can look wrong, only a plausible integer.
  */
+
+/** One grouped row of the chart read. Counts and bucket indexes arrive as `bigint`. */
+interface ChartRow {
+  bucket: bigint;
+  method: PaymentMethod;
+  total: unknown;
+  payments: bigint;
+}
+
+/** The single-row companion carrying the cash-collected figure. */
+interface CashRow {
+  cashCollected: unknown;
+}
 
 /** The one row the aggregate returns. Counts arrive as `bigint`. */
 interface StatisticsRow {
@@ -185,6 +203,122 @@ export class PrismaStatisticsRepository implements IStatisticsRepository {
       cancelledByClient: Number(row.cancelledByClient),
       uniqueClients: Number(row.uniqueClients),
       hasAnyBookingEver: Number(row.bookingsEver) > 0,
+    };
+  }
+
+  /**
+   * Both charts and the cash-collected figure (D6).
+   *
+   * ---
+   *
+   * **One grouped read serves two charts.** The row set is grouped by bucket
+   * *and* by method: summed over methods it is the income series, summed over
+   * buckets it is the payment-method split. Two reads would answer from two
+   * instants and put two charts on one screen that cannot be reconciled against
+   * each other.
+   *
+   * **`p.status = 'APPROVED'` is not optional and is the likeliest thing to be
+   * dropped here.** Rule 4 keeps `Payment` out of the *counted* row set; this
+   * read *is* a payment read, so it has to exclude the declined attempts in its
+   * own right. `Payment_one_live_per_booking` is
+   * `ON ("bookingId") WHERE status <> 'REJECTED'` — a booking carries any number
+   * of rejected rows deliberately, because a declined card is exactly the client
+   * who will try again — so without this predicate a client who retried three
+   * times becomes three Mercado Pago payments in the split. Wrong in the
+   * direction that flatters the gateway the shop pays fees to, and it reads as a
+   * busy month.
+   *
+   * **The join through `pb.status = 'CONFIRMED'` is the same rule the income
+   * figure follows**: an approved payment on a booking that never confirmed is
+   * money the owner owes back, not revenue, and it belongs to neither method.
+   *
+   * **This statement computes no date.** The bucket edges arrive as instants
+   * from the domain and become an epoch-second array; `width_bucket` only
+   * compares against them. `date_trunc` is refused twice over — its unit is an
+   * identifier position that parameterisation does not cover, and it truncates
+   * in the *session's* timezone, UTC here, so a 21:30 appointment would land in
+   * the next day's bar.
+   *
+   * **The two reads are issued independently and share no transaction.** An
+   * interactive transaction holds a connection open across round trips against a
+   * transaction-mode pooler — the thing every other repository here avoids — on
+   * the pool the public booking flow shares (T47); and this is the heavier read
+   * against a pooler on record hanging rather than raising (T68), so a shared
+   * transaction would cost the owner the five figures too. The skew that admits
+   * is one round trip wide and self-correcting; see `IStatisticsRepository`
+   * rule 9.
+   *
+   * **`cashCollected` is bounded on `p."approvedAt"`** — the one value in this
+   * capability that is not keyed on the appointment, and required to be (T83).
+   * It rides on this call because it is a payment read like the rest of it, not
+   * because it belongs to a chart.
+   */
+  async readCharts(input: {
+    ownerId: string;
+    range: Interval;
+    edges: readonly Date[];
+  }): Promise<BusinessCharts> {
+    const { ownerId, range, edges } = input;
+
+    // `width_bucket(operand, thresholds[])` takes the boundaries as a value,
+    // which is what keeps every calendar decision in the domain. Epoch seconds
+    // rather than timestamps because the array form of `width_bucket` is defined
+    // over `double precision`, and a second's resolution is far finer than any
+    // boundary this product places.
+    const thresholds = edges.map((edge) => edge.getTime() / 1000);
+
+    const rows = await this.db.$queryRaw<ChartRow[]>`
+      SELECT
+        width_bucket(
+          extract(epoch FROM pb."startTime")::float8,
+          ${thresholds}::float8[]
+        ) AS "bucket",
+        p.method AS "method",
+        sum(p.amount) AS "total",
+        count(*) AS "payments"
+
+      FROM "Payment" p
+      JOIN "Booking" pb ON pb.id = p."bookingId"
+      JOIN "Barber" pbr ON pbr.id = pb."barberId"
+      JOIN "Location" pl ON pl.id = pbr."locationId"
+      WHERE pl."ownerId" = ${ownerId}
+        AND p.status = 'APPROVED'
+        AND pb.status = 'CONFIRMED'
+        AND pb."startTime" >= ${range.start}
+        AND pb."startTime" < ${range.end}
+      GROUP BY 1, 2
+    `;
+
+    // Deliberately a second statement rather than a sixth column on the first:
+    // it is bounded on a different instant, so folding it in would need its own
+    // FILTER over a different predicate and would silently inherit this
+    // statement's GROUP BY.
+    const cash = await this.db.$queryRaw<CashRow[]>`
+      SELECT COALESCE(sum(p.amount), 0) AS "cashCollected"
+      FROM "Payment" p
+      JOIN "Booking" pb ON pb.id = p."bookingId"
+      JOIN "Barber" pbr ON pbr.id = pb."barberId"
+      JOIN "Location" pl ON pl.id = pbr."locationId"
+      WHERE pl."ownerId" = ${ownerId}
+        AND p.status = 'APPROVED'
+        AND pb.status = 'CONFIRMED'
+        AND p."approvedAt" >= ${range.start}
+        AND p."approvedAt" < ${range.end}
+    `;
+
+    return {
+      rows: rows.map(
+        (row): IncomeByBucketAndMethod => ({
+          bucket: Number(row.bucket),
+          method: row.method,
+          total: toCanonicalDecimal(row.total),
+          payments: Number(row.payments),
+        })
+      ),
+      // An owner with no payments still yields one row, because the aggregate
+      // has no GROUP BY. The guard is for a wrong shape, never for an empty
+      // period — which is a real answer and renders as one.
+      cashCollected: toCanonicalDecimal(cash[0]?.cashCollected ?? 0),
     };
   }
 }
