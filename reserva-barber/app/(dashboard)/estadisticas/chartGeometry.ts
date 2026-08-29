@@ -1,5 +1,10 @@
 import { toCents } from '@/server/domain/models/money';
-import type { IncomeBucket, PaymentMethodShare } from '@/server/domain/models/statistics';
+import type {
+  HourlyBucket,
+  IncomeBucket,
+  PaymentMethodShare,
+  RankedEntry,
+} from '@/server/domain/models/statistics';
 
 /**
  * Values to geometry, and nothing else (D6).
@@ -140,5 +145,113 @@ export function sharesFor(split: readonly PaymentMethodShare[]): readonly Share[
     const part = { method: share.method, fraction, offset, share };
     offset += fraction;
     return part;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// D7 — the ranking bars and the hour-of-day columns
+// ---------------------------------------------------------------------------
+
+/**
+ * The coordinate space a ranking is drawn in.
+ *
+ * **Horizontal, unlike every other chart on this page**, and the reason is the
+ * labels: a service or a barber is named, at a length nothing bounds below 120
+ * characters, and a vertical axis of rotated names is unreadable at any width —
+ * let alone at the 360 px the T18 family of defect lives at. Laid out in rows,
+ * a long name wraps into its own line beside its bar instead.
+ *
+ * `plotWidth` is short of `width` by the strip the names occupy.
+ */
+export const RANKING_VIEWBOX = {
+  width: 720,
+  plotWidth: 520,
+  rowHeight: 34,
+  barHeight: 20,
+} as const;
+
+export interface RankingBar {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly entry: RankedEntry;
+}
+
+/** The height a ranking's viewBox needs for `rows` rows. */
+export function rankingHeightFor(rows: number): number {
+  return Math.max(rows, 0) * RANKING_VIEWBOX.rowHeight;
+}
+
+/**
+ * One bar per ranked entry, scaled so the longest fills the plot.
+ *
+ * **The scale is relative to the ranking, not absolute**, the choice `barsFor`
+ * already makes and for the same reason: the shape is what a ranking is for,
+ * and the counts are printed beside every bar and again in the table.
+ *
+ * **A peak of zero yields zero-width bars rather than `NaN`.** It is not
+ * reachable from a confirmed row set — an entry exists because something was
+ * counted — but a division that produces `NaN` writes `NaN` into an SVG
+ * attribute, and the chart disappears rather than reporting anything. The guard
+ * costs one comparison.
+ *
+ * It draws exactly what it is given. Whatever decides that the aggregated
+ * remainder is tabulated rather than charted does so by not passing it, so this
+ * function can never silently lose a row.
+ */
+export function rankingBarsFor(entries: readonly RankedEntry[]): readonly RankingBar[] {
+  if (entries.length === 0) return [];
+
+  const peak = Math.max(...entries.map((entry) => entry.count));
+  const inset = (RANKING_VIEWBOX.rowHeight - RANKING_VIEWBOX.barHeight) / 2;
+
+  return entries.map((entry, index) => ({
+    x: 0,
+    y: index * RANKING_VIEWBOX.rowHeight + inset,
+    width: peak === 0 ? 0 : (entry.count / peak) * RANKING_VIEWBOX.plotWidth,
+    height: RANKING_VIEWBOX.barHeight,
+    entry,
+  }));
+}
+
+export interface HourColumn {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly bucket: HourlyBucket;
+}
+
+/**
+ * One column per hour of the business's day, scaled so the busiest fills the
+ * plot.
+ *
+ * Shares `CHART_VIEWBOX` with the income chart because it is the same shape of
+ * picture — a value per bucket along a time axis — and two coordinate spaces for
+ * one shape is how two charts on one page stop looking like one system.
+ *
+ * **A period with appointments at no hour draws a flat axis at zero rather than
+ * nothing.** `fillHourlyDistribution` returns all twenty-four buckets whatever
+ * the rows contained, and a division by a zero peak would turn that answer into
+ * an empty box.
+ */
+export function hourColumnsFor(buckets: readonly HourlyBucket[]): readonly HourColumn[] {
+  if (buckets.length === 0) return [];
+
+  const peak = Math.max(...buckets.map((bucket) => bucket.count));
+  const slot = CHART_VIEWBOX.width / buckets.length;
+  const width = slot * (1 - BAR_GAP_RATIO);
+
+  return buckets.map((bucket, index) => {
+    const height = peak === 0 ? 0 : (bucket.count / peak) * CHART_VIEWBOX.plotHeight;
+
+    return {
+      x: index * slot,
+      y: CHART_VIEWBOX.plotHeight - height,
+      width,
+      height,
+      bucket,
+    };
   });
 }

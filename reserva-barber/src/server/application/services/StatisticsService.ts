@@ -2,6 +2,7 @@ import type { IStatisticsRepository } from '@/server/domain/repositories/IStatis
 import type { IClock } from '@/server/domain/repositories/IClock';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
 import type {
+  BusinessBreakdowns,
   BusinessCharts,
   BusinessStatistics,
   StatisticsRange,
@@ -10,6 +11,7 @@ import { businessToday, type LocalDate } from '@/server/domain/models/bookingCal
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
 import {
   bucketEdgesFor,
+  hourBucketEdgesFor,
   intervalFor,
   resolveStatisticsRange,
 } from '@/server/application/dashboard/statisticsRangeParams';
@@ -72,6 +74,26 @@ export interface StatisticsView {
    * money in a bar that is in no figure.
    */
   readonly edges: readonly Date[];
+  /**
+   * The three breakdowns, or the fact that they could not be read (D7).
+   *
+   * **A third `Loaded` rather than a widening of either above.** The three reads
+   * are issued together and share no transaction, and this is the one whose
+   * statement groups a row set three ways — so an owner whose breakdown read
+   * timed out keeps six figures and two charts rather than a page-wide apology.
+   */
+  readonly breakdowns: Loaded<BusinessBreakdowns>;
+  /**
+   * The instants bounding each hour of the period, `24n + 1` of them.
+   *
+   * A **finer** axis than `edges` over the same span, and carried for the same
+   * reason: the hour-of-day distribution has to be folded from the same clock
+   * read and the same range the appointments were counted over. A component
+   * resolving its own would be a second place the business calendar is decided,
+   * and the disagreement would surface as an appointment in an hour that is in
+   * no figure.
+   */
+  readonly hourEdges: readonly Date[];
 }
 
 export class StatisticsService {
@@ -100,17 +122,19 @@ export class StatisticsService {
     const range = resolveStatisticsRange(input.rawRange);
     const interval = intervalFor(range, today);
     const edges = bucketEdgesFor(range, today);
+    const hourEdges = hourBucketEdgesFor(range, today);
 
     // Issued together but recovered apart. `allSettled` is not needed because
     // each read catches its own failure and answers with `{ ok: false }` — what
-    // this concurrency buys is one round trip of latency rather than two,
+    // this concurrency buys is one round trip of latency rather than three,
     // against a pool the public booking flow shares (T47).
-    const [statistics, charts] = await Promise.all([
+    const [statistics, charts, breakdowns] = await Promise.all([
       this.read(input.ownerId, interval),
       this.readCharts(input.ownerId, interval, edges),
+      this.readBreakdowns(input.ownerId, interval, hourEdges),
     ]);
 
-    return { range, today, edges, statistics, charts };
+    return { range, today, edges, hourEdges, statistics, charts, breakdowns };
   }
 
   /**
@@ -165,6 +189,36 @@ export class StatisticsService {
       this.logger.error(
         'Failed to read the business charts',
         toErrorLogContext('dashboard.statistics.charts', error)
+      );
+      return { ok: false };
+    }
+  }
+
+  /**
+   * The three breakdowns, or the fact that they could not be read (D7).
+   *
+   * **Caught in its own right, like the charts and for the same reason.** This
+   * statement groups one row set three ways, so it is a candidate for being the
+   * heaviest of the three; the pooler is on record hanging rather than raising
+   * (T68), and when it does the owner should lose three sections rather than the
+   * page. `IStatisticsRepository` rule 9 records why no transaction wraps them
+   * and what skew that accepts.
+   *
+   * A failure is never collapsed into an empty ranking. An empty ranking is a
+   * statement about the business and is indistinguishable from a period nobody
+   * booked — D1's rule, and the reason `Loaded<T>` exists at all.
+   */
+  private async readBreakdowns(
+    ownerId: string,
+    range: { start: Date; end: Date },
+    edges: readonly Date[]
+  ): Promise<Loaded<BusinessBreakdowns>> {
+    try {
+      return { ok: true, value: await this.statistics.readBreakdowns({ ownerId, range, edges }) };
+    } catch (error) {
+      this.logger.error(
+        'Failed to read the business breakdowns',
+        toErrorLogContext('dashboard.statistics.breakdowns', error)
       );
       return { ok: false };
     }

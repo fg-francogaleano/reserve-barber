@@ -297,3 +297,62 @@ export function dayEdgesBetween(first: LocalDate, last: LocalDate): readonly Dat
   edges.push(new Date(closing));
   return edges;
 }
+
+/**
+ * Every hour boundary of a span of local days: `n` days yields `24n + 1` edges,
+ * and bucket `i` spans `[edges[i], edges[i + 1])`.
+ *
+ * The axis of D7's hour-of-day distribution, and the generalisation of
+ * `hourEdgesOf` from one day to a period. It exists for the reason every edge
+ * function in this module exists: **the hour an appointment falls in is a
+ * business-calendar fact, and no statement is allowed to decide it.**
+ * `date_trunc` and `extract(hour …)` resolve in the *session's* timezone — UTC
+ * on Supavisor and on `workerd` — so every appointment from 21:00 local onward
+ * would be counted in the following day's hours, plausibly and silently, for
+ * three hours of every day.
+ *
+ * Each edge is computed from its own wall-clock reading rather than by adding
+ * an hour to the last, the property `hourEdgesOf` and `dayEdgesBetween` both
+ * state about their own boundaries: an hour that is not 3600 seconds long stays
+ * correct if this market ever restores daylight saving (`docs/tech-debt.md`
+ * T28), and a day that is not 1440 minutes long contributes 23 or 25 buckets
+ * rather than a wrong 24.
+ *
+ * `last` is the final day **included**; the array closes on the midnight after
+ * it, so the span is exactly the one `dayBoundsOf` would bound. A span that
+ * ends before it starts yields nothing rather than one lone edge — it is
+ * unreachable from the resolver, and an axis nothing could reconcile is the
+ * wrong thing to hand back if it ever becomes reachable.
+ */
+export function hourEdgesBetween(first: LocalDate, last: LocalDate): readonly Date[] {
+  const closing = localToInstant({ ...addDays(last, 1), minuteOfDay: 0 }).getTime();
+  if (localToInstant({ ...first, minuteOfDay: 0 }).getTime() >= closing) return [];
+
+  const edges: Date[] = [];
+
+  outer: for (let cursor = first; ; cursor = addDays(cursor, 1)) {
+    for (let hour = 0; hour < 24; hour += 1) {
+      const edge = localToInstant({ ...cursor, minuteOfDay: hour * 60 });
+      if (edge.getTime() >= closing) break outer;
+      edges.push(edge);
+    }
+  }
+
+  edges.push(new Date(closing));
+  return edges;
+}
+
+/**
+ * The hour of the business's day an instant falls in, `0`–`23`.
+ *
+ * The reader D7's distribution folds a bucket edge through, and the only one it
+ * is allowed to use: the runtime's own hour getter answers for the wrong day —
+ * and therefore the wrong hour — between 21:00 and 23:59 local, which is why
+ * this module's header bans it in prose that the directory scan can enforce.
+ *
+ * Midnight reads `0` and never `24`; `instantToLocal` already normalises the
+ * engines that render it as the latter.
+ */
+export function businessHourOf(instant: Date): number {
+  return Math.floor(instantToLocal(instant).minuteOfDay / 60);
+}

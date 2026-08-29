@@ -6,18 +6,24 @@ import { businessToday } from '@/server/domain/models/bookingCalendar';
 import {
   bucketEdgesFor,
   granularityFor,
+  hourBucketEdgesFor,
   resolveStatisticsRange,
   statisticsRangeHref,
   STATS_RANGE_PARAM,
 } from '@/server/application/dashboard/statisticsRangeParams';
 import {
   averageDepositPerBooking,
+  disambiguateLabels,
+  fillHourlyDistribution,
   fillIncomeSeries,
   paymentMethodSplit,
+  rankTopN,
   type BusinessStatistics,
 } from '@/server/domain/models/statistics';
+import { HourlyChart } from './HourlyChart';
 import { IncomeChart } from './IncomeChart';
 import { PaymentMethodsChart } from './PaymentMethodsChart';
+import { RankingChart } from './RankingChart';
 import { requireOwner } from '@/server/infrastructure/supabase/requireOwner';
 import { logger } from '@/server/infrastructure/logger';
 import { toErrorLogContext } from '@/server/infrastructure/errorLogContext';
@@ -85,8 +91,10 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
       // datasets are `{ ok: false }` — but a view whose shape depends on whether
       // the read failed is a view with two shapes.
       edges: bucketEdgesFor(range, today),
+      hourEdges: hourBucketEdgesFor(range, today),
       statistics: { ok: false },
       charts: { ok: false },
+      breakdowns: { ok: false },
     };
   }
 
@@ -106,8 +114,162 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
       <Figures view={view} />
 
       <Charts view={view} />
+
+      <Breakdowns view={view} />
     </main>
   );
+}
+
+/**
+ * The service ranking, the barber ranking and the hour distribution — or one of
+ * the states that is not three sections (D7).
+ *
+ * **Gated on confirmed activity, which is a different question from the one
+ * `Figures` and `Charts` ask.** `hasSomethingToReport` is true for a period with
+ * cancellations and no confirmations: something happened, and the figures should
+ * report it. Every breakdown here counts confirmations only, so that same period
+ * would render three empty sections beneath a populated figures block,
+ * explaining nothing. The two predicates sit side by side rather than one being
+ * redefined, because they answer different questions and the distinction is the
+ * thing worth keeping.
+ *
+ * **A failed read never draws an empty ranking.** An empty ranking is a
+ * statement about the business and is indistinguishable from a period nobody
+ * booked — the rule the whole page is built on.
+ *
+ * **The failure copy says nothing about the other two reads**, and this section
+ * is not rendered at all when the figures failed. That is the D6 finding one
+ * section further down: copy reporting a partial failure implies the rest is
+ * current, and printed beneath a card apologising for the figures it is simply
+ * false.
+ *
+ * (The word "l-a-y-e-r" is spelled out of this comment on purpose. The copy scan
+ * in this directory is a substring match and cannot tell an English word from a
+ * Spanish range slug — the same limitation `bookingCalendar` records about its
+ * own scan not telling a comment from a call, and the reason both files describe
+ * banned strings rather than quoting them.)
+ */
+function Breakdowns({ view }: { view: StatisticsView }) {
+  if (!view.breakdowns.ok) {
+    // **Whether to report this failure is the figures' question, not this
+    // section's.** A period with nothing confirmed in it has no breakdown worth
+    // apologising for; and when the figures failed too there is no way to know
+    // whether this period had anything, so the section stays silent rather than
+    // guessing — the D6 finding about copy that describes a state nothing
+    // checked.
+    if (!view.statistics.ok) return null;
+
+    const figures = view.statistics.value;
+    if (!figures.hasAnyBookingEver || !hasConfirmedActivity(figures)) return null;
+
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
+          <p className="text-sm font-medium">{COPY.statistics.breakdownsFailed}</p>
+          <p className="text-muted-foreground text-sm">{COPY.statistics.breakdownsFailedHelp}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { services, barbers, hours } = view.breakdowns.value;
+
+  // **Both reads have to agree that this period had something in it**, and
+  // D7's adversarial pass is what added the second half of the condition.
+  //
+  // The figures were the original gate, and they cannot see one case: the
+  // breakdowns coming back **empty** while the figures report confirmed
+  // appointments. `fillHourlyDistribution` answers an empty grouping with
+  // twenty-four honest zeros, and rendered beneath a figure saying otherwise
+  // that is a chart stating no appointment started at any hour.
+  //
+  // The rows alone cannot see the opposite case: rows arriving for a period the
+  // figures call empty, or for a shop they say has never been booked.
+  //
+  // Neither disagreement is reachable while both reads are correct — they count
+  // one population over one period. They are reachable through the skew the
+  // independent reads accept, and through any future defect in either. **Every
+  // such disagreement resolves to silence**, because the one thing that must
+  // never happen on this page is two statements on one screen that cannot both
+  // be true. The figures above are unaffected and keep saying what they know.
+  //
+  // When the figures did not load at all, the rows are their own evidence: a
+  // ranking that loaded is not made false by a figure that did not, and
+  // independent failure is the feature.
+  const hasRows = services.length > 0 || barbers.length > 0 || hours.length > 0;
+  const figuresAgree = view.statistics.ok
+    ? view.statistics.value.hasAnyBookingEver && hasConfirmedActivity(view.statistics.value)
+    : true;
+
+  if (!hasRows || !figuresAgree) return null;
+
+  const phrase = COPY.statistics.rangesInPhrase[view.range];
+
+  // Ranking, capping and folding are the domain's, once, so the two rankings
+  // cannot drift onto two different rules. `disambiguateLabels` applies only to
+  // the barbers: a display name is unique per location and not across the
+  // business, while a service name is unique per owner.
+  //
+  // **It runs before `rankTopN`, not after.** A barber whose same-named twin
+  // fell past the cap into the aggregated entry would otherwise lose the
+  // qualifier that says which one he is — unambiguous in the list, ambiguous in
+  // the business, and it is the business the owner is reading about.
+  const rankedServices = rankTopN(services);
+  const rankedBarbers = rankTopN(disambiguateLabels(barbers));
+  const distribution = fillHourlyDistribution(hours, view.hourEdges);
+
+  return (
+    <div className="flex flex-col gap-8">
+      <RankingChart
+        entries={rankedServices}
+        idPrefix="services"
+        heading={COPY.statistics.servicesChartHeading}
+        help={COPY.statistics.servicesChartHelp}
+        chartLabel={COPY.statistics.servicesChartLabel(phrase)}
+        tableCaption={COPY.statistics.servicesChartTableCaption}
+        nameColumn={COPY.statistics.servicesChartNameColumn}
+        singleSentence={COPY.statistics.servicesChartSingle}
+      />
+
+      <RankingChart
+        entries={rankedBarbers}
+        idPrefix="barbers"
+        heading={COPY.statistics.barbersChartHeading}
+        help={COPY.statistics.barbersChartHelp}
+        chartLabel={COPY.statistics.barbersChartLabel(phrase)}
+        tableCaption={COPY.statistics.barbersChartTableCaption}
+        nameColumn={COPY.statistics.barbersChartNameColumn}
+        singleSentence={COPY.statistics.barbersChartSingle}
+      />
+
+      {/*
+        `singleDay` is asked through `granularityFor` rather than by comparing
+        the range against two slugs. "Which ranges are one day" already has an
+        answer in the resolver, and a second copy of it here would be a second
+        place to update — the copy scan is what surfaced it, because two of
+        those slugs are also Spanish words the product says out loud.
+      */}
+      <HourlyChart
+        buckets={distribution}
+        singleDay={granularityFor(view.range) === 'hour'}
+        chartLabel={COPY.statistics.hoursChartLabel(phrase)}
+      />
+    </div>
+  );
+}
+
+/**
+ * Whether this period has confirmed appointments to break down.
+ *
+ * **Deliberately narrower than `hasSomethingToReport`, and named so the
+ * difference survives.** That predicate ORs in cancellations, because a period
+ * in which three clients cancelled is a period the figures should report. Every
+ * D7 breakdown counts confirmations only, so the same period would draw three
+ * empty sections under those figures — the shape of defect D6's adversarial pass
+ * found between `Figures` and `Charts`, one section further down.
+ */
+function hasConfirmedActivity(figures: BusinessStatistics): boolean {
+  return figures.confirmedCount > 0;
 }
 
 /**

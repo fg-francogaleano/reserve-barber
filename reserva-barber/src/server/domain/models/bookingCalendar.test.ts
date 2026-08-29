@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   addDays,
+  businessHourOf,
   businessToday,
   dayBoundsOf,
   formatLocalDate,
+  hourEdgesBetween,
+  hourEdgesOf,
   isWithinHorizon,
   monthBoundsOf,
   parseLocalDate,
@@ -383,5 +386,89 @@ describe('bookingCalendar - the previous month', () => {
       month: 7,
       day: 1,
     });
+  });
+});
+
+describe('bookingCalendar - the hourly edges of a span of days (D7)', () => {
+  it('should_yield_one_more_edge_than_the_span_has_hours', () => {
+    const oneDay = hourEdgesBetween({ year: 2026, month: 8, day: 16 }, { year: 2026, month: 8, day: 16 });
+    const oneWeek = hourEdgesBetween({ year: 2026, month: 8, day: 10 }, { year: 2026, month: 8, day: 16 });
+    const august = hourEdgesBetween({ year: 2026, month: 8, day: 1 }, { year: 2026, month: 8, day: 31 });
+    const february = hourEdgesBetween({ year: 2026, month: 2, day: 1 }, { year: 2026, month: 2, day: 28 });
+
+    expect(oneDay).toHaveLength(25);
+    expect(oneWeek).toHaveLength(169);
+    expect(august).toHaveLength(745);
+    // 28 days, not a fixed span: the month contributes exactly its own length.
+    expect(february).toHaveLength(673);
+  });
+
+  it('should_agree_with_the_single_day_edges_it_generalizes', () => {
+    const date: LocalDate = { year: 2026, month: 8, day: 16 };
+
+    expect(hourEdgesBetween(date, date)).toEqual(hourEdgesOf(date));
+  });
+
+  it('should_open_on_the_first_local_midnight_and_close_on_the_one_after_the_last', () => {
+    // The discriminating assertion, and the only one an off-by-one cannot
+    // survive: the span has to be exactly the range the figures are counted
+    // over, or money lands in a bucket that is in no figure.
+    const first: LocalDate = { year: 2026, month: 8, day: 10 };
+    const last: LocalDate = { year: 2026, month: 8, day: 16 };
+    const edges = hourEdgesBetween(first, last);
+
+    expect(edges[0]?.getTime()).toBe(dayBoundsOf(first).start.getTime());
+    expect(edges[edges.length - 1]?.getTime()).toBe(dayBoundsOf(last).end.getTime());
+  });
+
+  it('should_place_every_edge_on_a_business_hour_boundary_and_never_on_a_runtime_one', () => {
+    // Argentina is at UTC−3, so an edge on a local hour boundary is NOT on a
+    // UTC hour boundary's local reading unless the conversion actually
+    // happened. Reading the hour back is what proves it.
+    const edges = hourEdgesBetween({ year: 2026, month: 8, day: 15 }, { year: 2026, month: 8, day: 16 });
+
+    edges.forEach((edge, index) => {
+      expect(businessHourOf(edge)).toBe(index % 24);
+    });
+  });
+
+  it('should_walk_calendar_hours_rather_than_adding_a_fixed_span', () => {
+    // Each edge is computed from its own wall-clock reading, for the reason
+    // `hourEdgesOf` and `dayEdgesBetween` both give: an hour that is not 3600
+    // seconds long stays correct if this market ever restores daylight saving.
+    const edges = hourEdgesBetween({ year: 2026, month: 8, day: 1 }, { year: 2026, month: 8, day: 31 });
+
+    for (const edge of edges) {
+      expect(businessHourOf(edge)).toBe(Math.round(businessHourOf(edge)));
+    }
+    expect(edges[edges.length - 1]?.toISOString()).toBe('2026-09-01T03:00:00.000Z');
+  });
+
+  it('should_return_no_edges_for_a_span_that_ends_before_it_starts', () => {
+    // Unreachable from the resolver, which is exactly why it is pinned: a
+    // silently-inverted span would produce an axis nothing could reconcile.
+    expect(hourEdgesBetween({ year: 2026, month: 8, day: 16 }, { year: 2026, month: 8, day: 15 })).toEqual([]);
+  });
+});
+
+describe('bookingCalendar - the business hour of an instant (D7)', () => {
+  it('should_read_the_business_hour_and_not_the_runtime_one', () => {
+    // 02:30 UTC on Monday the 17th is 23:30 on Sunday the 16th in the business
+    // calendar. The runtime's own hour reader answers 2; the business's answers
+    // 23, and D7's whole distribution is built on the difference.
+    expect(businessHourOf(SUNDAY_NIGHT_LOCAL)).toBe(23);
+    expect(SUNDAY_NIGHT_LOCAL.getUTCHours()).toBe(2);
+  });
+
+  it('should_answer_the_full_zero_to_twenty_three_range_across_a_day', () => {
+    const hours = hourEdgesOf({ year: 2026, month: 8, day: 16 })
+      .slice(0, 24)
+      .map(businessHourOf);
+
+    expect(hours).toEqual(Array.from({ length: 24 }, (_, hour) => hour));
+  });
+
+  it('should_read_midnight_as_zero_rather_than_as_twenty_four', () => {
+    expect(businessHourOf(dayBoundsOf({ year: 2026, month: 8, day: 16 }).start)).toBe(0);
   });
 });

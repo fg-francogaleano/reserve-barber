@@ -48,6 +48,32 @@ export default function Loading() {
           <div className="bg-muted h-12 w-full animate-pulse rounded-md" />
         </div>
       </div>
+
+      {/*
+        D7's three sections, for the same reason the two above exist: without
+        them the page grows by several hundred pixels the moment the real markup
+        arrives, and on a control whose whole purpose is switching periods that
+        means the content jumps under the cursor on every selection.
+
+        The two short blocks are the rankings — rows of names and bars, so they
+        are shorter than a chart — and the tall one is the twenty-four-column
+        hour distribution, which is the same height as the income chart above.
+      */}
+      <div className="flex flex-col gap-8">
+        {[0, 1].map((index) => (
+          <div key={index} className="flex flex-col gap-2">
+            <div className="bg-muted h-6 w-44 animate-pulse rounded-md" />
+            <div className="bg-muted h-4 w-full animate-pulse rounded-md" />
+            <div className="bg-muted h-28 w-full animate-pulse rounded-xl" />
+          </div>
+        ))}
+
+        <div className="flex flex-col gap-2">
+          <div className="bg-muted h-6 w-48 animate-pulse rounded-md" />
+          <div className="bg-muted h-4 w-full animate-pulse rounded-md" />
+          <div className="bg-muted h-56 w-full animate-pulse rounded-xl" />
+        </div>
+      </div>
     </main>
   );
 }

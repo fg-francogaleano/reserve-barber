@@ -1,8 +1,11 @@
 import type { PrismaClient } from '@/generated/prisma/client';
 import type { IStatisticsRepository } from '@/server/domain/repositories/IStatisticsRepository';
 import type {
+  BreakdownEntry,
+  BusinessBreakdowns,
   BusinessCharts,
   BusinessStatistics,
+  HourBucketCount,
   IncomeByBucketAndMethod,
 } from '@/server/domain/models/statistics';
 import type { PaymentMethod } from '@/server/domain/models/Payment';
@@ -31,6 +34,22 @@ interface ChartRow {
 /** The single-row companion carrying the cash-collected figure. */
 interface CashRow {
   cashCollected: unknown;
+}
+
+/**
+ * One row of the breakdown read, in the union's single projection.
+ *
+ * Deliberately narrow in type: `text` and `bigint` are already proven across
+ * this driver adapter on `workerd`, and a mocked test certifies a projection
+ * whether or not the adapter can read it (T58). The hour bucket therefore
+ * travels in `key` as text rather than as a column of its own.
+ */
+interface BreakdownRow {
+  kind: 'service' | 'barber' | 'hour';
+  key: string;
+  label: string;
+  sublabel: string | null;
+  count: bigint;
 }
 
 /** The one row the aggregate returns. Counts arrive as `bigint`. */
@@ -320,5 +339,175 @@ export class PrismaStatisticsRepository implements IStatisticsRepository {
       // period — which is a real answer and renders as one.
       cashCollected: toCanonicalDecimal(cash[0]?.cashCollected ?? 0),
     };
+  }
+
+  /**
+   * The three breakdowns of one period, in **one grouped read** (D7).
+   *
+   * ---
+   *
+   * **One statement, three groupings of one row set.** The `confirmed` CTE is
+   * the population `confirmedCount` counts — this owner's confirmed
+   * appointments in this period — and the three branches group it by service,
+   * by barber and by hourly bucket. That shared row set is what makes each
+   * branch required to sum back to that figure, and the invariant is the only
+   * cheap defence this read has: every way it can go wrong produces a believable
+   * integer rather than a row that looks wrong.
+   *
+   * Three separate statements were the alternative. They would answer from three
+   * instants, so the three sections on screen could not be added up against each
+   * other — the same defect `readCharts` avoids by serving two charts from one
+   * read.
+   *
+   * **The projection is `text` and `bigint`, and that is a decision.** A
+   * `json_agg` of three arrays would be a tidier shape and would need a
+   * driver-deserialization probe on `workerd` before it could be trusted, while
+   * a mocked repository test would certify it either way. That is exactly T58:
+   * `pg_advisory_xact_lock` returns `void`, the adapter could not read it, and
+   * twenty-four green tests certified the one call that failed every booking
+   * write in the runtime. `text` and `bigint` are already proven across this
+   * adapter, so the hour bucket travels as text in `key` and is narrowed here.
+   *
+   * **Every branch carries its own owner predicate.** A union's branches are
+   * separate statements sharing a projection, so each is its own chance to lose
+   * the tenancy join. The CTE carries `ownerId` forward precisely so a branch can
+   * re-apply it without re-joining — redundant while the CTE is correct, and no
+   * longer redundant the first time somebody edits it.
+   *
+   * **The service join is taken for the name and for nothing else.** Scoping
+   * through `Service."ownerId"` — a real column, and correct today — would be a
+   * second path to the owner, which is one edit away from being a second answer
+   * to a question that must only ever have one. It also cannot multiply a row:
+   * `Booking.serviceId` is a single foreign key.
+   *
+   * **This statement computes no hour.** The edges arrive as instants from the
+   * domain and become an epoch-second array that `width_bucket` only compares
+   * against; the fold onto the twenty-four hours of a day happens in
+   * `fillHourlyDistribution`, where the business calendar lives. `date_trunc`,
+   * `extract(hour …)` and `AT TIME ZONE` are all refused: the first two resolve
+   * in the *session's* timezone, UTC on Supavisor and `workerd`, and the third
+   * would work — which is the problem, because it moves the decision.
+   *
+   * **It neither orders, caps nor folds.** A `LIMIT` here discards the rows past
+   * the cap, and a discarded remainder is invisible: the ranking simply stops
+   * summing to the figure above it. Ordering without an explicit tie-break is no
+   * better — equal counts come back in whatever order the plan produced, and the
+   * owner watches a ranking change between two renders of the same period. Both
+   * belong to `rankTopN`, in the domain, where a test reaches them without a
+   * database.
+   */
+  async readBreakdowns(input: {
+    ownerId: string;
+    range: Interval;
+    edges: readonly Date[];
+  }): Promise<BusinessBreakdowns> {
+    const { ownerId, range, edges } = input;
+
+    // Epoch seconds rather than timestamps because the array form of
+    // `width_bucket` is defined over `double precision`, and a second's
+    // resolution is far finer than any boundary this product places.
+    const thresholds = edges.map((edge) => edge.getTime() / 1000);
+
+    const rows = await this.db.$queryRaw<BreakdownRow[]>`
+      WITH confirmed AS (
+        SELECT
+          b."serviceId"   AS "serviceId",
+          s.name::text    AS "serviceName",
+          b."barberId"    AS "barberId",
+          br."displayName"::text AS "barberName",
+          l.name::text    AS "locationName",
+          l."ownerId"     AS "ownerId",
+          b."startTime"   AS "startTime"
+        FROM "Booking" b
+        JOIN "Barber" br ON br.id = b."barberId"
+        JOIN "Location" l ON l.id = br."locationId"
+        JOIN "Service" s ON s.id = b."serviceId"
+        WHERE l."ownerId" = ${ownerId}
+          AND b.status = 'CONFIRMED'
+          AND b."startTime" >= ${range.start}
+          AND b."startTime" < ${range.end}
+      )
+
+      SELECT
+        'service'::text AS "kind",
+        c."serviceId"::text AS "key",
+        c."serviceName" AS "label",
+        NULL::text AS "sublabel",
+        count(*) AS "count"
+      FROM confirmed c
+      WHERE c."ownerId" = ${ownerId}
+      GROUP BY c."serviceId", c."serviceName"
+
+      UNION ALL
+
+      -- The location rides along because a display name is unique per location
+      -- and not across the business: one owner may legitimately have two
+      -- barbers called the same thing. Which rows actually need qualifying is
+      -- decided in the domain, over the rendered set.
+      SELECT
+        'barber'::text AS "kind",
+        c."barberId"::text AS "key",
+        c."barberName" AS "label",
+        c."locationName" AS "sublabel",
+        count(*) AS "count"
+      FROM confirmed c
+      WHERE c."ownerId" = ${ownerId}
+      GROUP BY c."barberId", c."barberName", c."locationName"
+
+      UNION ALL
+
+      -- The bucket index travels in "key" as text so the union keeps one
+      -- projection of types this adapter is already proven to deserialize. It
+      -- indexes the PERIOD's hours, not the day's; folding a week's 168 buckets
+      -- onto 24 hours is the domain's job, because the hour a bucket opens in is
+      -- a business-calendar fact.
+      SELECT
+        'hour'::text AS "kind",
+        width_bucket(
+          extract(epoch FROM c."startTime")::float8,
+          ${thresholds}::float8[]
+        )::text AS "key",
+        ''::text AS "label",
+        NULL::text AS "sublabel",
+        count(*) AS "count"
+      FROM confirmed c
+      WHERE c."ownerId" = ${ownerId}
+      -- **By output alias, not by ordinal.** Grouping by the position 2 reads
+      -- the second column of this branch's select list, so reordering the
+      -- projection — a change that looks like formatting — would silently group
+      -- by something else. The alias is also cheaper than repeating the
+      -- expression, which would put the threshold array on the wire twice (745
+      -- floats for a month). The confirmed row set has no column of this name,
+      -- so it cannot resolve to an input column instead.
+      --
+      -- Backticks are avoided in this block on purpose, as in readStatistics:
+      -- it is a template literal, and one would end the statement here.
+      GROUP BY "key"
+    `;
+
+    const services: BreakdownEntry[] = [];
+    const barbers: BreakdownEntry[] = [];
+    const hours: HourBucketCount[] = [];
+
+    for (const row of rows) {
+      const count = Number(row.count);
+
+      if (row.kind === 'hour') {
+        hours.push({ bucket: Number(row.key), count });
+        continue;
+      }
+
+      const entry: BreakdownEntry = {
+        key: row.key,
+        label: row.label,
+        sublabel: row.sublabel,
+        count,
+      };
+
+      if (row.kind === 'service') services.push(entry);
+      else barbers.push(entry);
+    }
+
+    return { services, barbers, hours };
   }
 }

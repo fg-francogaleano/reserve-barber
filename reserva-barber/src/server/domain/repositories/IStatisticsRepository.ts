@@ -1,5 +1,9 @@
 import type { Interval } from '../models/availability';
-import type { BusinessCharts, BusinessStatistics } from '../models/statistics';
+import type {
+  BusinessBreakdowns,
+  BusinessCharts,
+  BusinessStatistics,
+} from '../models/statistics';
 
 /**
  * The statistics page's read: one aggregate over a period the owner chose.
@@ -105,6 +109,50 @@ import type { BusinessCharts, BusinessStatistics } from '../models/statistics';
  *    it by an appointment-keyed figure, and whatever renders it SHALL state its
  *    basis — it will not equal the deposits figure beside it, and both are
  *    right.
+ *
+ * ---
+ *
+ * **What D7 adds.**
+ *
+ * 13. **The breakdowns share one row set with the counts, and it is the same
+ *    row set.** The service ranking, the barber ranking and the hour
+ *    distribution are three groupings of the confirmed appointments of the
+ *    period — the population `confirmedCount` counts. That is what makes each of
+ *    them required to **sum to it**, and that invariant is the only cheap
+ *    defence this read has: a leaked owner, a multiplied booking, a lost
+ *    remainder and a dropped bucket all produce believable integers and none of
+ *    them produces a row that looks wrong.
+ *
+ *    Rule 4 therefore binds here in its strongest form: **no payment row may
+ *    enter this read at all.** `Payment_one_live_per_booking` is
+ *    `ON ("bookingId") WHERE status <> 'REJECTED'`, so a booking carries any
+ *    number of declined attempts *on purpose* — a declined card is exactly the
+ *    client who will try again. A join added later for "revenue per service"
+ *    would multiply that booking once per attempt and inflate both its service
+ *    and its barber, and the totals would still look like a busy month.
+ * 14. **Every branch carries its own owner predicate, and there is only one
+ *    path to the owner.** A union's branches are separate statements sharing a
+ *    projection, so each is its own opportunity to lose the tenancy join; the
+ *    shared row set carrying `ownerId` is what lets a branch re-apply it without
+ *    re-joining. The service branch reaches the owner through the **booking's**
+ *    barber and location like everything else — never through `Service.ownerId`,
+ *    which is a real column, agrees today, and is one edit away from being a
+ *    second answer to a question that must only have one.
+ * 15. **The hour is decided in the domain; SQL only assigns a bucket.** Rule 11
+ *    with no exception: the edges are the *period's* hours, computed from the
+ *    business calendar, and the fold onto the twenty-four hours of a day happens
+ *    where that calendar lives. `date_trunc` and `extract(hour …)` resolve in the
+ *    session's timezone — UTC on Supavisor and on `workerd` — and would put every
+ *    appointment from 21:00 local onward in the following day's hours. Naming a
+ *    timezone in the statement is refused for the same reason it would work: it
+ *    moves the decision.
+ * 16. **Ordering, the cap and the fold are the domain's, never the
+ *    statement's.** A `LIMIT` discards the rows past the cap and the ranking
+ *    silently stops summing to the figure above it — rule 13's invariant broken
+ *    by the one operation that looks like an optimisation. An `ORDER BY` alone is
+ *    also not enough: without an explicit tie-break, equal counts are returned in
+ *    whatever order the plan produced, and the owner watches a ranking change
+ *    between two renders of the same period.
  */
 export interface IStatisticsRepository {
   /**
@@ -152,4 +200,35 @@ export interface IStatisticsRepository {
     range: Interval;
     edges: readonly Date[];
   }): Promise<BusinessCharts>;
+
+  /**
+   * The three breakdowns of one period, from **one grouped read** (D7).
+   *
+   * One rather than three because the three answers share a row set and are
+   * required to reconcile against each other and against `confirmedCount`.
+   * Three statements answer from three instants, and two rankings on one screen
+   * that cannot be added up are worse than one — it is the same defect rule 9
+   * describes between the charts and the figures.
+   *
+   * **It returns groups, not a ranking.** Ordering, the cap and the fold of the
+   * remainder are `rankTopN`'s job in the domain, and the hour buckets are
+   * folded onto a day by `fillHourlyDistribution`. That division is deliberate:
+   * a `LIMIT` here would discard the rows past the cap, and a discarded
+   * remainder is invisible — the ranking simply stops summing to the figure
+   * above it.
+   *
+   * `edges` bounds the hour buckets and SHALL span exactly `range`: same first
+   * instant, same last. It is the *period's* hours — `24n + 1` edges for an
+   * `n`-day range — and not the day's, because a row is assigned to a bucket
+   * here and folded onto an hour of the day in the domain, where the business
+   * calendar lives.
+   *
+   * An owner with no confirmed appointments in the period yields **no rows** in
+   * every branch, which is an empty period and not a failure.
+   */
+  readBreakdowns(input: {
+    ownerId: string;
+    range: Interval;
+    edges: readonly Date[];
+  }): Promise<BusinessBreakdowns>;
 }

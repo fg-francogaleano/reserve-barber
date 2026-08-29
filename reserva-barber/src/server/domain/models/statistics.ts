@@ -9,6 +9,7 @@
  * nowhere else to be.
  */
 
+import { businessHourOf } from './bookingCalendar';
 import { fromCents, toCents } from './money';
 import { PAYMENT_METHODS, type PaymentMethod } from './Payment';
 
@@ -334,3 +335,262 @@ export function paymentMethodSplit(
     ];
   });
 }
+
+// ---------------------------------------------------------------------------
+// D7 — the service and barber rankings, and the hour-of-day distribution
+// ---------------------------------------------------------------------------
+
+/**
+ * How many named entries a ranking shows before the rest are folded together.
+ *
+ * A number, not a principle. Nothing in the schema caps a shop's catalogue, so
+ * without a cap a shop with forty services draws forty rows on a phone; with a
+ * cap that *discarded* the remainder the ranking would quietly stop summing to
+ * the appointments figure above it. Eight is the compromise, and the fold below
+ * is what makes it safe.
+ */
+export const RANKING_LIMIT = 8;
+
+/** The key the folded entry carries. Never a service or barber identifier. */
+export const RANKING_AGGREGATE_KEY = 'aggregate';
+
+/**
+ * One group as the repository hands it over, before anything is ordered.
+ *
+ * `key` is the entity's identifier and is what the grouping was done on, so a
+ * rename cannot merge two rows and two identical names cannot collapse into one.
+ * `label` and `sublabel` are read live — see `RankedEntry` for what that costs.
+ */
+export interface BreakdownEntry {
+  readonly key: string;
+  readonly label: string;
+  /** The barber's location, carried for `disambiguateLabels`. Null elsewhere. */
+  readonly sublabel: string | null;
+  readonly count: number;
+}
+
+/**
+ * One row of a rendered ranking.
+ *
+ * **The labels are anachronistic on purpose.** `Booking` snapshots the price it
+ * was made at and does not snapshot the service name, the barber name or the
+ * location, so renaming a service relabels its history and a barber who changes
+ * branch carries theirs to the new branch's label. Grouping is by `key`, so
+ * nothing merges and nothing splits — only the name is the current one. Adding
+ * label snapshots to `Booking` is a data-model change D7 does not justify, and
+ * the alternative of hiding renamed rows would break the reconciliation
+ * invariant.
+ *
+ * `share` is **display only**. Nothing reconstructs a count from it, nothing
+ * divides one by another, and they need not sum to a hundred — they are rounded
+ * independently. The counts are the figures.
+ */
+export interface RankedEntry {
+  readonly key: string;
+  /** Empty on the aggregated entry: it is not one service and has no name. */
+  readonly label: string;
+  readonly sublabel: string | null;
+  readonly count: number;
+  /** Percent of the ranking's own total, rounded. Display only. */
+  readonly share: number;
+  readonly isAggregate: boolean;
+}
+
+/** One hour of the business's day, and how many appointments started in it. */
+export interface HourlyBucket {
+  readonly hour: number;
+  readonly count: number;
+}
+
+/**
+ * One grouped bucket of the hour read, as the repository returns it.
+ *
+ * `bucket` is **1-based**, `width_bucket`'s own convention, and indexes the
+ * *period's* hours rather than the day's: a week has 168 of them. Folding them
+ * onto the twenty-four hours of a day is `fillHourlyDistribution`'s job, and it
+ * needs the edges to do it, because the hour a bucket opens in is a
+ * business-calendar fact.
+ */
+export interface HourBucketCount {
+  readonly bucket: number;
+  readonly count: number;
+}
+
+/**
+ * The three breakdowns of one period, as one snapshot.
+ *
+ * They come from a single grouped read whose branches share one row set — the
+ * confirmed appointments of the period — which is what makes them reconcilable
+ * against each other and against the figure above them. Three reads would answer
+ * from three instants and could not be.
+ *
+ * **No payment row is in that row set**, and none may be added: a booking
+ * carries any number of rejected attempts by design, so the join multiplies a
+ * retried booking and inflates its service and its barber
+ * (`IStatisticsRepository` rule 4).
+ */
+export interface BusinessBreakdowns {
+  readonly services: readonly BreakdownEntry[];
+  readonly barbers: readonly BreakdownEntry[];
+  readonly hours: readonly HourBucketCount[];
+}
+
+/**
+ * A breakdown as a ranking: ordered, capped, and with the remainder folded into
+ * a single entry that **preserves the total**.
+ *
+ * ---
+ *
+ * **Why the fold is here and not a `LIMIT` in the statement.** A `LIMIT`
+ * discards the rows past the cap, and a discarded remainder is invisible: the
+ * ranking simply stops summing to the appointments figure rendered above it,
+ * with nothing on screen looking wrong. That is the exact family of defect the
+ * reconciliation invariant exists to catch, so the operation that could break it
+ * lives where a test can reach it without a database.
+ *
+ * **The tie-break is explicit and is not decoration.** Three services with four
+ * appointments each would otherwise be ordered by whatever the statement
+ * happened to return, which is free to differ between two renders of the same
+ * period — the owner would watch a ranking change while nothing changed.
+ *
+ * `share` is computed over the ranking's **own** total rather than against the
+ * separately-read appointments figure. The two agree by construction and can
+ * disagree by one round trip of skew (`IStatisticsRepository` rule 9); deriving
+ * the percentage from the rows in hand keeps this function pure and keeps a
+ * transient skew from turning into a percentage that does not add up.
+ */
+export function rankTopN(
+  entries: readonly BreakdownEntry[],
+  limit: number = RANKING_LIMIT
+): readonly RankedEntry[] {
+  if (entries.length === 0) return [];
+
+  const total = entries.reduce((sum, row) => sum + row.count, 0);
+  const ordered = [...entries].sort(
+    (left, right) => right.count - left.count || left.label.localeCompare(right.label)
+  );
+
+  const named = ordered.slice(0, Math.max(limit, 0));
+  const rest = ordered.slice(Math.max(limit, 0));
+
+  const ranked: RankedEntry[] = named.map((row) => ({
+    key: row.key,
+    label: row.label,
+    sublabel: row.sublabel,
+    count: row.count,
+    share: shareOf(row.count, total),
+    isAggregate: false,
+  }));
+
+  if (rest.length === 0) return ranked;
+
+  // The remainder, summed rather than dropped. It carries no name: a bar whose
+  // height aggregates unlike things invites being read as one thing, which is
+  // also why whatever renders this does not draw it.
+  const restCount = rest.reduce((sum, row) => sum + row.count, 0);
+
+  return [
+    ...ranked,
+    {
+      key: RANKING_AGGREGATE_KEY,
+      label: '',
+      sublabel: null,
+      count: restCount,
+      share: shareOf(restCount, total),
+      isAggregate: true,
+    },
+  ];
+}
+
+/** Percent of a total, rounded half-up. Display only; see `RankedEntry`. */
+function shareOf(count: number, total: number): number {
+  return total <= 0 ? 0 : Math.round((count * 100) / total);
+}
+
+/**
+ * A breakdown with each location kept only where the name beside it is
+ * ambiguous.
+ *
+ * A barber's display name is unique **within a location** and not across the
+ * business (`data-model.md` §5), so one owner may legitimately have two "Nico"
+ * at two branches — two identically-labelled rows with different counts, and no
+ * way to tell which is which. The location resolves it.
+ *
+ * It is applied only where it is needed, because qualifying every row would be
+ * noise for the single-location shop that is the common case.
+ *
+ * ---
+ *
+ * **It runs before the ranking is cut, not after, and D7's second adversarial
+ * pass is what moved it.** Applied to the rendered rows, a "Nico" whose twin
+ * fell past the cap into the aggregated entry would lose his qualifier — the
+ * name is unambiguous *in the list* and ambiguous *in the business*, and it is
+ * the business the owner is reading about. Deciding it over the period's whole
+ * set means the qualifier survives the fold, and a shop with one Nico still
+ * shows none.
+ *
+ * It is generic over anything carrying a label and a location because it now has
+ * two callers' worth of shape between them: the entries as read, and the ranking
+ * they become.
+ *
+ * **The qualifier is returned as data, never as a joined string.** Composing
+ * "Nico · Centro" here would put a user-facing separator in the domain, which
+ * the copy scan on the statistics directory exists to prevent; whatever renders
+ * this decides how the two parts sit together.
+ */
+export function disambiguateLabels<T extends { readonly label: string; readonly sublabel: string | null }>(
+  entries: readonly T[]
+): readonly T[] {
+  const seen = new Map<string, number>();
+  for (const row of entries) {
+    seen.set(row.label, (seen.get(row.label) ?? 0) + 1);
+  }
+
+  return entries.map((row) => ((seen.get(row.label) ?? 0) > 1 ? row : { ...row, sublabel: null }));
+}
+
+/**
+ * The period's buckets folded onto the twenty-four hours of the business's day.
+ *
+ * ---
+ *
+ * **The fold is where the hour is decided, and that is the point.** The
+ * statement assigns a row to one of the period's hourly buckets and knows
+ * nothing else about it; the hour that bucket *opens in* is read here, from the
+ * edge, through the business calendar. `date_trunc` and `extract(hour …)` would
+ * both answer in the session's timezone — UTC on Supavisor and on `workerd` —
+ * putting every appointment from 21:00 local onward in the following day's
+ * hours. Plausibly, silently, for three hours of every day.
+ *
+ * **Every hour is present, including the empty ones.** A distribution that
+ * omitted a quiet hour would draw a plausible shape on an axis too short to be
+ * the day it claims to describe, and nothing about it would look wrong.
+ *
+ * A bucket outside the span is **dropped rather than clamped**, the rule
+ * `fillIncomeSeries` already states: `width_bucket` answers `0` below the first
+ * threshold and `n` at or above the last, both unreachable while the statement
+ * carries the range predicate, and clamping would move a real appointment into
+ * an hour it did not happen in.
+ *
+ * An empty `edges` array yields no axis at all rather than twenty-four zeros —
+ * a period with no hours is not a day in which nothing happened.
+ */
+export function fillHourlyDistribution(
+  rows: readonly HourBucketCount[],
+  edges: readonly Date[]
+): readonly HourlyBucket[] {
+  const bucketCount = Math.max(edges.length - 1, 0);
+  if (bucketCount === 0) return [];
+
+  const counts = new Array<number>(HOURS_PER_DAY).fill(0);
+
+  for (const row of rows) {
+    const index = row.bucket - 1;
+    if (index < 0 || index >= bucketCount) continue;
+    counts[businessHourOf(edges[index] as Date)] += row.count;
+  }
+
+  return counts.map((count, hour) => ({ hour, count }));
+}
+
+const HOURS_PER_DAY = 24;

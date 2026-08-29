@@ -2,8 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { COPY } from '@/lib/copy';
 import type { StatisticsView } from '@/server/application/services/StatisticsService';
-import type { BusinessCharts, BusinessStatistics } from '@/server/domain/models/statistics';
-import { bucketEdgesFor } from '@/server/application/dashboard/statisticsRangeParams';
+import type {
+  BusinessBreakdowns,
+  BusinessCharts,
+  BusinessStatistics,
+} from '@/server/domain/models/statistics';
+import {
+  bucketEdgesFor,
+  hourBucketEdgesFor,
+} from '@/server/application/dashboard/statisticsRangeParams';
 
 const requireOwner = vi.fn(async () => ({
   id: 'owner-root',
@@ -54,19 +61,50 @@ function charts(overrides: Partial<BusinessCharts> = {}): BusinessCharts {
   };
 }
 
+function breakdowns(overrides: Partial<BusinessBreakdowns> = {}): BusinessBreakdowns {
+  return {
+    services: [
+      { key: 'svc-1', label: 'Corte', sublabel: null, count: 3 },
+      { key: 'svc-2', label: 'Barba', sublabel: null, count: 1 },
+    ],
+    barbers: [
+      { key: 'bar-1', label: 'Nico', sublabel: 'Centro', count: 3 },
+      { key: 'bar-2', label: 'Ana', sublabel: 'Centro', count: 1 },
+    ],
+    hours: [{ bucket: 14, count: 4 }],
+    ...overrides,
+  };
+}
+
 function view(overrides: Partial<StatisticsView> = {}): StatisticsView {
   return {
     range: 'hoy',
     today: TODAY,
     edges: bucketEdgesFor('hoy', TODAY),
+    hourEdges: hourBucketEdgesFor('hoy', TODAY),
     statistics: { ok: true, value: figures() },
     charts: { ok: true, value: charts() },
+    breakdowns: { ok: true, value: breakdowns() },
     ...overrides,
   };
 }
 
 async function renderPage(searchParams: Record<string, string | string[] | undefined> = {}) {
   render(await StatisticsPage({ searchParams: Promise.resolve(searchParams) }));
+}
+
+/**
+ * The figure card carrying a given label.
+ *
+ * Needed since D7: the page now renders twenty-four hourly counts and two
+ * rankings, so a bare `getByText('0')` matches many elements and would go on
+ * passing against the wrong one. Scoping to the card names what is being
+ * asserted.
+ */
+function cardFor(label: string): HTMLElement {
+  const card = screen.getByText(label).closest('[data-slot="card"]');
+  if (card === null) throw new Error(`No card found for ${label}`);
+  return card as HTMLElement;
 }
 
 beforeEach(() => {
@@ -235,7 +273,11 @@ describe('StatisticsPage - the average is absent rather than zero', () => {
     );
     await renderPage();
 
-    expect(screen.getByText('0')).toBeInTheDocument();
+    // Scoped to its own card since D7: the hour distribution puts a zero in
+    // most of its twenty-four table rows, so an unscoped `getByText('0')` now
+    // matches many elements — and would have gone on passing against any of
+    // them rather than against this figure.
+    expect(within(cardFor(COPY.statistics.cancelledCount)).getByText('0')).toBeInTheDocument();
   });
 });
 
@@ -282,19 +324,22 @@ describe('StatisticsPage - the cancellation breakdown', () => {
     );
     await renderPage();
 
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(within(cardFor(COPY.statistics.cancelledCount)).getByText('1')).toBeInTheDocument();
     expect(screen.queryByText(COPY.statistics.cancelledByClient(0))).not.toBeInTheDocument();
   });
 });
 
 describe('StatisticsPage - three states that must not look alike', () => {
   it('should_report_a_failed_read_as_a_failure_and_never_as_zeros', async () => {
-    // **Both datasets fail here, and that is the change D6 made to this test.**
-    // Before the charts existed, "the read failed" was one state; now there are
-    // two independent reads and this is the case where neither answered — the
-    // one the page's own try/catch produces. The partial cases are asserted
-    // separately below, because they are the ones that are new.
-    loadPage.mockResolvedValue(view({ statistics: { ok: false }, charts: { ok: false } }));
+    // **All three datasets fail here**, which is the state the page's own
+    // try/catch produces and the only one that matches this test's name. D6
+    // widened it from one read to two; D7 widens it to three, and leaving the
+    // third populated would have made the assertions below measure a page that
+    // had in fact loaded something. The partial cases are asserted separately,
+    // because they are the ones that are new.
+    loadPage.mockResolvedValue(
+      view({ statistics: { ok: false }, charts: { ok: false }, breakdowns: { ok: false } })
+    );
     await renderPage();
 
     expect(screen.getByText(COPY.statistics.loadFailed)).toBeInTheDocument();
@@ -653,7 +698,14 @@ describe('StatisticsPage - the charts and the figures fail apart', () => {
     expect(
       screen.queryByRole('table', { name: COPY.statistics.incomeChartTableCaption })
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    // Named rather than "no image at all" since D7: the breakdowns are three
+    // more drawings on this page and they succeeded, which is the whole point
+    // of the reads failing independently. What must be absent is *this* chart.
+    expect(
+      screen.queryByRole('img', {
+        name: COPY.statistics.incomeChartLabel(COPY.statistics.rangesInPhrase.hoy),
+      })
+    ).not.toBeInTheDocument();
   });
 
   it('should_hide_the_cash_figure_rather_than_zero_it_when_the_chart_read_failed', async () => {
@@ -778,5 +830,385 @@ describe('StatisticsPage - a double failure does not vouch for numbers that are 
 
     expect(screen.getByText(COPY.statistics.confirmedCount)).toBeInTheDocument();
     expect(screen.getByText(COPY.statistics.chartsFailedHelp)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D7 — the two rankings, the hour distribution, and the states around them
+// ---------------------------------------------------------------------------
+
+describe('StatisticsPage - the breakdowns (D7)', () => {
+  it('should_render_all_three_sections_for_a_period_with_appointments', async () => {
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.servicesChartHeading)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.barbersChartHeading)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.hoursChartHeading)).toBeInTheDocument();
+  });
+
+  it('should_name_every_service_and_barber_it_counted', async () => {
+    loadPage.mockResolvedValue(
+      view({
+        breakdowns: {
+          ok: true,
+          value: {
+            services: [
+              { key: 'svc-1', label: 'Corte', sublabel: null, count: 3 },
+              { key: 'svc-2', label: 'Barba', sublabel: null, count: 1 },
+            ],
+            barbers: [
+              { key: 'bar-1', label: 'Nico', sublabel: 'Centro', count: 3 },
+              { key: 'bar-2', label: 'Ana', sublabel: 'Centro', count: 1 },
+            ],
+            hours: [{ bucket: 14, count: 4 }],
+          },
+        },
+      })
+    );
+
+    await renderPage();
+
+    for (const name of ['Corte', 'Barba', 'Nico', 'Ana']) {
+      expect(screen.getAllByText(new RegExp(name)).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('should_qualify_two_barbers_of_the_same_name_by_their_location', async () => {
+    loadPage.mockResolvedValue(
+      view({
+        breakdowns: {
+          ok: true,
+          value: {
+            services: [{ key: 'svc-1', label: 'Corte', sublabel: null, count: 4 }],
+            barbers: [
+              { key: 'bar-1', label: 'Nico', sublabel: 'Centro', count: 3 },
+              { key: 'bar-2', label: 'Nico', sublabel: 'Norte', count: 1 },
+            ],
+            hours: [{ bucket: 14, count: 4 }],
+          },
+        },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.getAllByText(/Centro/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Norte/).length).toBeGreaterThan(0);
+  });
+
+  it('should_state_a_single_barber_rather_than_drawing_a_ranking_of_one', async () => {
+    // A ranking of one is not a ranking, and a bar at a hundred percent is not
+    // information. The same treatment a single payment method already gets.
+    loadPage.mockResolvedValue(
+      view({
+        breakdowns: {
+          ok: true,
+          value: {
+            services: [
+              { key: 'svc-1', label: 'Corte', sublabel: null, count: 3 },
+              { key: 'svc-2', label: 'Barba', sublabel: null, count: 1 },
+            ],
+            barbers: [{ key: 'bar-1', label: 'Nico', sublabel: 'Centro', count: 4 }],
+            hours: [{ bucket: 14, count: 4 }],
+          },
+        },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.barbersChartSingle('Nico', 4))).toBeInTheDocument();
+  });
+
+  it('should_state_a_single_service_rather_than_drawing_a_ranking_of_one', async () => {
+    loadPage.mockResolvedValue(
+      view({
+        breakdowns: {
+          ok: true,
+          value: {
+            services: [{ key: 'svc-1', label: 'Corte', sublabel: null, count: 4 }],
+            barbers: [
+              { key: 'bar-1', label: 'Nico', sublabel: 'Centro', count: 3 },
+              { key: 'bar-2', label: 'Ana', sublabel: 'Centro', count: 1 },
+            ],
+            hours: [{ bucket: 14, count: 4 }],
+          },
+        },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.servicesChartSingle('Corte', 4))).toBeInTheDocument();
+  });
+
+  it('should_reach_every_hour_of_the_day_in_the_table_including_the_empty_ones', async () => {
+    await renderPage();
+
+    const table = screen.getByRole('table', { name: COPY.statistics.hoursChartTableCaption });
+    // Twenty-four hours plus the header row.
+    expect(within(table).getAllByRole('row')).toHaveLength(25);
+  });
+
+  it('should_tabulate_the_aggregated_remainder_and_never_draw_it_as_a_bar', async () => {
+    // A bar whose height aggregates unlike things invites being read as one
+    // thing, and in a wide catalogue it is often the longest.
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 45 }) },
+        breakdowns: {
+          ok: true,
+          value: {
+            services: Array.from({ length: 12 }, (_, index) => ({
+              key: 'svc-' + index,
+              label: 'S' + index,
+              sublabel: null,
+              count: 12 - index,
+            })),
+            barbers: [
+              { key: 'bar-1', label: 'Nico', sublabel: null, count: 40 },
+              { key: 'bar-2', label: 'Ana', sublabel: null, count: 5 },
+            ],
+            hours: [{ bucket: 14, count: 45 }],
+          },
+        },
+      })
+    );
+
+    await renderPage();
+
+    const table = screen.getByRole('table', { name: COPY.statistics.servicesChartTableCaption });
+    expect(within(table).getByText(COPY.statistics.rankingOthers)).toBeInTheDocument();
+
+    // Eight named bars, and the remainder is not among them.
+    const chart = screen.getByRole('img', {
+      name: COPY.statistics.servicesChartLabel(COPY.statistics.rangesInPhrase.hoy),
+    });
+    expect(chart.querySelectorAll('rect')).toHaveLength(8);
+  });
+
+  it('should_show_the_aggregated_remainder_to_someone_looking_at_the_page', async () => {
+    // **The worst defect of this change, found by its second adversarial pass.**
+    // The aggregate was in the sr-only table and nowhere else, so the shares a
+    // sighted owner could see summed to 84% of the period with nothing on screen
+    // accounting for the rest — and the obvious reading of that is "a number is
+    // missing". It is listed with the rows and drawn as no bar.
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 45 }) },
+        breakdowns: {
+          ok: true,
+          value: {
+            ...breakdowns(),
+            services: Array.from({ length: 12 }, (_, index) => ({
+              key: 'svc-' + index,
+              label: 'S' + index,
+              sublabel: null,
+              count: 12 - index,
+            })),
+          },
+        },
+      })
+    );
+
+    await renderPage();
+
+    const visible = document.querySelectorAll('[aria-hidden="true"]');
+    const listedOutsideTheTable = [...visible].some((node) =>
+      node.textContent?.includes(COPY.statistics.rankingOthers)
+    );
+    expect(listedOutsideTheTable).toBe(true);
+  });
+
+  it('should_announce_the_ranking_once_rather_than_twice', async () => {
+    // The visible list and the sr-only table are the same numbers in the same
+    // order; announced together a screen reader reads the whole ranking twice.
+    // `sr-only` hides from sight, not from assistive technology.
+    await renderPage();
+
+    const chart = screen.getByRole('img', {
+      name: COPY.statistics.servicesChartLabel(COPY.statistics.rangesInPhrase.hoy),
+    });
+    const section = chart.closest('section');
+    const list = section?.querySelector('div.flex.flex-col.gap-1');
+
+    expect(list?.getAttribute('aria-hidden')).toBe('true');
+    expect(section?.querySelector('table')?.getAttribute('aria-hidden')).toBeNull();
+  });
+});
+
+describe('StatisticsPage - when the breakdowns are not three sections (D7)', () => {
+  it('should_report_a_failed_breakdown_read_without_drawing_an_empty_ranking', async () => {
+    loadPage.mockResolvedValue(view({ breakdowns: { ok: false } }));
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.breakdownsFailed)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.servicesChartHeading)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.hoursChartHeading)).not.toBeInTheDocument();
+  });
+
+  it('should_keep_the_figures_and_the_charts_through_a_failed_breakdown_read', async () => {
+    loadPage.mockResolvedValue(view({ breakdowns: { ok: false } }));
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.confirmedCount)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.incomeChartHeading)).toBeInTheDocument();
+  });
+
+  it('should_say_nothing_about_the_breakdowns_when_the_figures_failed_too', async () => {
+    // The D6 defect, one section further down: copy that reports a partial
+    // failure implies the rest is current, and printing it beneath a card
+    // apologising for the figures makes that a false statement.
+    loadPage.mockResolvedValue(
+      view({ statistics: { ok: false }, charts: { ok: false }, breakdowns: { ok: false } })
+    );
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.loadFailed)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.breakdownsFailed)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.chartsFailed)).not.toBeInTheDocument();
+  });
+
+  it('should_draw_no_breakdown_for_a_period_with_cancellations_and_no_confirmations', async () => {
+    // The whole point of the confirmed-activity predicate. `hasSomethingToReport`
+    // is true here — something did happen — so the figures render; every
+    // breakdown counts confirmations only, so three empty sections would appear
+    // beneath them explaining nothing.
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 0, cancelledCount: 3 }) },
+        breakdowns: { ok: true, value: { services: [], barbers: [], hours: [] } },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.cancelledCount)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.servicesChartHeading)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.barbersChartHeading)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.hoursChartHeading)).not.toBeInTheDocument();
+  });
+
+  it('should_draw_no_breakdown_for_a_period_with_nothing_in_it', async () => {
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 0, cancelledCount: 0 }) },
+        breakdowns: { ok: true, value: { services: [], barbers: [], hours: [] } },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.queryByText(COPY.statistics.hoursChartHeading)).not.toBeInTheDocument();
+  });
+
+  it('should_draw_no_breakdown_for_a_shop_nobody_has_ever_booked_with', async () => {
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ hasAnyBookingEver: false }) },
+        breakdowns: { ok: true, value: { services: [], barbers: [], hours: [] } },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.emptyShop)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.hoursChartHeading)).not.toBeInTheDocument();
+  });
+
+  it('should_draw_nothing_when_the_breakdowns_are_empty_and_the_figures_say_otherwise', async () => {
+    // Found by D7's adversarial pass. The two reads are independent by design
+    // and can disagree, and `fillHourlyDistribution` answers an empty grouping
+    // with twenty-four honest zeros — rendered beneath a figure reporting four
+    // appointments, that is a chart stating none of them started at any hour.
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 4 }) },
+        breakdowns: { ok: true, value: { services: [], barbers: [], hours: [] } },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.confirmedCount)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.hoursChartHeading)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.breakdownsFailed)).not.toBeInTheDocument();
+  });
+
+  it('should_still_render_the_breakdowns_when_only_the_figures_failed', async () => {
+    // Independent failure is the feature, and a ranking that loaded is not made
+    // false by a figure that did not.
+    loadPage.mockResolvedValue(view({ statistics: { ok: false } }));
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.loadFailed)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.hoursChartHeading)).toBeInTheDocument();
+  });
+
+  it('should_report_no_failure_for_the_breakdowns_when_the_period_was_empty', async () => {
+    // A period with nothing in it has no breakdown worth reporting a failure
+    // for, so the suppression is checked before the failure state.
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 0, cancelledCount: 0 }) },
+        breakdowns: { ok: false },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.queryByText(COPY.statistics.breakdownsFailed)).not.toBeInTheDocument();
+  });
+});
+
+describe('StatisticsPage - the breakdowns are readable without seeing them (D7)', () => {
+  it('should_give_every_drawn_breakdown_a_table_equivalent', async () => {
+    await renderPage();
+
+    for (const caption of [
+      COPY.statistics.servicesChartTableCaption,
+      COPY.statistics.barbersChartTableCaption,
+      COPY.statistics.hoursChartTableCaption,
+    ]) {
+      expect(screen.getByRole('table', { name: caption })).toBeInTheDocument();
+    }
+  });
+
+  it('should_give_every_drawn_breakdown_an_accessible_name', async () => {
+    await renderPage();
+
+    const phrase = COPY.statistics.rangesInPhrase.hoy;
+    for (const label of [
+      COPY.statistics.servicesChartLabel(phrase),
+      COPY.statistics.barbersChartLabel(phrase),
+      COPY.statistics.hoursChartLabel(phrase),
+    ]) {
+      expect(screen.getByRole('img', { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it('should_never_repeat_an_element_id_across_the_page', async () => {
+    // Five inline drawings on one page. A shared clipPath or pattern id is a
+    // duplicate in the document and a real cross-chart rendering bug, and an id
+    // derived from a random value is a hydration mismatch in waiting.
+    const { container } = render(
+      await StatisticsPage({ searchParams: Promise.resolve({}) })
+    );
+
+    const ids = [...container.querySelectorAll('[id]')].map((node) => node.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('should_name_no_client_anywhere_in_the_breakdowns', async () => {
+    await renderPage();
+
+    // The projection carries service, barber and location names and nothing
+    // else; a client's name reaching this page would be a privacy regression
+    // rather than a rendering one.
+    expect(document.body.textContent).not.toMatch(/@/);
   });
 });

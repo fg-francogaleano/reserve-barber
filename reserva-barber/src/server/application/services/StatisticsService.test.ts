@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { StatisticsService } from './StatisticsService';
 import type { IStatisticsRepository } from '@/server/domain/repositories/IStatisticsRepository';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
-import type { BusinessCharts, BusinessStatistics } from '@/server/domain/models/statistics';
+import type {
+  BusinessBreakdowns,
+  BusinessCharts,
+  BusinessStatistics,
+} from '@/server/domain/models/statistics';
 
 /**
  * 23:30 in Buenos Aires on Sunday 2026-08-16 is 02:30 UTC on Monday the 17th.
@@ -29,12 +33,19 @@ const CHARTS: BusinessCharts = {
   cashCollected: '7500.00',
 };
 
+const BREAKDOWNS: BusinessBreakdowns = {
+  services: [{ key: 'svc-1', label: 'Corte', sublabel: null, count: 4 }],
+  barbers: [{ key: 'bar-1', label: 'Nico', sublabel: 'Centro', count: 4 }],
+  hours: [{ bucket: 14, count: 4 }],
+};
+
 function makeService(overrides?: { statistics?: Partial<IStatisticsRepository> }) {
   const logger: ILogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
   const statistics = {
     readStatistics: vi.fn().mockResolvedValue(FIGURES),
     readCharts: vi.fn().mockResolvedValue(CHARTS),
+    readBreakdowns: vi.fn().mockResolvedValue(BREAKDOWNS),
     ...overrides?.statistics,
   } as unknown as IStatisticsRepository;
 
@@ -280,5 +291,127 @@ describe('StatisticsService - one clock governs the figures and the axis', () =>
     const charts = vi.mocked(statistics.readCharts).mock.calls[0]![0].range;
     expect(charts.start.getTime()).toBe(figures.start.getTime());
     expect(charts.end.getTime()).toBe(figures.end.getTime());
+  });
+});
+
+describe('StatisticsService - the breakdowns load and fail on their own (D7)', () => {
+  it('should_keep_the_figures_and_the_charts_when_the_breakdown_read_fails', async () => {
+    // Three independently recoverable reads, and this is the third. The owner
+    // loses three sections, never the page.
+    const { service } = makeService({
+      statistics: { readBreakdowns: vi.fn().mockRejectedValue(new Error('statement timeout')) },
+    });
+
+    const view = await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect(view.statistics.ok).toBe(true);
+    expect(view.charts.ok).toBe(true);
+    expect(view.breakdowns.ok).toBe(false);
+  });
+
+  it('should_keep_the_breakdowns_when_either_of_the_other_reads_fails', async () => {
+    const withoutFigures = makeService({
+      statistics: { readStatistics: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+    const withoutCharts = makeService({
+      statistics: { readCharts: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+
+    const first = await withoutFigures.service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+    const second = await withoutCharts.service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect(first.breakdowns.ok).toBe(true);
+    expect(second.breakdowns.ok).toBe(true);
+  });
+
+  it('should_never_report_a_failed_breakdown_read_as_an_empty_ranking', async () => {
+    // Zero and failure never render alike. An empty ranking is a statement
+    // about the business and is indistinguishable from a period nobody booked.
+    const { service } = makeService({
+      statistics: { readBreakdowns: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+
+    const view = await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect(view.breakdowns).toEqual({ ok: false });
+  });
+
+  it('should_log_a_failed_breakdown_read_without_a_name_or_an_amount', async () => {
+    const { service, logger } = makeService({
+      statistics: { readBreakdowns: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    const logged = JSON.stringify(vi.mocked(logger.error).mock.calls);
+    expect(logger.error).toHaveBeenCalled();
+    expect(logged).not.toContain('Corte');
+    expect(logged).not.toContain('Nico');
+    expect(logged).not.toContain('9000');
+  });
+
+  it('should_survive_all_three_reads_failing_without_throwing', async () => {
+    const { service } = makeService({
+      statistics: {
+        readStatistics: vi.fn().mockRejectedValue(new Error('boom')),
+        readCharts: vi.fn().mockRejectedValue(new Error('boom')),
+        readBreakdowns: vi.fn().mockRejectedValue(new Error('boom')),
+      },
+    });
+
+    const view = await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect([view.statistics.ok, view.charts.ok, view.breakdowns.ok]).toEqual([false, false, false]);
+    expect(view.range).toBe('semana');
+  });
+});
+
+describe('StatisticsService - one clock governs the hour axis too (D7)', () => {
+  it('should_ask_for_the_hour_edges_the_view_carries', async () => {
+    // A component resolving its own edges would be a second place the business
+    // calendar is decided, and the disagreement would show up as an
+    // appointment in an hour that is in no figure.
+    const { service, statistics } = makeService();
+
+    const view = await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+    const asked = vi.mocked(statistics.readBreakdowns).mock.calls[0]![0];
+
+    expect(asked.edges).toEqual(view.hourEdges);
+  });
+
+  it('should_span_the_hour_edges_over_exactly_the_range_the_figures_were_counted_over', async () => {
+    const { service, statistics } = makeService();
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    const { range } = vi.mocked(statistics.readStatistics).mock.calls[0]![0];
+    const { edges } = vi.mocked(statistics.readBreakdowns).mock.calls[0]![0];
+
+    expect(edges).toHaveLength(169);
+    expect(edges[0]?.getTime()).toBe(range.start.getTime());
+    expect(edges[edges.length - 1]?.getTime()).toBe(range.end.getTime());
+  });
+
+  it('should_ask_for_a_day_of_hours_on_a_single_day_range_and_a_month_of_them_on_a_month', async () => {
+    const { service, statistics } = makeService();
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'hoy' });
+    expect(vi.mocked(statistics.readBreakdowns).mock.calls[0]![0].edges).toHaveLength(25);
+
+    await service.loadPage({ ownerId: 'own-1', rawRange: 'mes' });
+    expect(vi.mocked(statistics.readBreakdowns).mock.calls[1]![0].edges).toHaveLength(745);
+  });
+
+  it('should_carry_a_real_hour_axis_on_the_view_even_when_the_read_failed', async () => {
+    // A view whose shape depends on whether a read succeeded is a view with two
+    // shapes. The edges are resolvable without the database, so they are always
+    // present; nothing draws them when there is nothing to draw.
+    const { service } = makeService({
+      statistics: { readBreakdowns: vi.fn().mockRejectedValue(new Error('boom')) },
+    });
+
+    const view = await service.loadPage({ ownerId: 'own-1', rawRange: 'semana' });
+
+    expect(view.hourEdges).toHaveLength(169);
   });
 });

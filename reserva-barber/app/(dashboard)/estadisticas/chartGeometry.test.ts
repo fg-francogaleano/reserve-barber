@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   CHART_VIEWBOX,
+  RANKING_VIEWBOX,
   barsFor,
+  hourColumnsFor,
   labelStrideFor,
+  rankingBarsFor,
+  rankingHeightFor,
   sharesFor,
 } from './chartGeometry';
+import type { RankedEntry } from '@/server/domain/models/statistics';
 
 /**
  * The chart's arithmetic, with no React and no DOM in sight.
@@ -164,5 +169,114 @@ describe('sharesFor - the method split as proportions', () => {
 
   it('should_return_nothing_for_an_empty_split', () => {
     expect(sharesFor([])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D7 — the ranking bars and the hour-of-day columns
+// ---------------------------------------------------------------------------
+
+function ranked(label: string, count: number): RankedEntry {
+  return { key: label, label, sublabel: null, count, share: 0, isAggregate: false };
+}
+
+describe('chartGeometry - the ranking bars', () => {
+  it('should_fill_the_plot_with_the_longest_bar', () => {
+    const bars = rankingBarsFor([ranked('Corte', 8), ranked('Barba', 4)]);
+
+    expect(bars[0]?.width).toBe(RANKING_VIEWBOX.plotWidth);
+    expect(bars[1]?.width).toBe(RANKING_VIEWBOX.plotWidth / 2);
+  });
+
+  it('should_draw_zero_width_bars_rather_than_NaN_when_nothing_was_booked', () => {
+    // Reachable: a ranking whose every entry is zero cannot come from a
+    // confirmed row set, but dividing by a zero peak would turn any future
+    // caller's answer into an invisible chart full of NaN attributes.
+    const bars = rankingBarsFor([ranked('Corte', 0), ranked('Barba', 0)]);
+
+    expect(bars.every((bar) => bar.width === 0)).toBe(true);
+    expect(bars.every((bar) => Number.isFinite(bar.y))).toBe(true);
+  });
+
+  it('should_lay_the_rows_out_without_overlapping', () => {
+    const bars = rankingBarsFor([ranked('A', 3), ranked('B', 2), ranked('C', 1)]);
+
+    for (let index = 1; index < bars.length; index += 1) {
+      const previous = bars[index - 1]!;
+      const current = bars[index]!;
+      expect(current.y).toBeGreaterThanOrEqual(previous.y + previous.height);
+    }
+  });
+
+  it('should_keep_every_bar_inside_the_viewbox', () => {
+    const bars = rankingBarsFor(
+      Array.from({ length: 9 }, (_, index) => ranked('S' + index, 9 - index))
+    );
+
+    for (const bar of bars) {
+      expect(bar.y).toBeGreaterThanOrEqual(0);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(rankingHeightFor(9));
+      expect(bar.width).toBeLessThanOrEqual(RANKING_VIEWBOX.plotWidth);
+    }
+  });
+
+  it('should_grow_the_viewbox_with_the_number_of_rows', () => {
+    // A fixed height would squash nine rows into the space two need, which is
+    // where an unreadable label comes from at 360 px.
+    expect(rankingHeightFor(9)).toBeGreaterThan(rankingHeightFor(2));
+  });
+
+  it('should_draw_nothing_for_an_empty_ranking', () => {
+    expect(rankingBarsFor([])).toEqual([]);
+  });
+
+  it('should_exclude_no_entry_it_was_given', () => {
+    // The bars are the ranking. Whatever decides not to draw the aggregated row
+    // does it by not passing it, so this function cannot silently lose a row.
+    const bars = rankingBarsFor([ranked('A', 3), ranked('B', 2)]);
+
+    expect(bars).toHaveLength(2);
+  });
+});
+
+describe('chartGeometry - the hour-of-day columns', () => {
+  const FLAT = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 2 }));
+
+  it('should_draw_one_column_per_hour', () => {
+    expect(hourColumnsFor(FLAT)).toHaveLength(24);
+  });
+
+  it('should_scale_the_tallest_column_to_the_plot', () => {
+    const columns = hourColumnsFor([
+      { hour: 0, count: 1 },
+      { hour: 1, count: 4 },
+    ]);
+
+    expect(columns[1]?.height).toBe(CHART_VIEWBOX.plotHeight);
+    expect(columns[0]?.height).toBe(CHART_VIEWBOX.plotHeight / 4);
+  });
+
+  it('should_draw_a_day_with_no_appointments_as_a_flat_axis_rather_than_NaN', () => {
+    const columns = hourColumnsFor(Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 })));
+
+    expect(columns.every((column) => column.height === 0)).toBe(true);
+    expect(columns.every((column) => Number.isFinite(column.y))).toBe(true);
+  });
+
+  it('should_lay_the_columns_out_left_to_right_without_overlapping', () => {
+    const columns = hourColumnsFor(FLAT);
+
+    for (let index = 1; index < columns.length; index += 1) {
+      expect(columns[index]!.x).toBeGreaterThanOrEqual(
+        columns[index - 1]!.x + columns[index - 1]!.width
+      );
+    }
+    expect(columns[23]!.x + columns[23]!.width).toBeLessThanOrEqual(CHART_VIEWBOX.width);
+  });
+
+  it('should_thin_a_twenty_four_hour_axis_rather_than_overlapping_its_labels', () => {
+    // Reused from D6 rather than reinvented: 24 buckets is exactly the case its
+    // stride table was built for.
+    expect(labelStrideFor(24)).toBeGreaterThan(1);
   });
 });

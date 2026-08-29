@@ -6,6 +6,7 @@ import {
   weekBoundsOf,
   weekdayOfLocalDate,
   hourEdgesOf,
+  hourEdgesBetween,
   dayEdgesBetween,
   type LocalDate,
 } from '@/server/domain/models/bookingCalendar';
@@ -181,50 +182,94 @@ export function granularityFor(range: StatisticsRange): BucketGranularity {
  * `intervalFor`, so the axis and the figures cannot straddle a rollover.
  */
 export function bucketEdgesFor(range: StatisticsRange, today: LocalDate): readonly Date[] {
+  const { first, last } = daySpanOf(range, today);
+
+  return granularityFor(range) === 'hour'
+    ? hourEdgesOf(first)
+    : dayEdgesBetween(first, last);
+}
+
+/**
+ * The instants bounding every hour of a period, for D7's hour-of-day
+ * distribution: `24n + 1` of them for an `n`-day range.
+ *
+ * **A second axis over the same span, not a second span.** It resolves the
+ * period through the same `daySpanOf` the income chart's axis uses, so the two
+ * cannot drift onto different weeks or different month lengths — and, more
+ * importantly, so both close exactly where `intervalFor` closes. An appointment
+ * counted by a figure and missing from the distribution would break the
+ * reconciliation invariant D7 is built on, and it would break it silently.
+ *
+ * It is a **finer** axis than the chart's rather than a different one: the
+ * distribution folds these buckets by their business hour, which is why the
+ * repository can assign a row to a bucket while the domain keeps deciding what
+ * a bucket means (`IStatisticsRepository` rule 11). The alternative — letting
+ * SQL extract the hour — resolves in the session's timezone, UTC on both
+ * Supavisor and `workerd`, and misplaces every appointment from 21:00 local
+ * onward.
+ */
+export function hourBucketEdgesFor(range: StatisticsRange, today: LocalDate): readonly Date[] {
+  const { first, last } = daySpanOf(range, today);
+  return hourEdgesBetween(first, last);
+}
+
+/**
+ * The first and last **local day** a period covers, inclusive of both.
+ *
+ * The one place a range becomes calendar days, so the two axes above and the
+ * interval the figures are counted over cannot disagree about which week or how
+ * long a month is. Each case mirrors `intervalFor`'s, deliberately: the two
+ * functions answer the same question in two vocabularies, and a divergence
+ * between them is money in a bucket that is in no figure.
+ */
+function daySpanOf(
+  range: StatisticsRange,
+  today: LocalDate
+): { first: LocalDate; last: LocalDate } {
   switch (range) {
     case 'hoy':
-      return hourEdgesOf(today);
+      return { first: today, last: today };
 
     case 'ayer':
-      return hourEdgesOf(addDays(today, -1));
+      return { first: addDays(today, -1), last: addDays(today, -1) };
 
     case 'semana':
-      return weekEdges(today);
+      return weekSpan(today);
 
     case 'semana-anterior':
       // Seven days back lands in the previous week whatever weekday today is,
       // and the week's own Monday is then found from there — the argument
       // `intervalFor` makes about the same case.
-      return weekEdges(addDays(today, -7));
+      return weekSpan(addDays(today, -7));
 
     case 'mes':
-      return monthEdges(today);
+      return monthSpan(today);
 
     case 'mes-anterior':
-      return monthEdges(previousMonth(today));
+      return monthSpan(previousMonth(today));
   }
 }
 
 /** The seven days of the local week `date` falls in, Monday first. */
-function weekEdges(date: LocalDate): readonly Date[] {
+function weekSpan(date: LocalDate): { first: LocalDate; last: LocalDate } {
   const daysSinceMonday = (weekdayOfLocalDate(date) + 6) % 7;
   const monday = addDays(date, -daysSinceMonday);
-  return dayEdgesBetween(monday, addDays(monday, 6));
+  return { first: monday, last: addDays(monday, 6) };
 }
 
 /**
  * Every day of the local month `date` falls in.
  *
  * The last day is found by stepping back one from the first of the next month,
- * so February contributes 28 buckets and August 31 without this function
- * knowing how long any month is.
+ * so February contributes 28 days and August 31 without this function knowing
+ * how long any month is.
  */
-function monthEdges(date: LocalDate): readonly Date[] {
+function monthSpan(date: LocalDate): { first: LocalDate; last: LocalDate } {
   const first: LocalDate = { year: date.year, month: date.month, day: 1 };
   const firstOfNext: LocalDate =
     date.month === 12
       ? { year: date.year + 1, month: 1, day: 1 }
       : { year: date.year, month: date.month + 1, day: 1 };
 
-  return dayEdgesBetween(first, addDays(firstOfNext, -1));
+  return { first, last: addDays(firstOfNext, -1) };
 }
