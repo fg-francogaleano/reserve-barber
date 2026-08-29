@@ -77,4 +77,4 @@
 - [x] 10.2 Run the adversarial pass **after** the story reads as done, looking specifically for copy that asserts a state nothing checked — the shape of both defects D6 found there
 - [x] 10.3 Update `docs/roadmap.md`: tick D7 and record what implementation overturned, with measurements rather than claims
 - [x] 10.4 Update `docs/tech-debt.md` with anything measured and deferred, and close or amend T81's entry according to 8.6
-- [ ] 10.5 Commit, open the PR, and run `/opsx:verify` before archiving
+- [x] 10.5 Commit, open the PR, and archive. `/opsx:verify` was skipped by the owner's call: the change was archived directly after the runtime pass and the adversarial review
