@@ -209,8 +209,13 @@ function Breakdowns({ view }: { view: StatisticsView }) {
   // cannot drift onto two different rules. `disambiguateLabels` applies only to
   // the barbers: a display name is unique per location and not across the
   // business, while a service name is unique per owner.
+  //
+  // **It runs before `rankTopN`, not after.** A barber whose same-named twin
+  // fell past the cap into the aggregated entry would otherwise lose the
+  // qualifier that says which one he is — unambiguous in the list, ambiguous in
+  // the business, and it is the business the owner is reading about.
   const rankedServices = rankTopN(services);
-  const rankedBarbers = disambiguateLabels(rankTopN(barbers));
+  const rankedBarbers = rankTopN(disambiguateLabels(barbers));
   const distribution = fillHourlyDistribution(hours, view.hourEdges);
 
   return (

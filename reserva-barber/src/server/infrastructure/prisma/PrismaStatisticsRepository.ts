@@ -472,7 +472,17 @@ export class PrismaStatisticsRepository implements IStatisticsRepository {
         count(*) AS "count"
       FROM confirmed c
       WHERE c."ownerId" = ${ownerId}
-      GROUP BY 2
+      -- **By output alias, not by ordinal.** Grouping by the position 2 reads
+      -- the second column of this branch's select list, so reordering the
+      -- projection — a change that looks like formatting — would silently group
+      -- by something else. The alias is also cheaper than repeating the
+      -- expression, which would put the threshold array on the wire twice (745
+      -- floats for a month). The confirmed row set has no column of this name,
+      -- so it cannot resolve to an input column instead.
+      --
+      -- Backticks are avoided in this block on purpose, as in readStatistics:
+      -- it is a template literal, and one would end the statement here.
+      GROUP BY "key"
     `;
 
     const services: BreakdownEntry[] = [];

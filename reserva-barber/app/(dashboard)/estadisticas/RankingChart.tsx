@@ -66,15 +66,38 @@ export function RankingChart({
 
       {only === undefined ? (
         <>
-          <div className="flex flex-col gap-1">
-            {named.map((entry) => (
+          {/*
+            **`aria-hidden`, and the table below is why.** This list is the same
+            numbers a screen reader already gets from the table, in the same
+            order; announced as well it reads the whole ranking twice. The SVG is
+            `role="img"` and opaque, so what a screen reader hears is the chart's
+            label and then one complete table. Found by D7's second adversarial
+            pass.
+          */}
+          <div className="flex flex-col gap-1" aria-hidden="true">
+            {/*
+              **Every entry, including the aggregate — it is listed, just not
+              drawn.** Excluding it from the list entirely was this change's
+              worst defect: the visible shares summed to 84% of a period and
+              nothing on screen accounted for the rest, so an owner reading it
+              concludes a number is missing. What the aggregate must not be is a
+              *bar*, because a length that sums unlike things gets read as one
+              thing — so it renders with the row and without the geometry.
+            */}
+            {entries.map((entry) => (
               <div key={entry.key} className="flex items-center gap-3 text-sm">
-                <span className="min-w-0 flex-1 break-words">
-                  {entry.label}
+                <span
+                  className={
+                    entry.isAggregate
+                      ? 'text-muted-foreground min-w-0 flex-1 break-words italic'
+                      : 'min-w-0 flex-1 break-words'
+                  }
+                >
+                  {entry.isAggregate ? COPY.statistics.rankingOthers : entry.label}
                   {/*
                     The location, and only where the display name repeats — the
-                    domain decides that, over the rendered set, because a name is
-                    unique per location and not across the business.
+                    domain decides that, over the period's barbers, because a
+                    name is unique per location and not across the business.
                   */}
                   {entry.sublabel === null ? null : (
                     <span className="text-muted-foreground"> · {entry.sublabel}</span>

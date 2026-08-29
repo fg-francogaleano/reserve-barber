@@ -986,6 +986,55 @@ describe('StatisticsPage - the breakdowns (D7)', () => {
     });
     expect(chart.querySelectorAll('rect')).toHaveLength(8);
   });
+
+  it('should_show_the_aggregated_remainder_to_someone_looking_at_the_page', async () => {
+    // **The worst defect of this change, found by its second adversarial pass.**
+    // The aggregate was in the sr-only table and nowhere else, so the shares a
+    // sighted owner could see summed to 84% of the period with nothing on screen
+    // accounting for the rest — and the obvious reading of that is "a number is
+    // missing". It is listed with the rows and drawn as no bar.
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 45 }) },
+        breakdowns: {
+          ok: true,
+          value: {
+            ...breakdowns(),
+            services: Array.from({ length: 12 }, (_, index) => ({
+              key: 'svc-' + index,
+              label: 'S' + index,
+              sublabel: null,
+              count: 12 - index,
+            })),
+          },
+        },
+      })
+    );
+
+    await renderPage();
+
+    const visible = document.querySelectorAll('[aria-hidden="true"]');
+    const listedOutsideTheTable = [...visible].some((node) =>
+      node.textContent?.includes(COPY.statistics.rankingOthers)
+    );
+    expect(listedOutsideTheTable).toBe(true);
+  });
+
+  it('should_announce_the_ranking_once_rather_than_twice', async () => {
+    // The visible list and the sr-only table are the same numbers in the same
+    // order; announced together a screen reader reads the whole ranking twice.
+    // `sr-only` hides from sight, not from assistive technology.
+    await renderPage();
+
+    const chart = screen.getByRole('img', {
+      name: COPY.statistics.servicesChartLabel(COPY.statistics.rangesInPhrase.hoy),
+    });
+    const section = chart.closest('section');
+    const list = section?.querySelector('div.flex.flex-col.gap-1');
+
+    expect(list?.getAttribute('aria-hidden')).toBe('true');
+    expect(section?.querySelector('table')?.getAttribute('aria-hidden')).toBeNull();
+  });
 });
 
 describe('StatisticsPage - when the breakdowns are not three sections (D7)', () => {

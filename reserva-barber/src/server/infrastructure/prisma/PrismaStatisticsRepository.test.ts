@@ -482,6 +482,17 @@ describe('PrismaStatisticsRepository - the breakdown read', () => {
     expect(sql).not.toMatch(/current_(date|timestamp)/i);
   });
 
+  it('groups the hour branch by its output alias rather than by an ordinal', async () => {
+    // `GROUP BY 2` reads the second column of that branch's select list, so
+    // reordering the projection — a change that looks like formatting — would
+    // silently group by something else. Repeating the expression instead would
+    // put 745 thresholds on the wire twice for a month-sized range.
+    const sql = breakdownSql((await readBreakdowns([])).raw);
+
+    expect(sql).toMatch(/GROUP BY "key"/);
+    expect(sql).not.toMatch(/GROUP BY\s+\d/);
+  });
+
   it('neither orders, caps nor folds in the statement', async () => {
     // Rule 16. A LIMIT discards the rows past the cap, and a discarded
     // remainder is invisible: the ranking simply stops summing to the figure

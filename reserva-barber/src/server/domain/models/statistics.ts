@@ -508,7 +508,8 @@ function shareOf(count: number, total: number): number {
 }
 
 /**
- * A ranking with each location kept only where the name beside it is ambiguous.
+ * A breakdown with each location kept only where the name beside it is
+ * ambiguous.
  *
  * A barber's display name is unique **within a location** and not across the
  * business (`data-model.md` §5), so one owner may legitimately have two "Nico"
@@ -518,20 +519,34 @@ function shareOf(count: number, total: number): number {
  * It is applied only where it is needed, because qualifying every row would be
  * noise for the single-location shop that is the common case.
  *
+ * ---
+ *
+ * **It runs before the ranking is cut, not after, and D7's second adversarial
+ * pass is what moved it.** Applied to the rendered rows, a "Nico" whose twin
+ * fell past the cap into the aggregated entry would lose his qualifier — the
+ * name is unambiguous *in the list* and ambiguous *in the business*, and it is
+ * the business the owner is reading about. Deciding it over the period's whole
+ * set means the qualifier survives the fold, and a shop with one Nico still
+ * shows none.
+ *
+ * It is generic over anything carrying a label and a location because it now has
+ * two callers' worth of shape between them: the entries as read, and the ranking
+ * they become.
+ *
  * **The qualifier is returned as data, never as a joined string.** Composing
  * "Nico · Centro" here would put a user-facing separator in the domain, which
  * the copy scan on the statistics directory exists to prevent; whatever renders
  * this decides how the two parts sit together.
  */
-export function disambiguateLabels(entries: readonly RankedEntry[]): readonly RankedEntry[] {
+export function disambiguateLabels<T extends { readonly label: string; readonly sublabel: string | null }>(
+  entries: readonly T[]
+): readonly T[] {
   const seen = new Map<string, number>();
   for (const row of entries) {
     seen.set(row.label, (seen.get(row.label) ?? 0) + 1);
   }
 
-  return entries.map((row) =>
-    (seen.get(row.label) ?? 0) > 1 ? row : { ...row, sublabel: null }
-  );
+  return entries.map((row) => ((seen.get(row.label) ?? 0) > 1 ? row : { ...row, sublabel: null }));
 }
 
 /**

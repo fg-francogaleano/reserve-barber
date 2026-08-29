@@ -96,6 +96,8 @@ Each ranking SHALL show at most a fixed number of named entries, with **every re
 
 The aggregated entry SHALL NOT carry a service or barber name, and SHALL NOT be drawn as a bar — a bar whose height aggregates unlike things invites being read as one thing, and in a shop with a wide catalogue it is often the longest.
 
+**It SHALL nevertheless be listed wherever the named entries are listed, and not only in the text equivalent.** What must not be drawn is its *length*, not its existence: a ranking whose visible shares sum to less than the period, with nothing on screen accounting for the rest, tells an owner that a number is missing. The named entries and the remainder are one list; only the geometry stops at the cap.
+
 A percentage share MAY be shown beside a count. It is display-only: nothing SHALL reconstruct a count from a share, and no share SHALL be divided by another.
 
 #### Scenario: A tie does not reorder between two identical renders
@@ -113,7 +115,9 @@ A percentage share MAY be shown beside a count. It is display-only: nothing SHAL
 
 Service names, barber display names and location names SHALL be read from their current rows. The booking record snapshots the price it was made at and does not snapshot any of these, so **renaming a service relabels its history and a barber who changes branch carries their history to the new branch's label**. Both are accepted and stated here so they are not later reported as defects; grouping is by identity, so nothing merges and nothing splits — only the label is anachronistic.
 
-A barber's display name is unique within a location and **not** across the business, so two barbers of one owner may share one. The barber ranking SHALL therefore carry each barber's location and SHALL qualify a row with it **only when that display name appears more than once in the rendered ranking**. Qualifying every row would be noise for the single-location shop that is the common case.
+A barber's display name is unique within a location and **not** across the business, so two barbers of one owner may share one. The barber ranking SHALL therefore carry each barber's location and SHALL qualify a row with it **only when that display name appears more than once among the period's barbers**. Qualifying every row would be noise for the single-location shop that is the common case.
+
+**The ambiguity is decided over the period, not over the rendered rows.** A barber whose same-named twin fell past the cap into the aggregated entry would otherwise lose the qualifier that says which one he is: unambiguous in the list, ambiguous in the business, and it is the business the owner is reading about.
 
 #### Scenario: Two barbers sharing a display name are told apart
 
@@ -124,6 +128,11 @@ A barber's display name is unique within a location and **not** across the busin
 
 - **WHEN** every barber in the rendered ranking has a distinct display name
 - **THEN** no row is qualified by a location
+
+#### Scenario: A qualifier survives its twin being folded away
+
+- **WHEN** two barbers share a display name and one of them falls past the cap into the aggregated entry
+- **THEN** the one still shown is qualified by its location
 
 ### Requirement: The period's appointments are distributed across the hours of the business's day
 
@@ -219,7 +228,19 @@ Every breakdown SHALL be rendered on the server, SHALL add no charting dependenc
 
 Every drawn breakdown SHALL carry an equivalent that does not require seeing it: the counts SHALL be reachable as text, and a ranking SHALL be readable without colour.
 
+**The equivalent SHALL be announced once.** Where the same values are also written beside the drawing for sighted readers, exactly one of the two SHALL reach assistive technology — visually hiding a text equivalent hides it from sight and not from a screen reader, so leaving both audible reads the whole ranking twice.
+
 Any element identifier inside a drawn breakdown SHALL be unique across the whole page and SHALL be derived from a stable input. The page now carries several inline drawings; a shared identifier is a duplicate in the document, and one derived from a random value or a render counter is a hydration mismatch.
+
+#### Scenario: A ranking is announced once rather than twice
+
+- **WHEN** a ranking renders both its visible rows and its text equivalent
+- **THEN** exactly one of the two is reachable by assistive technology
+
+#### Scenario: The aggregated remainder is visible without the text equivalent
+
+- **WHEN** a ranking folds entries past the cap into an aggregated entry
+- **THEN** that entry is listed with the named rows and drawn as no bar
 
 #### Scenario: The breakdowns render with scripting disabled
 

@@ -534,6 +534,37 @@ async function main(): Promise<void> {
       );
     });
 
+    // ─── 5b. The service label cannot come from another owner's catalogue ────
+
+    await probeOrSkip('5b.x', async () => {
+      // **A read-side risk with a write-side cause.** The service branch joins
+      // `Service` for its name and reaches the owner through the *booking's*
+      // barber, deliberately — scoping on `Service."ownerId"` would be a second
+      // path to the owner (design D2, port rule 14). The consequence is that a
+      // booking pointing at another owner's service would render that owner's
+      // service **name**, and no predicate in this read would stop it.
+      //
+      // The same-owner rule is not expressible in the schema: `Barber` has no
+      // `ownerId` column, so no composite foreign key can tie the two together
+      // (`data-model.md` §7). What holds it is the booking write, and this
+      // probe is the standing check that it still does.
+      const crossOwner = await prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT count(*) AS "count"
+        FROM "Booking" b
+        JOIN "Barber" br ON br.id = b."barberId"
+        JOIN "Location" l ON l.id = br."locationId"
+        JOIN "Service" s ON s.id = b."serviceId"
+        WHERE s."ownerId" <> l."ownerId"
+      `;
+
+      report(
+        "5b.1. No booking points at another owner's service",
+        Number(crossOwner[0]?.count) === 0,
+        `${Number(crossOwner[0]?.count)} bookings whose service and location belong to different owners — ` +
+          'each one would render a foreign service name in the ranking'
+      );
+    });
+
     // ─── 6. Every breakdown reconciles with the figure above it ──────────────
 
     await probeOrSkip('6.x', async () => {

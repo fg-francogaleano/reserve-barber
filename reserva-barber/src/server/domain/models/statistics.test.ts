@@ -377,6 +377,41 @@ describe('statistics - telling two barbers of the same name apart', () => {
 
     expect(disambiguateLabels(ranked).map((row) => row.count)).toEqual([5, 3]);
   });
+
+  it('should_keep_the_qualifier_when_the_twin_falls_past_the_cap', () => {
+    // Found by D7's second adversarial pass. Applied *after* the cut, a barber
+    // whose same-named twin was folded into the aggregate loses his qualifier:
+    // the name is unambiguous in the list and ambiguous in the business, and it
+    // is the business the owner is reading about. Deciding it over the whole
+    // set is what makes the qualifier survive the fold.
+    const all = [
+      entry('Nico', 20, 'Centro'),
+      entry('Ana', 9, 'Centro'),
+      entry('Beto', 8, 'Centro'),
+      entry('Caro', 1, 'Centro'),
+      entry('Nico', 1, 'Norte'),
+    ];
+
+    const beforeTheCut = rankTopN(disambiguateLabels(all), 3);
+    const afterTheCut = disambiguateLabels(rankTopN(all, 3));
+
+    expect(beforeTheCut[0]?.label).toBe('Nico');
+    expect(beforeTheCut[0]?.sublabel).toBe('Centro');
+    // The order this change rejected, kept as the counterfactual: it drops the
+    // qualifier precisely because the twin is no longer in the list.
+    expect(afterTheCut[0]?.sublabel).toBeNull();
+  });
+
+  it('should_accept_the_entries_as_read_and_not_only_a_ranking', () => {
+    // The generic signature is what lets it run before `rankTopN`.
+    const disambiguated = disambiguateLabels([
+      entry('Nico', 5, 'Centro'),
+      entry('Nico', 3, 'Norte'),
+      entry('Ana', 2, 'Centro'),
+    ]);
+
+    expect(disambiguated.map((row) => row.sublabel)).toEqual(['Centro', 'Norte', null]);
+  });
 });
 
 describe('statistics - the hour-of-day distribution', () => {
