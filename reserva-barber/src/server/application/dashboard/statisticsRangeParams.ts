@@ -4,9 +4,16 @@ import {
   monthBoundsOf,
   previousMonth,
   weekBoundsOf,
+  weekdayOfLocalDate,
+  hourEdgesOf,
+  dayEdgesBetween,
   type LocalDate,
 } from '@/server/domain/models/bookingCalendar';
-import { STATISTICS_RANGES, type StatisticsRange } from '@/server/domain/models/statistics';
+import {
+  STATISTICS_RANGES,
+  type BucketGranularity,
+  type StatisticsRange,
+} from '@/server/domain/models/statistics';
 import type { Interval } from '@/server/domain/models/availability';
 
 /**
@@ -138,4 +145,86 @@ export function intervalFor(range: StatisticsRange, today: LocalDate): Interval 
  */
 export function statisticsRangeHref(range: StatisticsRange): string {
   return range === 'hoy' ? '/estadisticas' : `/estadisticas?${STATS_RANGE_PARAM}=${range}`;
+}
+
+/**
+ * How the income chart divides a period (D6).
+ *
+ * **Chosen by the range, never by the data.** A day with four appointments and
+ * a day with forty draw the same 24 bars; a month draws one per calendar day
+ * whatever fell in it. Granularity inferred from the rows would change the axis
+ * between two periods the owner is comparing, which is the single thing this
+ * page exists to let them do.
+ */
+export function granularityFor(range: StatisticsRange): BucketGranularity {
+  return range === 'hoy' || range === 'ayer' ? 'hour' : 'day';
+}
+
+/**
+ * The instants bounding every bucket of a period's chart: `n` buckets yields
+ * `n + 1` edges, and bucket `i` spans `[edges[i], edges[i + 1])`.
+ *
+ * **This is the whole reason no statement in this capability computes a date.**
+ * `date_trunc` is refused twice over — its unit is an identifier position that
+ * parameterisation does not cover, and it truncates in the *session's*
+ * timezone, which is UTC on Supavisor and `workerd`. A 21:30 appointment would
+ * land in the next day's bar and a 23:30-on-the-31st one in the next month's:
+ * silently, plausibly, for three hours of every day. Every edge is computed
+ * here, from the business calendar, and crosses to SQL as an instant that
+ * `width_bucket` only has to compare.
+ *
+ * The edges span exactly `intervalFor`'s range — same first instant, same last
+ * — which is what makes the chart's bars sum to the deposits figure rendered
+ * directly above them. Any drift is money in a bar that is in no figure.
+ *
+ * `today` arrives already resolved from one clock read, as it does for
+ * `intervalFor`, so the axis and the figures cannot straddle a rollover.
+ */
+export function bucketEdgesFor(range: StatisticsRange, today: LocalDate): readonly Date[] {
+  switch (range) {
+    case 'hoy':
+      return hourEdgesOf(today);
+
+    case 'ayer':
+      return hourEdgesOf(addDays(today, -1));
+
+    case 'semana':
+      return weekEdges(today);
+
+    case 'semana-anterior':
+      // Seven days back lands in the previous week whatever weekday today is,
+      // and the week's own Monday is then found from there — the argument
+      // `intervalFor` makes about the same case.
+      return weekEdges(addDays(today, -7));
+
+    case 'mes':
+      return monthEdges(today);
+
+    case 'mes-anterior':
+      return monthEdges(previousMonth(today));
+  }
+}
+
+/** The seven days of the local week `date` falls in, Monday first. */
+function weekEdges(date: LocalDate): readonly Date[] {
+  const daysSinceMonday = (weekdayOfLocalDate(date) + 6) % 7;
+  const monday = addDays(date, -daysSinceMonday);
+  return dayEdgesBetween(monday, addDays(monday, 6));
+}
+
+/**
+ * Every day of the local month `date` falls in.
+ *
+ * The last day is found by stepping back one from the first of the next month,
+ * so February contributes 28 buckets and August 31 without this function
+ * knowing how long any month is.
+ */
+function monthEdges(date: LocalDate): readonly Date[] {
+  const first: LocalDate = { year: date.year, month: date.month, day: 1 };
+  const firstOfNext: LocalDate =
+    date.month === 12
+      ? { year: date.year + 1, month: 1, day: 1 }
+      : { year: date.year, month: date.month + 1, day: 1 };
+
+  return dayEdgesBetween(first, addDays(firstOfNext, -1));
 }

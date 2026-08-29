@@ -97,6 +97,10 @@ La reserva **requiere el pago de una seña** para quedar confirmada. Dos método
 - **Chosen:** **Next.js (React) + Tailwind CSS + shadcn/ui**, con **Recharts/Tremor** para los gráficos de estadísticas.
 - **Alternatives considered:** Mantine / MUI (librería de componentes completa); CSS a mano / CSS Modules.
 - **Rationale:** La app es intensiva en UI (dashboard, tablas, formularios, calendario, gráficos). Tailwind + shadcn/ui es el estándar actual para paneles administrativos: gratis, accesible, control total del markup (los componentes viven en el repo) y muy productivo con Next.js. Recharts/Tremor cubren los gráficos de ingresos, métodos de pago y distribución horaria. Se descartó Mantine/MUI por bundle más pesado y menor control estético, y el CSS a mano por ser demasiado lento para construir todo el panel.
+  > **D6 shipped the first two charts as server-rendered SVG instead**, because `/estadisticas`
+  > carries a tested no-client-JavaScript requirement that no browser-measuring chart library can
+  > satisfy. Recharts/Tremor stay available to the project and stop being the default for that page.
+  > The full argument, and what would bring one back, is the Charts note in `frontend-standards.md`.
 
 ## Supporting Services (free tier)
 - **Cloudflare** (Pages/Workers): hosting del app Next.js.

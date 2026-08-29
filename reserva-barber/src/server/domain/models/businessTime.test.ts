@@ -68,6 +68,11 @@ const SCHEDULING_ROOTS = [
   join(process.cwd(), 'src', 'server', 'application', 'booking'),
   join(process.cwd(), 'src', 'server', 'application', 'availability'),
   join(process.cwd(), 'src', 'components', 'booking'),
+  // D6 makes the dashboard a scheduling consumer too: the income chart's bucket
+  // edges are calendar boundaries, and a bucket resolved from the runtime's own
+  // day would move a 21:30 appointment into tomorrow's bar — the same three
+  // hours of wrong answers, now drawn as a trend.
+  join(process.cwd(), 'src', 'server', 'application', 'dashboard'),
 ];
 
 /** Calendar readers that silently return the runtime's UTC answer. */

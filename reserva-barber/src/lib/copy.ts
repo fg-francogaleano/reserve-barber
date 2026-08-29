@@ -1411,6 +1411,90 @@ export const COPY = {
     emptyShopLink: 'Ver mi perfil público',
     loadFailed: 'No pudimos cargar tus estadísticas.',
     loadFailedHelp: 'Volvé a intentar en unos segundos.',
+
+    // ---- D6: the two charts and the sixth figure ----
+
+    /**
+     * The income chart.
+     *
+     * The accessible name is a sentence rather than a label, because a chart is
+     * an image to a screen reader and "Evolución de ingresos" names the picture
+     * without saying what it shows. The period is interpolated so the name is
+     * true of the chart actually drawn.
+     */
+    incomeChartHeading: 'Evolución de ingresos',
+    incomeChartHelp: 'Señas de los turnos de cada día del período. No incluye lo que se paga en el local.',
+    incomeChartHelpHourly:
+      'Señas de los turnos de cada hora del día. No incluye lo que se paga en el local.',
+    /**
+     * **`que hubo` is load-bearing and was found by the test, not by reading.**
+     * `rangesInPhrase` is shaped for *"No hubo turnos ___"*, so its members
+     * carry no preposition: `hoy`, `esta semana`, `el mes pasado`. Dropping them
+     * straight after a noun gives *"los turnos hoy"* and *"los turnos esta
+     * semana"*. A verb before the phrase restores the grammar for all six
+     * without needing a third map — the same defect D5's runtime pass found in
+     * the empty-period sentence, caught this time by a test that spells the
+     * expected sentence out instead of composing it the same way the code does.
+     */
+    incomeChartLabel: (phrase: string) =>
+      `Gráfico de barras: señas cobradas por los turnos que hubo ${phrase}.`,
+    /** The table is the chart's equivalent, not a debugging aid. */
+    incomeChartTableCaption: 'Señas por período',
+    incomeChartBucketColumn: 'Período',
+    incomeChartAmountColumn: 'Señas',
+    /**
+     * The period had appointments and collected nothing. **An answer, not an
+     * absence** — which is why it is not the empty state and the axis is still
+     * drawn, at zero.
+     */
+    incomeChartAllZero: 'Hubo turnos, pero todavía no se cobró ninguna seña en este período.',
+
+    /**
+     * The payment-method split.
+     *
+     * `methodShare` states the amount and the count together because either one
+     * alone describes the shop wrongly: three small transfers against one large
+     * Mercado Pago payment is a different fact depending on whether the owner is
+     * thinking about fees or about clients.
+     */
+    methodsChartHeading: 'Métodos de pago',
+    methodsChartHelp: 'Cómo se repartieron las señas cobradas entre los dos medios de pago.',
+    methodsChartLabel: 'Gráfico de proporción: reparto de las señas entre Mercado Pago y transferencia.',
+    methodsChartTableCaption: 'Señas por método de pago',
+    methodsChartMethodColumn: 'Medio de pago',
+    methodsChartAmountColumn: 'Total',
+    methodsChartCountColumn: 'Pagos',
+    methods: {
+      MERCADO_PAGO: 'Mercado Pago',
+      BANK_TRANSFER: 'Transferencia',
+    } as const,
+    methodPaymentCount: (count: number) => (count === 1 ? '1 pago' : `${count} pagos`),
+    /**
+     * The degenerate case: one method, which is the permanent state of every
+     * owner who configured only one. A share of a single part is not
+     * information, so it is stated in words instead of drawn.
+     */
+    methodsChartSingle: (method: string, amount: string, count: string) =>
+      `Todas las señas del período entraron por ${method}: ${amount} en ${count}.`,
+    methodsChartEmpty: 'No se cobraron señas en este período.',
+
+    /** The charts failed while the figures did not. Never a flat zero line. */
+    chartsFailed: 'No pudimos cargar los gráficos.',
+    chartsFailedHelp: 'Los números de arriba sí están actualizados. Actualizá la página.',
+
+    /**
+     * The sixth figure (T83), and the whole point of it is the second sentence.
+     *
+     * **It is bounded on the approval, not on the turno**, unlike every other
+     * figure on this page. A deposit approved on 25 de agosto for a turno on
+     * 3 de septiembre is in this figure's August and in the deposits card's
+     * September. Both are right and they will not agree, so the copy says so —
+     * an owner who discovers that on their own concludes one of the two is
+     * broken.
+     */
+    cashCollected: 'Dinero cobrado',
+    cashCollectedHelp:
+      'Señas aprobadas durante el período, sin importar cuándo es el turno. Puede no coincidir con "Señas cobradas": esa cuenta los turnos del período, esta cuenta el dinero que entró.',
   },
   auth: {
     heading: 'Iniciar sesión',

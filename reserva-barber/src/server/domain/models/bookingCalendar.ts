@@ -250,3 +250,50 @@ export function isWithinHorizon(date: LocalDate, today: LocalDate): boolean {
     compareLocalDates(date, addDays(today, MAX_BOOKING_HORIZON_DAYS)) <= 0
   );
 }
+
+/**
+ * The 25 instants bounding a local day's 24 hours: `[00:00, 01:00, … 24:00]`.
+ *
+ * The edges of the income chart's axis when the owner asks for one day (D6).
+ * Each is computed from its own wall-clock reading rather than by adding an
+ * hour to the last, for the reason `dayBoundsOf` and `monthBoundsOf` both give
+ * about their own boundaries: a day that is not 1440 minutes long stays correct
+ * if this market ever restores daylight saving (`docs/tech-debt.md` T28). The
+ * final edge is the next day's midnight, so the last bucket closes exactly
+ * where `dayBoundsOf` closes.
+ */
+export function hourEdgesOf(date: LocalDate): readonly Date[] {
+  const edges: Date[] = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    edges.push(localToInstant({ ...date, minuteOfDay: hour * 60 }));
+  }
+  edges.push(localToInstant({ ...addDays(date, 1), minuteOfDay: 0 }));
+  return edges;
+}
+
+/**
+ * The instants bounding each local day of a half-open range of days, inclusive
+ * of the closing boundary: `n` days yields `n + 1` edges.
+ *
+ * The edges of the income chart's axis when the owner asks for a week or a
+ * month. It walks calendar days rather than adding 24-hour spans, so a month
+ * contributes exactly as many buckets as it has days — 28 in February, 31 in
+ * August — and no arithmetic here would need revisiting if a day stopped being
+ * 1440 minutes long.
+ *
+ * `last` is the final day **included** in the range; the returned array closes
+ * on the midnight after it.
+ */
+export function dayEdgesBetween(first: LocalDate, last: LocalDate): readonly Date[] {
+  const edges: Date[] = [];
+  const closing = localToInstant({ ...addDays(last, 1), minuteOfDay: 0 }).getTime();
+
+  for (let cursor = first; ; cursor = addDays(cursor, 1)) {
+    const edge = localToInstant({ ...cursor, minuteOfDay: 0 });
+    if (edge.getTime() >= closing) break;
+    edges.push(edge);
+  }
+
+  edges.push(new Date(closing));
+  return edges;
+}
