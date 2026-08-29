@@ -18,9 +18,16 @@ import { COPY } from '@/lib/copy';
  * wrong ("No hubo turnos **en hoy**"). A rule that keeps the strings in one
  * place is what makes the next such error a one-file fix.
  */
-const SOURCES = ['./page.tsx', './RangeNav.tsx', './loading.tsx'].map((file) =>
-  readFileSync(new URL(file, import.meta.url), 'utf8')
-);
+const SOURCES = [
+  './page.tsx',
+  './RangeNav.tsx',
+  './loading.tsx',
+  // D7's two components. `RankingChart` takes its headings as props so both
+  // rankings can share it, which means the scan's real target there is that it
+  // never grows a sentence of its own; `HourlyChart` reaches `COPY` directly.
+  './RankingChart.tsx',
+  './HourlyChart.tsx',
+].map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'));
 
 const ALL = SOURCES.join('\n');
 
@@ -48,6 +55,26 @@ const FIXED_COPY: readonly string[] = [
   COPY.statistics.emptyShopLink,
   COPY.statistics.loadFailed,
   COPY.statistics.loadFailedHelp,
+  // D7
+  COPY.statistics.servicesChartHeading,
+  COPY.statistics.servicesChartHelp,
+  COPY.statistics.servicesChartTableCaption,
+  COPY.statistics.servicesChartNameColumn,
+  COPY.statistics.barbersChartHeading,
+  COPY.statistics.barbersChartHelp,
+  COPY.statistics.barbersChartTableCaption,
+  COPY.statistics.barbersChartNameColumn,
+  COPY.statistics.rankingCountColumn,
+  COPY.statistics.rankingShareColumn,
+  COPY.statistics.rankingOthers,
+  COPY.statistics.hoursChartHeading,
+  COPY.statistics.hoursChartHelp,
+  COPY.statistics.hoursChartHelpSingleDay,
+  COPY.statistics.hoursChartTableCaption,
+  COPY.statistics.hoursChartHourColumn,
+  COPY.statistics.hoursChartCountColumn,
+  COPY.statistics.breakdownsFailed,
+  COPY.statistics.breakdownsFailedHelp,
   ...Object.values(COPY.statistics.ranges),
   ...Object.values(COPY.statistics.rangesInPhrase),
 ];

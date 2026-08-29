@@ -1495,6 +1495,84 @@ export const COPY = {
     cashCollected: 'Dinero cobrado',
     cashCollectedHelp:
       'Señas aprobadas durante el período, sin importar cuándo es el turno. Puede no coincidir con "Señas cobradas": esa cuenta los turnos del período, esta cuenta el dinero que entró.',
+
+    // -----------------------------------------------------------------------
+    // D7 — the two rankings and the hour-of-day distribution
+    // -----------------------------------------------------------------------
+
+    servicesChartHeading: 'Servicios más pedidos',
+    /**
+     * The basis, and the one thing an owner would otherwise get wrong: this is
+     * demand, not revenue. A busy service can be the cheapest one.
+     */
+    servicesChartHelp:
+      'Turnos confirmados de cada servicio en este período. Cuenta turnos, no plata.',
+    servicesChartLabel: (phrase: string) =>
+      `Gráfico de barras: servicios más pedidos ${phrase}.`,
+    servicesChartTableCaption: 'Turnos por servicio',
+    servicesChartNameColumn: 'Servicio',
+    /**
+     * A single service is stated rather than drawn: a ranking of one is not a
+     * ranking, and a barra al 100 % no dice nada. It is the treatment the
+     * payment-method split already gets when only one rail was used.
+     */
+    servicesChartSingle: (name: string, count: number) =>
+      count === 1
+        ? `Todos los turnos de este período fueron de ${name}: 1 turno.`
+        : `Todos los turnos de este período fueron de ${name}: ${count} turnos.`,
+
+    barbersChartHeading: 'Barberos con más turnos',
+    barbersChartHelp: 'Turnos confirmados que atendió cada barbero en este período.',
+    barbersChartLabel: (phrase: string) =>
+      `Gráfico de barras: barberos con más turnos ${phrase}.`,
+    barbersChartTableCaption: 'Turnos por barbero',
+    barbersChartNameColumn: 'Barbero',
+    barbersChartSingle: (name: string, count: number) =>
+      count === 1
+        ? `Todos los turnos de este período los atendió ${name}: 1 turno.`
+        : `Todos los turnos de este período los atendió ${name}: ${count} turnos.`,
+
+    /**
+     * The count column both rankings share, and the aggregated row's name.
+     *
+     * The aggregate carries no service or barber name because it is not one of
+     * them; it appears in the table and is never drawn as a bar, since a bar
+     * whose height aggregates unlike things invites being read as one thing.
+     */
+    rankingCountColumn: 'Turnos',
+    rankingShareColumn: 'Porcentaje',
+    rankingOthers: 'Otros',
+    rankingOthersHelp: (count: number) =>
+      count === 1 ? 'Otro servicio o barbero más.' : `Otros ${count} sin desglosar.`,
+
+    hoursChartHeading: 'Turnos por hora del día',
+    hoursChartHelp:
+      'A qué hora arrancan los turnos confirmados del período, sumando todos sus días.',
+    /**
+     * A single day is one day's forma, not a tendencia — and the copy says
+     * which period it is so the reading stays honest at every rango.
+     */
+    hoursChartHelpSingleDay:
+      'A qué hora arrancaron los turnos confirmados de este día. Es un solo día: sirve para mirarlo, no para sacar conclusiones.',
+    hoursChartLabel: (phrase: string) =>
+      `Gráfico de barras: turnos por hora del día ${phrase}.`,
+    hoursChartTableCaption: 'Turnos por hora',
+    hoursChartHourColumn: 'Hora',
+    hoursChartCountColumn: 'Turnos',
+    /** The hour as it is labelled on the axis and in the table: `14 h`. */
+    hoursChartHourLabel: (hour: number) => `${String(hour).padStart(2, '0')} h`,
+
+    /**
+     * The third failure state, and it is deliberately narrower than D6's.
+     *
+     * It says nothing about the figures or the charts, because whatever renders
+     * it cannot know they succeeded — and copy that reassures an owner their
+     * other numbers are current, printed beneath a card apologising for those
+     * numbers, is the defect D6's adversarial pass found. The page decides when
+     * this is shown at all.
+     */
+    breakdownsFailed: 'No pudimos cargar el desglose por servicio, barbero y horario.',
+    breakdownsFailedHelp: 'Actualizá la página para volver a intentarlo.',
   },
   auth: {
     heading: 'Iniciar sesión',

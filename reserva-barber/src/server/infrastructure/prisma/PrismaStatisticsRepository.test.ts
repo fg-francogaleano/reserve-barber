@@ -372,3 +372,170 @@ describe('PrismaStatisticsRepository - the chart read', () => {
     expect(raw.$transaction).not.toHaveBeenCalled();
   });
 });
+
+function createBreakdownsDb(rows: Record<string, unknown>[]) {
+  const db = {
+    $queryRaw: vi.fn().mockResolvedValue(rows),
+    $transaction: vi.fn(),
+  };
+  return { db: db as unknown as PrismaClient, raw: db };
+}
+
+async function readBreakdowns(rows: Record<string, unknown>[]) {
+  const { db, raw } = createBreakdownsDb(rows);
+  const result = await new PrismaStatisticsRepository(db).readBreakdowns({
+    ownerId: OWNER,
+    range: RANGE,
+    edges: EDGES,
+  });
+  return { result, raw };
+}
+
+function breakdownSql(raw: { $queryRaw: ReturnType<typeof vi.fn> }): string {
+  return (raw.$queryRaw.mock.calls[0][0] as string[]).join('?');
+}
+
+describe('PrismaStatisticsRepository - the breakdown read', () => {
+  it('reads all three breakdowns in one statement', async () => {
+    // Three statements answer from three instants, and three groupings that
+    // cannot be added up against each other are worse than one.
+    const { raw } = await readBreakdowns([]);
+
+    expect(raw.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('groups one shared row set three ways', async () => {
+    const sql = breakdownSql((await readBreakdowns([])).raw);
+
+    expect(sql).toMatch(/WITH\s+confirmed\s+AS/i);
+    expect((sql.match(/UNION ALL/gi) ?? []).length).toBe(2);
+    expect((sql.match(/GROUP BY/gi) ?? []).length).toBe(3);
+  });
+
+  it('scopes every branch to the owner in its own right', async () => {
+    // A union's branches are separate statements sharing a projection, so each
+    // is its own opportunity to lose the tenancy join. There is no RLS on these
+    // tables: the join is the entire boundary.
+    const { raw } = await readBreakdowns([]);
+    const sql = breakdownSql(raw);
+
+    // The shared row set plus one per branch.
+    expect((sql.match(/"ownerId"\s*=/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    expect(raw.$queryRaw.mock.calls[0].slice(1).filter((value) => value === OWNER).length).toBe(4);
+    expect(raw.$queryRaw.mock.calls[0].slice(1)).not.toContain(OTHER_OWNER);
+  });
+
+  it('reaches the owner through the booking barber and never through the service', async () => {
+    // `Service.ownerId` is a real column and agrees today. A second path to the
+    // owner is one edit away from being a second answer to a question that must
+    // only ever have one.
+    const sql = breakdownSql((await readBreakdowns([])).raw);
+
+    expect(sql).not.toMatch(/s\."ownerId"/);
+    expect(sql).toMatch(/JOIN "Barber"/);
+    expect(sql).toMatch(/JOIN "Location"/);
+  });
+
+  it('never lets a payment row into the counted row set', async () => {
+    // A booking carries any number of REJECTED attempts on purpose, so a join
+    // here multiplies it once per declined card and inflates both its service
+    // and its barber — and the totals still look like a busy month.
+    const sql = breakdownSql((await readBreakdowns([])).raw);
+
+    expect(sql).not.toContain('"Payment"');
+  });
+
+  it('counts confirmations and never an expiry or a cancellation', async () => {
+    const sql = breakdownSql((await readBreakdowns([])).raw);
+
+    expect(sql).toContain("b.status = 'CONFIRMED'");
+    expect(sql).not.toContain('EXPIRED');
+    expect(sql).not.toContain('CANCELLED');
+  });
+
+  it('bounds the row set on the appointment start and half-openly', async () => {
+    const { raw } = await readBreakdowns([]);
+    const sql = breakdownSql(raw);
+
+    expect(sql).toContain('b."startTime" >=');
+    expect(sql).toContain('b."startTime" <');
+    expect(raw.$queryRaw.mock.calls[0].slice(1)).toContain(RANGE.start);
+    expect(raw.$queryRaw.mock.calls[0].slice(1)).toContain(RANGE.end);
+  });
+
+  it('passes the hour edges as values rather than computing an hour', async () => {
+    // Rule 15. `extract(hour …)` and `date_trunc` resolve in the session's
+    // timezone — UTC on Supavisor and workerd — so every appointment from 21:00
+    // local onward would be counted in the following day's hours.
+    const { raw } = await readBreakdowns([]);
+    const sql = breakdownSql(raw);
+
+    expect(sql).toContain('width_bucket');
+    expect(raw.$queryRaw.mock.calls[0].slice(1)).toContainEqual(
+      EDGES.map((edge) => edge.getTime() / 1000)
+    );
+    expect(sql).not.toMatch(/date_trunc/i);
+    expect(sql).not.toMatch(/extract\s*\(\s*hour/i);
+    expect(sql).not.toMatch(/at time zone/i);
+    expect(sql).not.toMatch(/America\//i);
+    expect(sql).not.toMatch(/\bnow\s*\(/i);
+    expect(sql).not.toMatch(/current_(date|timestamp)/i);
+  });
+
+  it('neither orders, caps nor folds in the statement', async () => {
+    // Rule 16. A LIMIT discards the rows past the cap, and a discarded
+    // remainder is invisible: the ranking simply stops summing to the figure
+    // above it.
+    const sql = breakdownSql((await readBreakdowns([])).raw);
+
+    expect(sql).not.toMatch(/\bLIMIT\b/i);
+    expect(sql).not.toMatch(/\bORDER BY\b/i);
+  });
+
+  it('issues the read outside any transaction', async () => {
+    const { raw } = await readBreakdowns([]);
+
+    expect(raw.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('narrows the driver wide integers at this boundary', async () => {
+    // A bigint reaching a React prop is `TypeError: Do not know how to
+    // serialize a BigInt` at render — a blank page rather than a ranking.
+    const { result } = await readBreakdowns([
+      { kind: 'service', key: 'svc-1', label: 'Corte', sublabel: null, count: BigInt(4) },
+      { kind: 'barber', key: 'bar-1', label: 'Nico', sublabel: 'Centro', count: BigInt(3) },
+      { kind: 'hour', key: '14', label: '', sublabel: null, count: BigInt(2) },
+    ]);
+
+    expect(result.services[0]).toEqual({
+      key: 'svc-1',
+      label: 'Corte',
+      sublabel: null,
+      count: 4,
+    });
+    expect(result.barbers[0]?.sublabel).toBe('Centro');
+    expect(result.hours[0]).toEqual({ bucket: 14, count: 2 });
+    expect(Number.isInteger(result.hours[0]?.bucket)).toBe(true);
+  });
+
+  it('discriminates the three branches and mixes none of them', async () => {
+    const { result } = await readBreakdowns([
+      { kind: 'hour', key: '3', label: '', sublabel: null, count: BigInt(1) },
+      { kind: 'service', key: 'svc-1', label: 'Corte', sublabel: null, count: BigInt(4) },
+      { kind: 'service', key: 'svc-2', label: 'Barba', sublabel: null, count: BigInt(1) },
+      { kind: 'barber', key: 'bar-1', label: 'Nico', sublabel: 'Centro', count: BigInt(5) },
+    ]);
+
+    expect(result.services).toHaveLength(2);
+    expect(result.barbers).toHaveLength(1);
+    expect(result.hours).toHaveLength(1);
+  });
+
+  it('returns three empty breakdowns for a period with no appointments', async () => {
+    // An empty period is an answer and renders as one. There is no row of zeros
+    // to guard for here: every branch is grouped, so an empty period is no rows.
+    const { result } = await readBreakdowns([]);
+
+    expect(result).toEqual({ services: [], barbers: [], hours: [] });
+  });
+});

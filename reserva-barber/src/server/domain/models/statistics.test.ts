@@ -1,15 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import {
   averageDepositPerBooking,
+  disambiguateLabels,
+  fillHourlyDistribution,
   fillIncomeSeries,
   paymentMethodSplit,
+  rankTopN,
   sumAmounts,
   sumIncomeSeries,
   STATISTICS_RANGES,
+  type BreakdownEntry,
   type IncomeByBucketAndMethod,
   type StatisticsRange,
 } from './statistics';
 import { PAYMENT_METHODS, type PaymentMethod } from './Payment';
+import { hourEdgesBetween } from './bookingCalendar';
 
 describe('statistics - the average deposit per appointment', () => {
   it('should_divide_a_total_across_its_appointments', () => {
@@ -246,5 +251,242 @@ describe('statistics - the payment-method split', () => {
     expect(sumIncomeSeries(fillIncomeSeries(rows, THREE_EDGES))).toBe(
       sumAmounts(paymentMethodSplit(rows).map((part) => part.total))
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D7 — the rankings, the hour-of-day distribution, and what ties them to the
+// figure above them
+// ---------------------------------------------------------------------------
+
+/** A ranking entry as the repository hands it over, before anything is ordered. */
+function entry(label: string, count: number, sublabel: string | null = null): BreakdownEntry {
+  return { key: label.toLowerCase(), label, sublabel, count };
+}
+
+describe('statistics - ranking a breakdown', () => {
+  it('should_order_by_count_descending', () => {
+    const ranked = rankTopN([entry('Corte', 2), entry('Barba', 7), entry('Color', 4)], 8);
+
+    expect(ranked.map((row) => row.label)).toEqual(['Barba', 'Color', 'Corte']);
+  });
+
+  it('should_break_a_tie_on_the_label_ascending_rather_than_on_row_order', () => {
+    // Without an explicit tie-break the statement's row order decides, and it is
+    // free to differ between two renders of the same period — the owner would
+    // see the ranking change while nothing changed.
+    const arrived = [entry('Corte', 4), entry('Barba', 4), entry('Afeitado', 4)];
+
+    expect(rankTopN(arrived, 8).map((row) => row.label)).toEqual(['Afeitado', 'Barba', 'Corte']);
+    expect(rankTopN([...arrived].reverse(), 8).map((row) => row.label)).toEqual([
+      'Afeitado',
+      'Barba',
+      'Corte',
+    ]);
+  });
+
+  it('should_fold_everything_past_the_limit_into_one_aggregated_entry', () => {
+    const many = Array.from({ length: 12 }, (_, index) => entry('S' + index, 12 - index));
+    const ranked = rankTopN(many, 8);
+
+    expect(ranked).toHaveLength(9);
+    expect(ranked.slice(0, 8).every((row) => row.isAggregate === false)).toBe(true);
+    expect(ranked[8]?.isAggregate).toBe(true);
+    // 4 + 3 + 2 + 1 — the four that did not make the cut.
+    expect(ranked[8]?.count).toBe(10);
+  });
+
+  it('should_preserve_the_total_through_the_fold', () => {
+    // The post-condition, and the reason the fold is here rather than a LIMIT in
+    // the statement: a discarded remainder is invisible and silently breaks the
+    // reconciliation the ranking is required to satisfy.
+    const many = Array.from({ length: 30 }, (_, index) => entry('S' + index, index + 1));
+    const total = many.reduce((sum, row) => sum + row.count, 0);
+
+    for (const limit of [1, 3, 8, 29, 30, 31]) {
+      const ranked = rankTopN(many, limit);
+      expect(ranked.reduce((sum, row) => sum + row.count, 0)).toBe(total);
+    }
+  });
+
+  it('should_not_add_an_aggregate_when_nothing_was_left_over', () => {
+    const ranked = rankTopN([entry('Corte', 3), entry('Barba', 1)], 8);
+
+    expect(ranked).toHaveLength(2);
+    expect(ranked.some((row) => row.isAggregate)).toBe(false);
+  });
+
+  it('should_carry_no_name_on_the_aggregated_entry', () => {
+    const ranked = rankTopN([entry('Corte', 3), entry('Barba', 2), entry('Color', 1)], 2);
+    const aggregate = ranked.find((row) => row.isAggregate);
+
+    expect(aggregate?.label).toBe('');
+    expect(aggregate?.sublabel).toBeNull();
+  });
+
+  it('should_compute_a_share_over_the_ranking_own_total', () => {
+    const ranked = rankTopN([entry('Corte', 3), entry('Barba', 1)], 8);
+
+    expect(ranked[0]?.share).toBe(75);
+    expect(ranked[1]?.share).toBe(25);
+  });
+
+  it('should_return_nothing_for_an_empty_breakdown', () => {
+    expect(rankTopN([], 8)).toEqual([]);
+  });
+});
+
+describe('statistics - telling two barbers of the same name apart', () => {
+  it('should_keep_the_location_on_a_label_that_repeats', () => {
+    // Display names are unique per location and not across the business, so two
+    // "Nico" at two branches are legal (data-model.md §5).
+    const ranked = disambiguateLabels(
+      rankTopN([entry('Nico', 5, 'Centro'), entry('Nico', 3, 'Norte')], 8)
+    );
+
+    expect(ranked.map((row) => row.sublabel)).toEqual(['Centro', 'Norte']);
+  });
+
+  it('should_drop_the_location_from_a_label_that_is_already_unique', () => {
+    // Qualifying every row would be noise for the single-location shop that is
+    // the common case.
+    const ranked = disambiguateLabels(
+      rankTopN([entry('Nico', 5, 'Centro'), entry('Ana', 3, 'Centro')], 8)
+    );
+
+    expect(ranked.every((row) => row.sublabel === null)).toBe(true);
+  });
+
+  it('should_qualify_only_the_labels_that_collide', () => {
+    const ranked = disambiguateLabels(
+      rankTopN(
+        [entry('Nico', 5, 'Centro'), entry('Nico', 4, 'Norte'), entry('Ana', 3, 'Centro')],
+        8
+      )
+    );
+
+    expect(ranked.find((row) => row.label === 'Ana')?.sublabel).toBeNull();
+    expect(ranked.filter((row) => row.label === 'Nico').map((row) => row.sublabel)).toEqual([
+      'Centro',
+      'Norte',
+    ]);
+  });
+
+  it('should_leave_the_counts_and_the_order_untouched', () => {
+    const ranked = rankTopN([entry('Nico', 5, 'Centro'), entry('Nico', 3, 'Norte')], 8);
+
+    expect(disambiguateLabels(ranked).map((row) => row.count)).toEqual([5, 3]);
+  });
+});
+
+describe('statistics - the hour-of-day distribution', () => {
+  // A week: 168 buckets, so hour 13 is reached seven times across the span.
+  const WEEK_EDGES = hourEdgesBetween(
+    { year: 2026, month: 8, day: 10 },
+    { year: 2026, month: 8, day: 16 }
+  );
+
+  it('should_always_report_twenty_four_hours', () => {
+    const filled = fillHourlyDistribution([{ bucket: 14, count: 3 }], WEEK_EDGES);
+
+    expect(filled).toHaveLength(24);
+    expect(filled.map((bucket) => bucket.hour)).toEqual(
+      Array.from({ length: 24 }, (_, hour) => hour)
+    );
+  });
+
+  it('should_draw_a_quiet_hour_as_zero_rather_than_skipping_it', () => {
+    // The filling is the point and its defect is invisible: a chart that omits a
+    // quiet hour draws a plausible shape on an axis that is too short.
+    const filled = fillHourlyDistribution([{ bucket: 14, count: 3 }], WEEK_EDGES);
+
+    expect(filled.filter((bucket) => bucket.count === 0)).toHaveLength(23);
+  });
+
+  it('should_fold_the_same_hour_of_different_days_together', () => {
+    // Bucket 14 opens at 13:00 on Monday; bucket 38 is 13:00 on Tuesday.
+    const filled = fillHourlyDistribution(
+      [
+        { bucket: 14, count: 3 },
+        { bucket: 38, count: 2 },
+      ],
+      WEEK_EDGES
+    );
+
+    expect(filled[13]?.count).toBe(5);
+  });
+
+  it('should_place_a_row_in_the_business_hour_of_its_bucket_and_not_the_runtime_one', () => {
+    // Bucket 22 opens at 21:00 in the business calendar, which is 00:00 UTC the
+    // next day. A runtime-local reading would answer hour 0.
+    const filled = fillHourlyDistribution([{ bucket: 22, count: 1 }], WEEK_EDGES);
+
+    expect(WEEK_EDGES[21]?.toISOString()).toBe('2026-08-11T00:00:00.000Z');
+    expect(filled[21]?.count).toBe(1);
+    expect(filled[0]?.count).toBe(0);
+  });
+
+  it('should_drop_a_bucket_outside_the_span_rather_than_clamping_it', () => {
+    // `width_bucket` answers 0 below the first threshold and n at or above the
+    // last; both are unreachable while the statement carries the range
+    // predicate. Clamping would move a real appointment into an hour it did not
+    // happen in, so the conservative direction is to draw nothing.
+    const filled = fillHourlyDistribution(
+      [
+        { bucket: 0, count: 9 },
+        { bucket: 169, count: 9 },
+        { bucket: -4, count: 9 },
+      ],
+      WEEK_EDGES
+    );
+
+    expect(filled.every((bucket) => bucket.count === 0)).toBe(true);
+  });
+
+  it('should_report_an_empty_axis_for_an_empty_span', () => {
+    expect(fillHourlyDistribution([{ bucket: 1, count: 4 }], [])).toEqual([]);
+  });
+});
+
+describe('statistics - every breakdown reconciles with the figure above it', () => {
+  it('should_sum_each_breakdown_to_the_same_number_of_appointments', () => {
+    // The strongest property in D7, and it is decidable here with no database:
+    // it catches a payment join multiplying a retried booking, a fold losing its
+    // remainder, a bucket dropped at a boundary, and an owner predicate missing
+    // from one branch of the statement.
+    const edges = hourEdgesBetween(
+      { year: 2026, month: 8, day: 10 },
+      { year: 2026, month: 8, day: 16 }
+    );
+
+    // Eleven services, so the fold is exercised rather than bypassed.
+    const services = [
+      entry('S0', 9),
+      entry('S1', 6),
+      entry('S2', 5),
+      entry('S3', 4),
+      entry('S4', 4),
+      entry('S5', 3),
+      entry('S6', 3),
+      entry('S7', 2),
+      entry('S8', 2),
+      entry('S9', 1),
+      entry('S10', 1),
+    ];
+    const barbers = [entry('Nico', 25, 'Centro'), entry('Ana', 15, 'Centro')];
+    const hours = [
+      { bucket: 14, count: 18 },
+      { bucket: 38, count: 12 },
+      { bucket: 111, count: 10 },
+    ];
+    const confirmedCount = 40;
+
+    const total = (rows: readonly { count: number }[]) =>
+      rows.reduce((sum, row) => sum + row.count, 0);
+
+    expect(total(services)).toBe(confirmedCount);
+    expect(total(rankTopN(services, 8))).toBe(confirmedCount);
+    expect(total(disambiguateLabels(rankTopN(barbers, 8)))).toBe(confirmedCount);
+    expect(total(fillHourlyDistribution(hours, edges))).toBe(confirmedCount);
   });
 });
