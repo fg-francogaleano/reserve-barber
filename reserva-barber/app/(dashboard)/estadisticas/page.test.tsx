@@ -331,12 +331,15 @@ describe('StatisticsPage - the cancellation breakdown', () => {
 
 describe('StatisticsPage - three states that must not look alike', () => {
   it('should_report_a_failed_read_as_a_failure_and_never_as_zeros', async () => {
-    // **Both datasets fail here, and that is the change D6 made to this test.**
-    // Before the charts existed, "the read failed" was one state; now there are
-    // two independent reads and this is the case where neither answered — the
-    // one the page's own try/catch produces. The partial cases are asserted
-    // separately below, because they are the ones that are new.
-    loadPage.mockResolvedValue(view({ statistics: { ok: false }, charts: { ok: false } }));
+    // **All three datasets fail here**, which is the state the page's own
+    // try/catch produces and the only one that matches this test's name. D6
+    // widened it from one read to two; D7 widens it to three, and leaving the
+    // third populated would have made the assertions below measure a page that
+    // had in fact loaded something. The partial cases are asserted separately,
+    // because they are the ones that are new.
+    loadPage.mockResolvedValue(
+      view({ statistics: { ok: false }, charts: { ok: false }, breakdowns: { ok: false } })
+    );
     await renderPage();
 
     expect(screen.getByText(COPY.statistics.loadFailed)).toBeInTheDocument();
@@ -1065,6 +1068,36 @@ describe('StatisticsPage - when the breakdowns are not three sections (D7)', () 
 
     expect(screen.getByText(COPY.statistics.emptyShop)).toBeInTheDocument();
     expect(screen.queryByText(COPY.statistics.hoursChartHeading)).not.toBeInTheDocument();
+  });
+
+  it('should_draw_nothing_when_the_breakdowns_are_empty_and_the_figures_say_otherwise', async () => {
+    // Found by D7's adversarial pass. The two reads are independent by design
+    // and can disagree, and `fillHourlyDistribution` answers an empty grouping
+    // with twenty-four honest zeros — rendered beneath a figure reporting four
+    // appointments, that is a chart stating none of them started at any hour.
+    loadPage.mockResolvedValue(
+      view({
+        statistics: { ok: true, value: figures({ confirmedCount: 4 }) },
+        breakdowns: { ok: true, value: { services: [], barbers: [], hours: [] } },
+      })
+    );
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.confirmedCount)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.hoursChartHeading)).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.statistics.breakdownsFailed)).not.toBeInTheDocument();
+  });
+
+  it('should_still_render_the_breakdowns_when_only_the_figures_failed', async () => {
+    // Independent failure is the feature, and a ranking that loaded is not made
+    // false by a figure that did not.
+    loadPage.mockResolvedValue(view({ statistics: { ok: false } }));
+
+    await renderPage();
+
+    expect(screen.getByText(COPY.statistics.loadFailed)).toBeInTheDocument();
+    expect(screen.getByText(COPY.statistics.hoursChartHeading)).toBeInTheDocument();
   });
 
   it('should_report_no_failure_for_the_breakdowns_when_the_period_was_empty', async () => {

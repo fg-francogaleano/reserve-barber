@@ -3415,6 +3415,47 @@ Three things worth recording while it is fresh:
 - **Trigger (D6's half):** the same few-thousand-row mark, measured on `Payment` rather than on
   `Booking`. Re-run the `EXPLAIN` in `scripts/d6-gate.ts` §9 rather than assuming which fix applies.
 
+**D7 measured, and added no index — the first of these statements that wants nothing (2026-08-29).**
+The breakdown read is a fourth shape: one CTE over `Booking`, three `HashAggregate` branches above
+it. Captured over the **pooler**, T68 absent again — the fifth independent confirmation that the
+fault is intermittent.
+
+```
+Append  (actual time=0.185..0.242 rows=29)   Buffers: shared hit=31
+  CTE confirmed
+    ->  Nested Loop  (actual time=0.081..0.158 rows=19)
+          ->  Hash Join (Barber ⋈ Location, ownerId)      Seq Scan on "Barber"  rows=8
+          ->  Index Scan using "Booking_barberId_startTime_idx" on "Booking" b
+                Index Cond: ("barberId" = br.id AND "startTime" >= … AND "startTime" < …)
+                Filter: (status = 'CONFIRMED')            Rows Removed by Filter: 1
+          ->  Seq Scan on "Service" s   rows=6, loops=19
+  ->  HashAggregate  Group Key: c."serviceId", c."serviceName"        rows=12
+  ->  HashAggregate  Group Key: c."barberId", c."barberName", …       rows=2
+  ->  HashAggregate  Group Key: width_bucket(… '{…745 edges…}')       rows=15
+Planning Time: 0.488 ms   Execution Time: 0.341 ms
+```
+
+- **The range reaches the index**, `Index Cond` carrying `barberId` *and* `startTime`, for the same
+  reason D6's does: nothing in this statement is unbounded. Three statements now push the range down
+  and only D5's outer query does not, which makes the all-time-flag fix this entry proposes look
+  better every time somebody measures.
+- **The CTE is scanned three times and that is the design**, not an oversight: it is scanned once per
+  branch, 19 rows each, from a materialised result that was built once. Three separate statements
+  would have joined `Booking` three times instead — and, more importantly, from three instants.
+- **The `Seq Scan on "Service"` runs 19 times** (once per confirmed booking) and is correct at six
+  rows. It is the one line here that will not stay correct, and unlike D6's `Payment` scan the fix is
+  free when it bites: `Service` is small, per-owner, and already indexed on `(ownerId, isActive)` —
+  the planner will switch to it on its own once the table earns it.
+- **The 745-element `float8[]` is inlined into the `Group Key` in full** and costs nothing
+  measurable. It travels as **8196 bytes** on the wire for a month-sized range, measured in
+  `scripts/d7-gate.ts` §8: 43 ms end to end, no hang. That is design open question 1 of the D7 change
+  answered — the domain-computed edges array stays, and the cheaper anchor arithmetic it recorded as
+  a fallback is not needed.
+
+- **Trigger (D7's half):** the same few-thousand-row mark. Re-run `scripts/d7-gate.ts` §9. The line to
+  watch is the `Service` scan, and the fix is to let the planner find the existing index rather than
+  to add one.
+
 ### T82 — Money the owner owes back is now invisible on every surface that reports money
 
 **Status:** open — **created by making the rest of the reporting correct** · **Effort:** ~3 h (a
@@ -3499,3 +3540,45 @@ silently moved onto the other's column, and the probe fails rather than the owne
 - **Trigger:** none — closed. The residual risk is not a defect but a support question: an owner
   comparing the two cards and asking which is right. The answer is both, and the copy says so. If that
   question is asked anyway, the fix is the wording, not the arithmetic.
+
+---
+
+### T84 — The copy module is shipped whole to the client, so a Server Component's Spanish costs client bytes
+
+**Status:** open — **measured, and cheap to ignore until it is not** · **Effort:** ~1–2 h (split the
+module per surface, or move the dashboard's copy behind a server-only boundary) · **Added:** D7
+(2026-08-29)
+
+`src/lib/copy.ts` is one module holding every user-facing string in the product. Some client
+components import `COPY`, so the bundler pulls the **whole module** into a client chunk — including
+the strings only Server Components ever read.
+
+Measured on D7, which adds twenty-odd strings and **no client code whatsoever**: every component it
+introduces is a Server Component, and the client bundle still grew.
+
+```
+main                       231.14 KiB gzip   (find .next/static -name '*.js' | gzip)
+feat/d7-advanced-statistics 232.03 KiB gzip
+delta                        0.89 KiB gzip
+```
+
+The delta is the copy block and nothing else. Confirmed directly: a scan of `.next/static` for
+`"Servicios más pedidos"` and `"Turnos por hora del día"` finds them in
+`chunks/1bsfcvgbv4c3y.js` — a **client** chunk, for two headings that only ever render on the
+server. The control is D6's `"Evolución de ingresos"`, which is in the same chunk for the same
+reason, so this is not new with D7; D7 is just the first story that measured it.
+
+**Why it is not urgent.** 0.89 KiB gzip for a whole story is small, the module is text that
+compresses well, and the strings are needed by *some* surface. The cost is linear in the product's
+total copy, not in any one page's.
+
+**Why it is worth an entry anyway.** It quietly inverts an argument this codebase makes often. D6
+refused Recharts partly on bundle size and moved every `Intl` call to the server; D7 drew five
+server-rendered SVGs specifically so nothing would hydrate. Both stories are then charged for their
+copy on the client regardless. Worse, the dashboard's copy — which no unauthenticated visitor can
+ever see rendered — is served to every visitor of the **public booking flow**, which is the surface
+that actually competes for bytes.
+
+- **Trigger:** the copy module passing ~2000 lines, or a public-flow performance budget. The fix is
+  a split (`copy.public.ts` / `copy.dashboard.ts`) rather than a per-string change, and the
+  `copyIsNotInline` scans would follow the split.

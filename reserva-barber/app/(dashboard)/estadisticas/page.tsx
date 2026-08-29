@@ -150,16 +150,18 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
  * banned strings rather than quoting them.)
  */
 function Breakdowns({ view }: { view: StatisticsView }) {
-  // Checked before the failure state: a period with nothing confirmed in it has
-  // no breakdown worth reporting a failure for. When the figures themselves
-  // failed there is no way to know whether this period had anything, and the
-  // section stays silent rather than guessing.
-  if (!view.statistics.ok) return null;
-
-  const figures = view.statistics.value;
-  if (!figures.hasAnyBookingEver || !hasConfirmedActivity(figures)) return null;
-
   if (!view.breakdowns.ok) {
+    // **Whether to report this failure is the figures' question, not this
+    // section's.** A period with nothing confirmed in it has no breakdown worth
+    // apologising for; and when the figures failed too there is no way to know
+    // whether this period had anything, so the section stays silent rather than
+    // guessing — the D6 finding about copy that describes a state nothing
+    // checked.
+    if (!view.statistics.ok) return null;
+
+    const figures = view.statistics.value;
+    if (!figures.hasAnyBookingEver || !hasConfirmedActivity(figures)) return null;
+
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
@@ -171,6 +173,36 @@ function Breakdowns({ view }: { view: StatisticsView }) {
   }
 
   const { services, barbers, hours } = view.breakdowns.value;
+
+  // **Both reads have to agree that this period had something in it**, and
+  // D7's adversarial pass is what added the second half of the condition.
+  //
+  // The figures were the original gate, and they cannot see one case: the
+  // breakdowns coming back **empty** while the figures report confirmed
+  // appointments. `fillHourlyDistribution` answers an empty grouping with
+  // twenty-four honest zeros, and rendered beneath a figure saying otherwise
+  // that is a chart stating no appointment started at any hour.
+  //
+  // The rows alone cannot see the opposite case: rows arriving for a period the
+  // figures call empty, or for a shop they say has never been booked.
+  //
+  // Neither disagreement is reachable while both reads are correct — they count
+  // one population over one period. They are reachable through the skew the
+  // independent reads accept, and through any future defect in either. **Every
+  // such disagreement resolves to silence**, because the one thing that must
+  // never happen on this page is two statements on one screen that cannot both
+  // be true. The figures above are unaffected and keep saying what they know.
+  //
+  // When the figures did not load at all, the rows are their own evidence: a
+  // ranking that loaded is not made false by a figure that did not, and
+  // independent failure is the feature.
+  const hasRows = services.length > 0 || barbers.length > 0 || hours.length > 0;
+  const figuresAgree = view.statistics.ok
+    ? view.statistics.value.hasAnyBookingEver && hasConfirmedActivity(view.statistics.value)
+    : true;
+
+  if (!hasRows || !figuresAgree) return null;
+
   const phrase = COPY.statistics.rangesInPhrase[view.range];
 
   // Ranking, capping and folding are the domain's, once, so the two rankings

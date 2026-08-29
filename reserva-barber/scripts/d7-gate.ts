@@ -219,9 +219,7 @@ async function main(): Promise<void> {
       });
     }
 
-    let serviceSeq = 0;
     async function makeService(ownerId: string, name: string): Promise<string> {
-      serviceSeq += 1;
       const created = await prisma.service.create({
         data: { ownerId, name, price: '10000.00', durationMinutes: 30 },
         select: { id: true },

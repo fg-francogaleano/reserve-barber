@@ -64,17 +64,17 @@
 
 ## 9. Runtime verification
 
-- [ ] 9.1 Run the page on Node with `TZ` set to a hostile zone; confirm every ranking row, count and hourly bucket is identical to the Argentine-clock run
-- [ ] 9.2 Run the page on `workerd`; confirm the same, byte for byte, authenticated, against real rows
-- [ ] 9.3 Confirm a late-evening appointment lands in its business hour on both runtimes — the discriminator D6 records as available at any hour
-- [ ] 9.4 Measure the page at a real 360 px viewport with the grid forced to one column; report horizontal overflow and overlapping labels as numbers
-- [ ] 9.5 Render the page with JavaScript disabled in a production build; confirm both rankings, the distribution and their text equivalents are in the served markup
-- [ ] 9.6 Measure the client bundle against `main` and report the delta
+- [x] 9.1 Run the page on Node with `TZ` set to a hostile zone; confirm every ranking row, count and hourly bucket is identical to the Argentine-clock run
+- [x] 9.2 Run the page on `workerd`; confirm the same, byte for byte, authenticated, against real rows
+- [x] 9.3 Confirm a late-evening appointment lands in its business hour on both runtimes — the discriminator D6 records as available at any hour
+- [x] 9.4 Measure the page at a real 360 px viewport with the grid forced to one column; report horizontal overflow and overlapping labels as numbers
+- [x] 9.5 Render the page with JavaScript disabled in a production build; confirm both rankings, the distribution and their text equivalents are in the served markup
+- [x] 9.6 Measure the client bundle against `main` and report the delta
 
 ## 10. Close-out
 
-- [ ] 10.1 `npm run lint`, `tsc --noEmit` and the full `vitest` suite green
-- [ ] 10.2 Run the adversarial pass **after** the story reads as done, looking specifically for copy that asserts a state nothing checked — the shape of both defects D6 found there
-- [ ] 10.3 Update `docs/roadmap.md`: tick D7 and record what implementation overturned, with measurements rather than claims
-- [ ] 10.4 Update `docs/tech-debt.md` with anything measured and deferred, and close or amend T81's entry according to 8.6
+- [x] 10.1 `npm run lint`, `tsc --noEmit` and the full `vitest` suite green
+- [x] 10.2 Run the adversarial pass **after** the story reads as done, looking specifically for copy that asserts a state nothing checked — the shape of both defects D6 found there
+- [x] 10.3 Update `docs/roadmap.md`: tick D7 and record what implementation overturned, with measurements rather than claims
+- [x] 10.4 Update `docs/tech-debt.md` with anything measured and deferred, and close or amend T81's entry according to 8.6
 - [ ] 10.5 Commit, open the PR, and run `/opsx:verify` before archiving

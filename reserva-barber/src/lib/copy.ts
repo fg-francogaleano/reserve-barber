@@ -1542,8 +1542,6 @@ export const COPY = {
     rankingCountColumn: 'Turnos',
     rankingShareColumn: 'Porcentaje',
     rankingOthers: 'Otros',
-    rankingOthersHelp: (count: number) =>
-      count === 1 ? 'Otro servicio o barbero más.' : `Otros ${count} sin desglosar.`,
 
     hoursChartHeading: 'Turnos por hora del día',
     hoursChartHelp:
