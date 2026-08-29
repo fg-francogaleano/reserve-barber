@@ -47,6 +47,17 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <Link href="/clientes" className="text-sm font-medium underline-offset-4 hover:underline">
             {COPY.clients.nav}
           </Link>
+          {/*
+            Next to the directory for the same reason it sits beside the
+            catalogue group: both are things the owner reads about their
+            business, not things they configure.
+          */}
+          <Link
+            href="/estadisticas"
+            className="text-sm font-medium underline-offset-4 hover:underline"
+          >
+            {COPY.statistics.nav}
+          </Link>
           <Link href="/perfil" className="text-sm font-medium underline-offset-4 hover:underline">
             {COPY.businessProfile.nav}
           </Link>

@@ -468,3 +468,43 @@ describe('decideGuardAction - the public cancellation write (C1)', () => {
     expect(PUBLIC_CANCELLATION_API).not.toMatch(/[:[\]{}*]/);
   });
 });
+
+/**
+ * D5's route, and the reason a page that needed **no** change here still gets a
+ * test.
+ *
+ * `decideGuardAction` is deny-by-default with exact public path matches, so
+ * `/estadisticas` became protected the moment the route existed — no entry was
+ * added to this file, and none should be. That is precisely why it is worth
+ * pinning: the property is invisible, nothing about the new page demonstrates
+ * it, and the failure mode is somebody later "simplifying" one of the exact
+ * matches into a prefix and opening every future route beneath it at once.
+ */
+describe('decideGuardAction - the statistics page (D5)', () => {
+  it('should_guard_the_statistics_page_without_an_entry_of_its_own', () => {
+    const action = decideGuardAction({ hasSession: false, pathname: '/estadisticas', search: '' });
+
+    expect(action).toEqual({ type: 'redirect', to: `${LOGIN_PATH}?next=%2Festadisticas` });
+  });
+
+  it('should_carry_the_selected_period_through_the_login_round_trip', () => {
+    // Without this an owner reading last month is silently returned to today
+    // with nothing to indicate the selection was dropped.
+    const action = decideGuardAction({
+      hasSession: false,
+      pathname: '/estadisticas',
+      search: '?rango=mes-anterior',
+    });
+
+    expect(action).toEqual({
+      type: 'redirect',
+      to: `${LOGIN_PATH}?next=%2Festadisticas%3Frango%3Dmes-anterior`,
+    });
+  });
+
+  it('should_let_an_authenticated_owner_through', () => {
+    const action = decideGuardAction({ hasSession: true, pathname: '/estadisticas', search: '' });
+
+    expect(action).toEqual({ type: 'continue' });
+  });
+});

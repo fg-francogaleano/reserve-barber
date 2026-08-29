@@ -1065,13 +1065,24 @@ export const COPY = {
     pendingReceipts: 'Comprobantes por revisar',
     monthIncome: 'Señas cobradas este mes',
     /**
-     * The qualifier, and it is not fine print. This product never records the
-     * balance the client pays in the chair, so an owner reading this figure as
-     * their month's takings would be reading a number that is wrong by the
-     * whole service price. Same rule the receipt queue follows: a surface must
-     * not imply a fact the system does not have.
+     * The qualifier, and it is not fine print. Two facts, and D5 added the
+     * second.
+     *
+     * **What it is:** this product never records the balance the client pays in
+     * the chair, so an owner reading this figure as their month's takings would
+     * be reading a number wrong by the whole service price. Same rule the
+     * receipt queue follows: a surface must not imply a fact the system does not
+     * have.
+     *
+     * **When it is:** this counter is bounded on `Payment.approvedAt` — money
+     * that *arrived* this month. The statistics page reports deposits belonging
+     * to a period's *appointments*, bounded on `Booking.startTime`. A deposit
+     * approved on 25 August for a 3 September appointment is in this month here
+     * and in next month there. Both are right, they will not agree, and before
+     * D5 there was nothing to disagree with — which is why the sentence grew.
      */
-    monthIncomeHelp: 'Solo las señas. No incluye lo que cada cliente paga en el local.',
+    monthIncomeHelp:
+      'Solo las señas aprobadas durante este mes. No incluye lo que cada cliente paga en el local.',
 
     /**
      * A read that failed. Deliberately not a zero and deliberately not an
@@ -1290,6 +1301,116 @@ export const COPY = {
     nextPage: 'Siguiente',
     pageStatus: (page: number, lastPage: number) => `Página ${page} de ${lastPage}`,
     totalStatus: (total: number) => (total === 1 ? '1 cliente' : `${total} clientes`),
+  },
+  statistics: {
+    nav: 'Estadísticas',
+    heading: 'Estadísticas',
+    intro: 'Cómo viene tu negocio en el período que elijas.',
+
+    /**
+     * The range control. The labels are the six the brief asks for, and the
+     * accessible name exists because a row of links with no heading is a list
+     * of destinations rather than a control.
+     */
+    rangeLabel: 'Período',
+    ranges: {
+      hoy: 'Hoy',
+      ayer: 'Ayer',
+      semana: 'Esta semana',
+      'semana-anterior': 'Semana pasada',
+      mes: 'Este mes',
+      'mes-anterior': 'Mes pasado',
+    } as const,
+    /**
+     * The same six periods as an adverbial phrase, for sentences that mention
+     * one rather than label it.
+     *
+     * **A second map rather than a preposition glued to the first**, and the
+     * runtime pass is what found the difference. Composing `en ${label}` reads
+     * correctly for two of the six and wrong for four: *"No hubo turnos **en
+     * hoy**"*, *"en ayer"*, *"en semana pasada"*, *"en mes pasado"*. Spanish
+     * takes no preposition before `hoy` and `ayer`, and needs the article
+     * before `semana pasada` and `mes pasado`.
+     *
+     * No test could have caught it — the assertions compare the composed string
+     * against itself, and both sides would have been equally wrong. It took
+     * looking at the page.
+     */
+    rangesInPhrase: {
+      hoy: 'hoy',
+      ayer: 'ayer',
+      semana: 'esta semana',
+      'semana-anterior': 'la semana pasada',
+      mes: 'este mes',
+      'mes-anterior': 'el mes pasado',
+    } as const,
+
+    confirmedCount: 'Turnos confirmados',
+    /**
+     * Never a count of bookings. A row count is a count of checkout attempts,
+     * and abandoned holds accumulate without bound relative to real business.
+     */
+    confirmedCountHelp: 'Turnos que llegaron a confirmarse en este período.',
+
+    depositTotal: 'Señas de estos turnos',
+    /**
+     * The basis sentence D-1 requires, and it carries both halves.
+     *
+     * **What it is:** deposits, not turnover — the same rule the dashboard
+     * home's card follows, for the same reason.
+     *
+     * **When it is:** these deposits belong to the *appointments* in this
+     * period, whenever the money actually arrived. The home's counter answers
+     * the opposite question. The two will not match, and an owner who cannot
+     * see why has been shown two numbers that look like one.
+     */
+    depositTotalHelp:
+      'Señas de los turnos de este período, sin importar cuándo se cobraron. No incluye lo que cada cliente paga en el local.',
+
+    cancelledCount: 'Cancelaciones',
+    /**
+     * `EXPIRED` is never counted here, and the copy says so rather than leaving
+     * an owner to wonder where the abandoned checkouts went.
+     */
+    cancelledCountHelp: 'No cuenta las reservas que vencieron sin pagar la seña.',
+    /**
+     * Shown only when non-zero. "Mis clientes cancelaron tres" and "yo les
+     * cancelé tres" are opposite facts about un negocio.
+     */
+    cancelledByOwner: (count: number) =>
+      count === 1 ? '1 la cancelaste vos' : `${count} las cancelaste vos`,
+    cancelledByClient: (count: number) =>
+      count === 1 ? '1 la canceló el cliente' : `${count} las cancelaron los clientes`,
+
+    averageDeposit: 'Seña promedio por turno',
+    averageDepositHelp: 'Las señas de este período divididas por sus turnos confirmados.',
+    /**
+     * The absent state, and it is not a zero. An average over no appointments
+     * is neither an answer nor a failure, and `$ 0,00` would state that turnos
+     * happened and no dejaron nada.
+     */
+    averageDepositAbsent: '—',
+    averageDepositAbsentHelp: 'Sin turnos confirmados en este período.',
+
+    uniqueClients: 'Clientes distintos',
+    uniqueClientsHelp: 'Alguien con varios turnos en el período cuenta una vez.',
+
+    /**
+     * Three states that must never share copy.
+     *
+     * The first is a quiet period in a working shop and points at a wider one.
+     * The second is a shop whose public link nobody has ever used and points at
+     * the link. The third is a read that failed and states nothing about the
+     * business at all.
+     */
+    emptyPeriod: (phrase: string) => `No hubo turnos ${phrase}.`,
+    emptyPeriodHint: 'Probá con un período más largo.',
+    emptyPeriodLink: 'Ver este mes',
+    emptyShop: 'Todavía no reservó nadie.',
+    emptyShopHint: 'Cuando alguien reserve desde tu enlace público, vas a ver los números acá.',
+    emptyShopLink: 'Ver mi perfil público',
+    loadFailed: 'No pudimos cargar tus estadísticas.',
+    loadFailedHelp: 'Volvé a intentar en unos segundos.',
   },
   auth: {
     heading: 'Iniciar sesión',

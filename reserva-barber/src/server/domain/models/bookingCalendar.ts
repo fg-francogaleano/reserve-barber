@@ -104,6 +104,55 @@ export function monthBoundsOf(date: LocalDate): Interval {
 }
 
 /**
+ * The half-open instant range covering a local **week**: `[Monday, next Monday)`.
+ *
+ * **The week begins on Monday, and that is a product decision rather than a
+ * library default** (design D7 of the D5 change). It is the es-AR convention,
+ * and it is written down here because the function that would have made it a
+ * Sunday — the runtime's own weekday reader — is banned in this feature anyway.
+ *
+ * The offset is `(weekday + 6) % 7` rather than `weekday - 1`. On a **Sunday**
+ * `weekdayOfLocalDate` answers `0`, so the subtraction yields `-1` and the
+ * naive version walks *forward* to the next Monday — placing the last evening
+ * of a week in the following one. That is the single case this arithmetic
+ * exists to get right, and it is the case a shop actually asks about, because
+ * Sunday is when a week's takings are counted.
+ *
+ * Like `dayBoundsOf` and `monthBoundsOf`, it is computed from **both**
+ * boundaries rather than from one plus seven days, so a week that is not a
+ * whole number of 24-hour days stays correct if Argentina ever restores
+ * daylight saving (`docs/tech-debt.md` T28).
+ */
+export function weekBoundsOf(date: LocalDate): Interval {
+  const daysSinceMonday = (weekdayOfLocalDate(date) + 6) % 7;
+  const monday = addDays(date, -daysSinceMonday);
+
+  return {
+    start: localToInstant({ ...monday, minuteOfDay: 0 }),
+    end: localToInstant({ ...addDays(monday, 7), minuteOfDay: 0 }),
+  };
+}
+
+/**
+ * The month before this date's, as its **first** day.
+ *
+ * Anchored on the first rather than carrying the incoming day, because
+ * `{ ...date, month: date.month - 1 }` over a 31st produces "31 June", which
+ * `Date.UTC` silently rolls into 1 July — landing a "last month" range back
+ * inside *this* month. The failure is a plausible date rather than an error,
+ * which is the family of defect this module exists to prevent.
+ *
+ * The returned day is `1` and `monthBoundsOf` ignores it either way; it is
+ * fixed so that two calls from different days of one month are equal, which is
+ * what the range control compares.
+ */
+export function previousMonth(date: LocalDate): LocalDate {
+  return date.month === 1
+    ? { year: date.year - 1, month: 12, day: 1 }
+    : { year: date.year, month: date.month - 1, day: 1 };
+}
+
+/**
  * A day's working windows as instants, chronologically.
  *
  * Windows are stored as wall-clock minutes and are never converted at rest

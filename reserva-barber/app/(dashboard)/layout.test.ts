@@ -30,6 +30,7 @@ const REACHABLE_PAGES = [
   '/barberos',
   '/servicios',
   '/clientes',
+  '/estadisticas',
   '/perfil',
   '/transferencia',
   '/mercado-pago',
@@ -40,6 +41,13 @@ const REACHABLE_PAGES = [
 describe('dashboard layout - every page is reachable from the navigation', () => {
   it.each(REACHABLE_PAGES)('should_link_to_%s', (href) => {
     expect(navSource()).toContain(`href="${href}"`);
+  });
+
+  it('should_reach_the_statistics_page_through_the_copy_module', () => {
+    const source = navSource();
+
+    expect(source).toMatch(/href="\/estadisticas"/);
+    expect(source).toMatch(/COPY\.statistics\.nav/);
   });
 
   it('should_reach_the_clients_directory_through_the_copy_module', () => {

@@ -7,6 +7,8 @@ import {
   isWithinHorizon,
   monthBoundsOf,
   parseLocalDate,
+  previousMonth,
+  weekBoundsOf,
   weekdayOfLocalDate,
   workingIntervalsFor,
   type LocalDate,
@@ -244,5 +246,142 @@ describe('bookingCalendar - month bounds in the business calendar', () => {
     // The "add 30 days" version would answer 30 for both, and would be wrong
     // for eight months of every year rather than for an edge case.
     expect(days(monthBoundsOf({ year: 2026, month: 1, day: 1 }))).toBe(31);
+  });
+});
+
+/**
+ * Week bounds, added by D5 — the first range in this product that is neither a
+ * day nor a month.
+ *
+ * The reference week is Monday 2026-08-10 to Sunday 2026-08-16. It is chosen
+ * because its Sunday is `SUNDAY_NIGHT_LOCAL`'s business date, so the same
+ * instant that proves `businessToday` is not the runtime's date also proves the
+ * week it belongs to.
+ */
+describe('bookingCalendar - week bounds in the business calendar', () => {
+  it('should_bound_a_week_from_its_own_monday_midnight_to_the_next', () => {
+    const bounds = weekBoundsOf({ year: 2026, month: 8, day: 12 });
+
+    expect(bounds.start.toISOString()).toBe('2026-08-10T03:00:00.000Z');
+    expect(bounds.end.toISOString()).toBe('2026-08-17T03:00:00.000Z');
+  });
+
+  it('should_treat_monday_as_the_first_day_rather_than_sunday', () => {
+    const monday: LocalDate = { year: 2026, month: 8, day: 10 };
+
+    expect(weekdayOfLocalDate(monday)).toBe(1);
+    // A Sunday-first week would put this Monday at the *end* of the previous
+    // week, so its own midnight would not be the range's start.
+    expect(weekBoundsOf(monday).start.toISOString()).toBe('2026-08-10T03:00:00.000Z');
+  });
+
+  it('should_resolve_a_sunday_to_the_week_that_began_six_days_earlier', () => {
+    const sunday: LocalDate = { year: 2026, month: 8, day: 16 };
+
+    expect(weekdayOfLocalDate(sunday)).toBe(0);
+    // The whole point: `weekday - 1` is -1 on a Sunday, and the naive version
+    // lands on the *next* Monday instead of the previous one.
+    expect(weekBoundsOf(sunday)).toEqual(weekBoundsOf({ year: 2026, month: 8, day: 10 }));
+  });
+
+  it('should_place_the_last_evening_of_a_week_inside_that_week', () => {
+    // 23:30 on Sunday the 16th locally is 02:30 UTC on Monday the 17th — the
+    // runtime has already rolled into the next week and the business has not.
+    const week = weekBoundsOf(businessToday(SUNDAY_NIGHT_LOCAL));
+
+    expect(businessToday(SUNDAY_NIGHT_LOCAL)).toEqual({ year: 2026, month: 8, day: 16 });
+    expect(SUNDAY_NIGHT_LOCAL.getTime()).toBeGreaterThanOrEqual(week.start.getTime());
+    expect(SUNDAY_NIGHT_LOCAL.getTime()).toBeLessThan(week.end.getTime());
+  });
+
+  it('should_be_half_open_so_the_first_instant_of_the_next_week_is_outside', () => {
+    const thisWeek = weekBoundsOf({ year: 2026, month: 8, day: 12 });
+    const nextWeek = weekBoundsOf({ year: 2026, month: 8, day: 19 });
+
+    expect(thisWeek.end.getTime()).toBe(nextWeek.start.getTime());
+    expect(thisWeek.end.getTime()).toBeGreaterThan(thisWeek.start.getTime());
+  });
+
+  it('should_give_every_day_of_one_week_the_same_bounds', () => {
+    const monday = weekBoundsOf({ year: 2026, month: 8, day: 10 });
+
+    for (let offset = 1; offset <= 6; offset += 1) {
+      expect(weekBoundsOf(addDays({ year: 2026, month: 8, day: 10 }, offset))).toEqual(monday);
+    }
+  });
+
+  it('should_carry_a_week_across_a_month_end', () => {
+    // Monday 2026-08-31 to Sunday 2026-09-06: the week straddles the month.
+    const bounds = weekBoundsOf({ year: 2026, month: 9, day: 2 });
+
+    expect(bounds.start.toISOString()).toBe('2026-08-31T03:00:00.000Z');
+    expect(bounds.end.toISOString()).toBe('2026-09-07T03:00:00.000Z');
+  });
+
+  it('should_carry_a_week_across_a_year_end', () => {
+    // Monday 2026-12-28 to Sunday 2027-01-03.
+    const bounds = weekBoundsOf({ year: 2027, month: 1, day: 1 });
+
+    expect(bounds.start.toISOString()).toBe('2026-12-28T03:00:00.000Z');
+    expect(bounds.end.toISOString()).toBe('2027-01-04T03:00:00.000Z');
+  });
+
+  it('should_be_seven_days_long_computed_from_both_boundaries', () => {
+    const bounds = weekBoundsOf({ year: 2026, month: 8, day: 12 });
+
+    expect((bounds.end.getTime() - bounds.start.getTime()) / 86_400_000).toBe(7);
+  });
+});
+
+describe('bookingCalendar - the previous month', () => {
+  it('should_return_the_preceding_month_of_the_same_year', () => {
+    expect(previousMonth({ year: 2026, month: 8, day: 16 })).toEqual({
+      year: 2026,
+      month: 7,
+      day: 1,
+    });
+  });
+
+  it('should_decrement_the_year_in_january', () => {
+    expect(previousMonth({ year: 2026, month: 1, day: 20 })).toEqual({
+      year: 2025,
+      month: 12,
+      day: 1,
+    });
+  });
+
+  it('should_not_produce_an_invalid_date_from_a_thirty_first', () => {
+    // The naive `{ ...date, month: date.month - 1 }` yields "31 June", which
+    // `Date.UTC` silently rolls into 1 July — landing the "last month" range
+    // back inside this month. Anchoring on the first is what avoids it.
+    const fromLastDay = previousMonth({ year: 2026, month: 7, day: 31 });
+
+    expect(fromLastDay).toEqual({ year: 2026, month: 6, day: 1 });
+    expect(monthBoundsOf(fromLastDay).start.toISOString()).toBe('2026-06-01T03:00:00.000Z');
+  });
+
+  it('should_ignore_the_day_because_the_answer_is_a_month', () => {
+    const fromFirst = previousMonth({ year: 2026, month: 8, day: 1 });
+    const fromLast = previousMonth({ year: 2026, month: 8, day: 31 });
+
+    expect(fromFirst).toEqual(fromLast);
+  });
+
+  it('should_bound_a_whole_calendar_month_rather_than_a_fixed_span', () => {
+    const february = monthBoundsOf(previousMonth({ year: 2026, month: 3, day: 15 }));
+
+    expect(february.start.toISOString()).toBe('2026-02-01T03:00:00.000Z');
+    expect(february.end.toISOString()).toBe('2026-03-01T03:00:00.000Z');
+    expect((february.end.getTime() - february.start.getTime()) / 86_400_000).toBe(28);
+  });
+
+  it('should_resolve_the_previous_month_from_the_business_date_not_the_runtime_one', () => {
+    // 02:30 UTC on 1 September is 23:30 on 31 August in the business calendar,
+    // so "last month" is July — the runtime's reading would answer August.
+    expect(previousMonth(businessToday(MONTH_END_NIGHT_LOCAL))).toEqual({
+      year: 2026,
+      month: 7,
+      day: 1,
+    });
   });
 });
