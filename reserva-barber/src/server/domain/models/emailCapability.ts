@@ -55,3 +55,18 @@ export const BOOKING_CANCELLATION_EMAIL: EmailCapability = {
   operation: 'email.bookingCancellation',
   subject: 'Cancellation notice',
 };
+
+/**
+ * The message that reminds a client their appointment is tomorrow (N2).
+ *
+ * **The first of these whose sender is built outside a request.** The other two
+ * are constructed per request, so a missing key surfaces on a page or an
+ * endpoint somebody is watching. This one is constructed inside a scheduled
+ * invocation nobody is watching, and it claims its rows before it sends — so a
+ * line filed under the wrong operation name is not a cosmetic mislabel here, it
+ * is the only trace that a whole night's reminders went nowhere.
+ */
+export const BOOKING_REMINDER_EMAIL: EmailCapability = {
+  operation: 'email.bookingReminder',
+  subject: 'Reminder email',
+};

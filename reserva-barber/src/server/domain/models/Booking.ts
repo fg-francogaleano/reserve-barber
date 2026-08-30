@@ -10,6 +10,8 @@
 import {
   EXPIRY_GRACE_MINUTES,
   HOLD_DURATION_MINUTES,
+  REMINDER_LEAD_HOURS,
+  REMINDER_MIN_GAP_HOURS,
   TRANSFER_HOLD_DURATION_MINUTES,
 } from './bookingHorizon';
 
@@ -243,6 +245,79 @@ export function transferHoldExpiresAtFor(input: { committedAt: Date; startTime: 
  */
 export function holdSweepCutoff(now: Date): Date {
   return new Date(now.getTime() - EXPIRY_GRACE_MINUTES * 60_000);
+}
+
+/**
+ * The far edge of the reminder window: `now` plus `REMINDER_LEAD_HOURS`.
+ *
+ * The arithmetic lives here rather than at the job's call site for the same
+ * reason `holdSweepCutoff` gives about itself: this is a number the candidate
+ * query's bound and the predicate below must agree on, and two expressions of
+ * it are two chances to disagree.
+ *
+ * Fixed milliseconds, never a calendar construction — see
+ * `REMINDER_LEAD_HOURS` for what that buys.
+ */
+export function reminderDueBefore(now: Date): Date {
+  return new Date(now.getTime() + REMINDER_LEAD_HOURS * 60 * 60_000);
+}
+
+/**
+ * What the reminder rule needs to decide, and deliberately not one field more.
+ *
+ * No status and no claim instant: those are the **claim's** guard, asserted in
+ * the statement that does the marking, where a row that changed underneath the
+ * run matches zero rows. Putting them here as well would be a second, weaker
+ * copy of a guarantee the conditional update already provides — the same thing
+ * `BookingConfirmationNotificationService` refuses to do about the confirming
+ * transition.
+ *
+ * No `updatedAt`, and its absence is the point: it is not the booking's age,
+ * and a shape that cannot hold it cannot measure the gap from it by accident.
+ */
+export interface ReminderCandidate {
+  readonly startTime: Date;
+  readonly createdAt: Date;
+}
+
+/**
+ * Whether a confirmed, unclaimed booking is due its reminder at `now`.
+ *
+ * **SQL narrows the candidates; this decides** — the pattern B7's sweep already
+ * follows, and for its reason: a rule re-expressed in a `WHERE` clause drifts
+ * from this one the first time either side is refined.
+ *
+ * `startTime > now` is asserted here **as well as** in the candidate query's
+ * bound, and that duplication is deliberate. Everywhere else in this file a
+ * rule has exactly one home; this one does not, because it is the only clause
+ * in the capability whose failure is unrecoverable. Without it, the first run
+ * in any environment selects every confirmed booking in history — fixtures,
+ * gate-script rows and real past appointments alike — and mails all of them.
+ * Leaving that to a query bound means the safety of the story rests on
+ * something no unit test can see. B7 duplicates its grace window for exactly
+ * this shape of reason.
+ *
+ * Strictly after at the near edge and strictly before at the far edge, matching
+ * the conservative direction `blocksAvailability` and `holdSweepCutoff` both
+ * take at their own boundaries.
+ */
+export function isReminderDue(candidate: ReminderCandidate, now: Date): boolean {
+  const startTime = candidate.startTime.getTime();
+
+  // The bound that cannot be allowed to fail. Asserted first so it is the first
+  // thing a reader sees, and so no later clause can be edited into admitting a
+  // past appointment.
+  if (startTime <= now.getTime()) {
+    return false;
+  }
+
+  if (startTime >= reminderDueBefore(now).getTime()) {
+    return false;
+  }
+
+  // The gap rule. Not in SQL, so it can be refined without touching a query or
+  // an index — which is the ordinary case for a judgement this new.
+  return startTime - candidate.createdAt.getTime() >= REMINDER_MIN_GAP_HOURS * 60 * 60_000;
 }
 
 /**

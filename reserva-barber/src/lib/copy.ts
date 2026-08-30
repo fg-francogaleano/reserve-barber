@@ -1679,5 +1679,83 @@ export const COPY = {
       /** No link, so the closing is the only call to action there is. */
       closing: 'Podés reservar otro turno cuando quieras.',
     },
+
+    /**
+     * The appointment is tomorrow (N2).
+     *
+     * **The link is the message, not a courtesy at the bottom of it.** The
+     * confirmation carries a link so a client can reach a booking that is still
+     * theirs; this one carries the same link because a client who has changed
+     * their mind is the only person who can free the slot while it is still
+     * resellable, and this is the one moment the product puts that control in
+     * front of them. The wording therefore leads with cancelling rather than
+     * mentioning it last.
+     *
+     * **It must not imply the appointment is in doubt.** "Confirmá tu turno"
+     * would read as a booking that lapses if ignored, and this one does not —
+     * the deposit already confirmed it. The client has to do nothing, and the
+     * copy says so before it offers the link.
+     */
+    reminder: {
+      subject: (shopName: string, when: string) => `Recordatorio: tu turno en ${shopName} — ${when}`,
+      greeting: (clientName: string) => `Hola ${clientName},`,
+      heading: 'Te recordamos tu turno',
+
+      /**
+       * Says "no tenés que hacer nada" before anything else. Without it a
+       * message arriving the day before reads as a request for action, and a
+       * client who does nothing wonders whether they still have the turn.
+       *
+       * **It must not name a day, and the first version did.** It read "Tu
+       * turno es mañana", which is false whenever the message is not sent
+       * exactly one lead before the appointment — and the candidate window's
+       * near edge is deliberately **open**, so a booking due in an hour is
+       * still reminded (a run that was skipped, or a Worker that was down,
+       * catches up on the next tick rather than dropping the client). A
+       * reminder telling somebody their appointment is "mañana" ninety minutes
+       * before it starts is worse than no reminder: they will plan around the
+       * wrong day.
+       *
+       * The date and time are in the "Cuándo" row, computed from the
+       * appointment itself, which is the only place they can be right.
+       */
+      intro: 'No tenés que hacer nada, tu turno ya está confirmado:',
+
+      whenLabel: 'Cuándo',
+      whereLabel: 'Dónde',
+      addressLabel: 'Dirección',
+      barberLabel: 'Barbero',
+      serviceLabel: 'Servicio',
+      depositLabel: 'Seña pagada',
+      balanceLabel: 'A pagar en el local',
+
+      /**
+       * **Cancelling first, and that is the whole reason this message exists.**
+       * The confirmation's equivalent line says "ver o cancelar" because at
+       * that moment seeing is what the client wants. A day before the
+       * appointment the useful action is the other one — and a slot released
+       * now is a slot the shop can still sell.
+       *
+       * It does not say the link cancels anything: following it renders a page,
+       * and cancelling takes a further deliberate step. That distinction is
+       * T69's mitigation and the wording must not blur it — the same constraint
+       * the confirmation's `linkIntro` carries.
+       */
+      linkIntro: 'Si no vas a poder venir, avisanos desde acá para liberar el turno:',
+      linkLabel: 'Ver o cancelar mi turno',
+
+      /**
+       * No origin, so no link. It cannot offer the page, so it offers the only
+       * other thing a client can act on.
+       *
+       * **The loss here is larger than on the confirmation path**, and the copy
+       * cannot hide that: a confirmation without a link is still a receipt,
+       * while a reminder without one has had its purpose removed and leaves the
+       * client exactly where they were before it arrived.
+       */
+      noLink: 'Si no vas a poder venir, escribile a la barbería para avisar.',
+
+      closing: '¡Te esperamos!',
+    },
   },
 } as const;

@@ -2126,6 +2126,22 @@ a booking is a financial record the owner has a legitimate reason to keep, `Clie
 the row for referential integrity) remains the shape that satisfies both. D4 deliberately ships **no**
 edit and **no** delete control rather than inventing that policy inside a read-only story.
 
+**N2 adds a fourth location and, for the first time, one that is not triggered by the client
+(2026-08-29).** Every message before this was a **reaction** to something the client did — they paid,
+they were confirmed, the shop cancelled on them. The reminder is sent by a clock, to a person who has
+done nothing since booking, and it reaches the same three unreachable places: their mailbox, the
+provider's outbound record, and now a scheduled job that will keep doing it for every future
+appointment.
+
+The practical consequence for the deletion rule this entry defers: **anonymising a `Client` row must
+also stop the reminder**, or a blanked client keeps receiving mail at an address the product no longer
+displays. That falls out for free from the write — the reminder reads `client.email` through its
+projection, so a blanked address sends to nothing — but it is the kind of thing that is obvious now
+and surprising later, so it is written down.
+
+- **Also N2**, which is the first time this product writes to a guest's mailbox without the guest
+  having done anything.
+
 What D4 does add is the constraint set that makes displaying this data acceptable in the first place,
 and it is worth listing because a future deletion feature must not weaken any of it: the page is
 uncached and unindexed, no personal data appears in any URL (which is why the table has no search), no
@@ -2906,9 +2922,26 @@ the whole mitigation. **Nothing alerts on it**, and nobody is watching a log on 
 It compounds with T70: the shop stops notifying its clients, no owner-visible surface says so, and
 the only record is a log line distinguishable from an ordinary failure by one field.
 
+**N2 changes the shape of this, not just the volume (2026-08-29).**
+
+Reminders roughly double the messages this product sends, and — unlike confirmations, which arrive
+whenever somebody books — they arrive as a **burst**: one scheduled run claims and sends every
+booking due in its window. So the likeliest production failure is no longer "confirmations stop". It
+is **reminders exhausting the cap in one run and every confirmation after them being throttled** —
+the message that carries no money starving the one that does, on the shop's busiest day, with no
+symptom anywhere except a log field.
+
+Two things N2 adds make it findable rather than fixed. `ReminderSummary` carries `outcomes` split by
+cause, so a `throttled` count now has a **denominator** — how many were due, how many were claimed —
+instead of being one line among many. And every reminder line files under `email.bookingReminder`,
+so the two message types can be counted separately for the first time.
+
+**Still nothing alerts on it.** The mitigation is unchanged and the entry stays open.
+
 - **Trigger:** the first `throttled` outcome in production, the first shop busy enough to approach
   the cap, or taking the provider's paid tier — whichever comes first. An alert on that one outcome
-  is cheap; the surface from T70 would carry it for free.
+  is cheap; the surface from T70 would carry it for free. **N2 brings the first of these closer**: a
+  daily burst reaches a cap sooner than the same volume spread across the day.
 
 ---
 
@@ -3140,6 +3173,30 @@ opened the booking, which rendered as confirmed. That is the whole chain, end to
 **Closing it is one step and it is DNS:** verify a domain in Resend, set `EMAIL_FROM` in
 `wrangler.jsonc` to a sender on it, set the key as a Worker secret, and repeat the check — which
 also closes gap 2, since the send then happens inside the Worker.
+
+**N2 added a second message under this entry, and it is worse placed than the first (2026-08-29).**
+
+The appointment reminder ships with the same three gaps and one more that belongs only to it:
+**a reminder has no user-visible surface at all.** A confirmation that could not be sent is disclosed
+on the booking page — that state exists, it is one of three, and it tells the client to keep the
+link. A reminder that was never delivered and one that arrived are **byte-identical** to a client:
+there is no page, no counter and no copy anywhere in the product that mentions it. The only trace is
+a log line.
+
+That interacts with the reminder's own design. Its at-most-once comes from claiming the row
+**before** sending, so a booking whose send failed is permanently marked as reminded and nothing
+retries it. The failure is queryable — `reminderEmailSentAt IS NOT NULL` beside a non-`sent` outcome
+in the log — and it is queryable by nobody who is looking.
+
+**So `RESEND_API_KEY` must stay unset on the cron Worker too**, and for a sharper reason than on the
+application Worker: with a key present and no verified domain, the job would claim every due booking
+and deliver to one mailbox. Unset is a handled state — the job runs, reports the missing variable per
+message, and claims nothing it cannot serve.
+
+Closing this now closes it for **three** messages (confirmation, cancellation, reminder) and is still
+one step: verify a domain in Resend, set `EMAIL_FROM` in **both** `wrangler.jsonc` and
+`wrangler.cron.jsonc`, set the key as a secret on **both** Workers — there is no shared secret store,
+and a credential on one is absent on the other with no symptom — and repeat the check.
 
 - **Trigger:** the first real client, which is also the first moment gap 1 costs anything. Do not
   ship this product to a shop with confirmations in this state.
@@ -3582,3 +3639,120 @@ that actually competes for bytes.
 - **Trigger:** the copy module passing ~2000 lines, or a public-flow performance budget. The fix is
   a split (`copy.public.ts` / `copy.dashboard.ts`) rather than a per-string change, and the
   `copyIsNotInline` scans would follow the split.
+
+---
+
+### T85 — The reminder's lead and its minimum gap are two guesses in front of a real client
+
+**Status:** accepted — declared as judgements, cheap to change · **Effort:** ~5 min each to change, unbounded to *know* · **Added:** N2 (2026-08-29)
+
+`REMINDER_LEAD_HOURS = 24` and `REMINDER_MIN_GAP_HOURS = 3` are the sixth and seventh constants in
+`bookingHorizon.ts` that no real shop has measured. Both are declared beside the other five and both
+say so in their own doc comment.
+
+**They are listed here rather than treated as settled because they are the first of these constants a
+client experiences directly.** The hold durations and the expiry grace are invisible: a client
+experiences them as "the checkout was still open" or not. A lead time is a message arriving in
+somebody's inbox at a particular hour of a particular day, and it is wrong in two different
+directions:
+
+- **Too long** and the client reads it, thinks "yes, Saturday", and forgets again by Saturday. The
+  message was sent and achieved nothing.
+- **Too short** and it arrives after they have already committed to something else — at which point
+  the cancellation link it carries, which is the entire point of the message, is worth nothing to the
+  shop because the slot cannot be resold in the time left.
+
+**T78's rule applies with one difference that had to be named.** T78 refused to invent a
+minimum-notice window for cancellations because a window of **zero** is a coherent product. A lead of
+zero is not — it is no feature at all — so a number had to exist here, and the direction chosen is the
+recoverable one.
+
+**The minimum gap is not a product opinion at all**, and should not be revisited as though it were. It
+exists because the candidate window ends at the appointment rather than being centred on a target
+instant — the shape that makes the job self-healing — so a booking created inside its own lead window
+is immediately due. Three hours stops a client who books at 08:00 for 09:30 receiving a "reminder"
+minutes after the confirmation that carried the same appointment and the same link. If the window
+shape ever changes, this constant should be re-derived rather than re-guessed.
+
+Neither is configurable per shop, for T78's reason: no owner in this product has ever expressed a
+scheduling policy on any surface, and the shops most likely to want a different number are exactly the
+ones nobody has spoken to.
+
+- **Trigger:** the first shop with enough no-shows to compare against, or the first owner who asks.
+  Both are conversations with a real shop, which is the input this decision lacks. Changing either is
+  one constant — no rule, no query and no index depends on the values, and the cadence is independent
+  of them by design.
+
+---
+
+### T86 — A reminder that fails to send is never retried, and nothing in the product says so
+
+**Status:** accepted — deliberate, and the alternative is worse · **Effort:** ~2 h for a bounded retry, ~30 min for a query · **Added:** N2 (2026-08-29)
+
+The reminder claims a booking **before** it sends, because the claim is the only thing making delivery
+at-most-once — a job triggered by time passing has no guarded transition to inherit that from. Nothing
+un-claims a row afterwards. So a booking whose send was rejected, throttled or timed out is
+permanently marked as reminded, and no later invocation will look at it again.
+
+**This was chosen, and the alternative is genuinely worse.** Un-claiming on failure means un-claiming
+rows that may already have been delivered — a provider that accepts and then times out is
+indistinguishable from one that never accepted — which turns a bounded loss of one message into an
+unbounded stream of duplicates into a real person's inbox. A separate `reminderClaimedAt` column would
+let the two be told apart on paper and still could not enable a retry, because a claimed-and-
+unconfirmed row is precisely the one that might already have arrived.
+
+**What exists instead.** The failure is a `WHERE` clause — `reminderEmailSentAt IS NOT NULL` beside a
+non-`sent` outcome in the log — and every run emits a summary carrying `sent`, `failed` and `outcomes`
+split by cause. What does **not** exist is anybody looking at either. There is no owner-facing surface
+and, per T76, no client-facing one: a reminder that never arrived and one that did are byte-identical
+to the client.
+
+It compounds with **T71**: the most likely production failure is a quota burst, which fails *many*
+reminders at once, all of them silently and none of them recoverable.
+
+- **Trigger:** the first `failed` count above zero in a production summary. The cheap first move is
+  not a retry — it is the query, run once, to find out whether the number is one or a hundred. A
+  bounded retry only becomes worth designing if the answer is "a hundred", and it would need the
+  second column this entry argues against, plus an attempt count to stop it looping.
+
+---
+
+### T87 — A job that claims before it acts turns a missing credential into data loss
+
+**Status:** closed by a guard in N2 · **Effort:** 0 (done) · **Added:** N2 (2026-08-29, adversarial review)
+
+Kept as a **pattern entry rather than an open item**, because the defect is closed and the shape will
+recur the next time this product adds a scheduled job.
+
+**What happened.** N2's reminder claims each booking before sending it — the claim is the only thing
+making delivery at-most-once, since a job triggered by time passing has no guarded transition to
+inherit it from. `createEmailSender` returns a sender that *cannot send* when configuration is
+missing, rather than throwing, which is correct for the two request-served callers: the booking is
+already confirmed, the failure is logged, and the page tells the client the truth.
+
+Put those two correct decisions together and they compose into a wrong one. An unconfigured
+deployment claims every due booking, receives `rejected` for each, and leaves all of them permanently
+marked as reminded having received nothing.
+
+**And it was the configuration the deployment was told to have.** T76 requires `RESEND_API_KEY` to be
+absent in production until a sending domain is verified. So the first scheduled run of the intended
+deployment would have consumed every reminder the shop had — silently, once, irreversibly, with every
+page, test and status check still reporting correctly.
+
+**Two documents asserted the opposite** (`wrangler.cron.jsonc` and the change's own task list both
+said such a job "claims nothing"), which is why it survived implementation: the claim was written
+down as though it were a property of the code rather than a wish.
+
+**The rule that came out of it, for the next job of this shape:**
+
+> A job that **consumes** something before it acts — a claim, a lease, a lock, a decremented quota —
+> must check that it *can* act **before** it consumes. A collaborator that fails softly is safe for a
+> caller that consumes nothing.
+
+`runReminders` now reads the configuration first, logs the missing variables, emits a zero summary so
+a refusal is not silence, and returns without issuing a query. The refusal is deliberately **not** an
+invocation failure: it is the state the deployment was told to be in, and an hourly failure would
+train an operator to ignore the only signal the job has.
+
+- **Trigger:** none — closed. Re-read it when adding a third scheduled job, or any path that marks
+  work as done before the work succeeds.

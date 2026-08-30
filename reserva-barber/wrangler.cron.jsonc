@@ -1,20 +1,23 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // The scheduled sweep (B7), deployed as a Worker of its own.
+  // The scheduled Worker: two jobs, two schedules, one deploy.
   //
   //   npx wrangler deploy -c wrangler.cron.jsonc
-  //   npx wrangler secret put DATABASE_URL -c wrangler.cron.jsonc
+  //   npx wrangler secret bulk secret.json -c wrangler.cron.jsonc
   //   npx wrangler dev -c wrangler.cron.jsonc --test-scheduled
   //
-  // **Why it is separate** is recorded in full at the top of `worker/sweep.ts`,
-  // and it comes down to one measurement: a `scheduled()` handler added to the
-  // app's Worker has to import application code, wrangler's esbuild pass
-  // compiles that separately from the copy OpenNext already bundled, and the
-  // Prisma query compiler shipped twice — 3812 KiB gzip against a 3072 KiB
-  // ceiling. Here the same wasm is carried once, by a Worker that needs no
-  // Next.js build at all.
+  // **Why it is separate from the application Worker** is recorded in full at
+  // the top of `worker/scheduled.ts`, and it comes down to one measurement: a
+  // `scheduled()` handler added to the app's Worker has to import application
+  // code, wrangler's esbuild pass compiles that separately from the copy
+  // OpenNext already bundled, and the Prisma query compiler shipped twice —
+  // 3812 KiB gzip against what was then a 3072 KiB ceiling.
+  //
+  // T51 has since closed (Workers Paid, 10 MiB) and the split stands anyway, on
+  // T51's own closing note: shipping the query compiler twice was a
+  // correctness-of-bundling problem, not a size-limit one.
   "name": "reserva-barber-cron",
-  "main": "worker/sweep.ts",
+  "main": "worker/scheduled.ts",
   // Kept identical to the app's Worker on purpose: both run the same Prisma
   // client against the same database, and a divergence in runtime behaviour
   // between them would be invisible until one of them misbehaved.
@@ -23,26 +26,113 @@
   "observability": {
     "enabled": true
   },
+  // Non-secret, and here rather than in the hosting dashboard for the reason
+  // `wrangler.jsonc` gives about its own: a value kept only in the dashboard is
+  // a value the next deploy from a fresh clone silently lacks.
+  //
+  // **`APP_ORIGIN` is new in N2, and this file previously stated that this
+  // Worker had none.** That was true and load-bearing while the only job was
+  // the sweep, which renders nothing and composes no URL. The reminder sends a
+  // message whose entire point is a link, so the statement is corrected here
+  // rather than left standing — a justification a change has falsified is a
+  // sentence the next reader will trust.
+  //
+  // Its absence is handled, not fatal: the reminder still sends, omits the
+  // link, and logs once per run. That degradation costs more here than on the
+  // confirmation path — a confirmation without a link is still a receipt, while
+  // a reminder without one has had its purpose removed.
+  //
+  // `EMAIL_FROM` is **deliberately absent** until a sending domain is verified
+  // (T76). A provider's shared onboarding sender delivers only to the account
+  // owner's own address, so it would pass a verification done from that inbox
+  // and silently drop every real client. Its intended value is
+  //
+  //   "EMAIL_FROM": "Reserva Barber <turnos@your-verified-domain>"
+  //
+  // documented here rather than guessed, per the rule `wrangler.jsonc` and the
+  // booking-confirmation-email capability both state.
+  "vars": {
+    "APP_ORIGIN": "https://reserva-barber.franco-galeano.workers.dev"
+  },
+  // **Two schedules, dispatched on `event.cron` in `worker/scheduled.ts`.**
+  //
+  // Not two calls in one handler body. Each job rethrows on failure, because
+  // that is what marks the invocation failed in the platform's own view of the
+  // schedule and a dead job that looks healthy is the failure this whole family
+  // of jobs is written against. Sharing a handler would mean either the
+  // reminder's fault marking a healthy sweep failed, or the sweep's rethrow
+  // stopping the reminder ever reporting.
+  //
+  //   "*/5 * * * *"  the expired-hold sweep (B7)
+  //
   // Five minutes is a data-freshness choice, not a correctness one: a lapsed
   // hold stopped blocking its slot the instant it lapsed, because availability
-  // reads `holdExpiresAt` rather than the status. Nothing a client or an owner
-  // can see depends on how soon afterwards the row is swept. Every minute would
-  // spend twelve times the connections against a pooler capped at five and
-  // shared with the dashboard and the public booking write.
+  // reads `holdExpiresAt` rather than the status. Every minute would spend
+  // twelve times the connections against a pooler capped at five and shared
+  // with the dashboard and the public booking write.
   //
-  // **Deleting this Worker is the rollback for B7.** It does not un-expire
-  // anything, and does not need to: a swept row and an unswept lapsed row are
-  // indistinguishable to availability, to the booking write and to the
-  // confirmation page. The only path that can tell them apart is a late Mercado
-  // Pago approval, which is what `EXPIRY_GRACE_MINUTES` protects.
+  //   "0 * * * *"    the appointment reminder (N2)
+  //
+  // Hourly, and also a data-freshness choice: at a 24-hour lead nothing anybody
+  // can see depends on the message landing within five minutes. **The
+  // reminder's correctness does not depend on this value** — its candidate
+  // window ends at the appointment rather than being centred on a target
+  // instant, so anything a missed run skipped is still a candidate on the next
+  // one. The cadence can be changed without touching a rule, a query or an
+  // index.
+  //
+  // **Removing a schedule is the rollback for its job.**
+  //
+  // For B7 that un-expires nothing and does not need to: a swept row and an
+  // unswept lapsed row are indistinguishable to availability, to the booking
+  // write and to the confirmation page. The only path that can tell them apart
+  // is a late Mercado Pago approval, which is what `EXPIRY_GRACE_MINUTES`
+  // protects.
+  //
+  // For N2 it stops reminders and un-claims nothing, deliberately: a claimed
+  // row may already have been delivered, and releasing it is how a bounded loss
+  // becomes an unbounded duplicate. The column and its index are inert without
+  // the schedule.
+  // **The reminder's schedule is deliberately NOT listed yet.**
+  //
+  // Adding it is the only irreversible step in shipping N2, and it is one line.
+  // Until it is here the reminder job is unreachable code on a Worker nobody
+  // can call — which is what makes the deploy, the bundle measurement and the
+  // live gate verifiable in isolation, on the real runtime, with no chance of a
+  // message reaching anybody.
+  //
+  // The order the story ships in:
+  //
+  //   1. deploy with this array unchanged   (proves the bundle)
+  //   2. set APP_ORIGIN and EMAIL_FROM      (RESEND_API_KEY stays unset, T76)
+  //   3. add "0 * * * *" here and deploy    (the one irreversible line)
   "triggers": {
     "crons": ["*/5 * * * *"]
   }
-  // `DATABASE_URL` is a secret and is NOT defined here. It is set separately
-  // from the app Worker's — same value, two Workers, two `wrangler secret put`
-  // commands. Upload it as EXACT BYTES, piped from a file or a program's
-  // output, never through a shell echo: a byte-order mark or a trailing
-  // newline is invisible and surfaces as an unrelated connection error.
+  // `DATABASE_URL` and `RESEND_API_KEY` are secrets and are NOT defined here.
+  // They are set separately from the app Worker's — same values, two Workers,
+  // two uploads. There is no shared secret store between Workers, and a
+  // credential present on one is absent on the other with no symptom other than
+  // the feature that needs it failing.
+  //
+  // **`RESEND_API_KEY` must stay UNSET on this Worker in production while T76
+  // stands.** No sending domain is verified, so a key here would make the job
+  // appear to send while reaching exactly one mailbox.
+  //
+  // Unset is a **handled state, and it had to be made one.** Because the
+  // reminder claims each row *before* sending, an unconfigured deployment would
+  // otherwise claim every due booking and deliver nothing — permanently, on the
+  // first run. An earlier version of this comment claimed the job "claims
+  // nothing it cannot serve", which was simply false; the adversarial pass
+  // caught it before deploy. `runReminders` now checks the configuration
+  // BEFORE it queries anything: it logs the missing variables once, emits a
+  // zero summary so a refusal is not silence, and returns without touching the
+  // database. It does not mark the invocation failed — this is the state the
+  // deployment was told to be in.
+  //
+  // Upload as EXACT BYTES, piped from a file or a program's output, never
+  // through a shell echo: a byte-order mark or a trailing newline is invisible
+  // and surfaces as an unrelated connection error.
   //
   // **Use `secret bulk` with a JSON file. The interactive prompt cost an hour
   // here.** B7's first two production runs, twenty minutes apart, both threw
@@ -53,10 +143,6 @@
   // 112-character string, uploaded from a JSON file instead of typed at the
   // prompt, worked on the very next run.
   //
-  // The S0 note on the app Worker says to pipe secrets from a file rather than
-  // echo them. This is that rule with an interactive prompt added to the list
-  // of things that can silently mangle a value:
-  //
   //   npx wrangler secret bulk secret.json -c wrangler.cron.jsonc
   //
   // Write that file with something that emits UTF-8 without a BOM — PowerShell
@@ -64,8 +150,6 @@
   // JSON is what makes it safe: the value is delimited by quotes, so trailing
   // whitespace and partial pastes cannot pass unnoticed.
   //
-  // There is no `APP_ORIGIN` and no `ASSETS` binding. This Worker renders
-  // nothing, serves nothing and is reachable by nobody — it has no `fetch`
-  // handler at all, which is the cheapest possible answer to "can a stranger
-  // reach the sweep".
+  // There is still no `ASSETS` binding and **no `fetch` handler at all**, which
+  // is the cheapest possible answer to "can a stranger reach these jobs".
 }
