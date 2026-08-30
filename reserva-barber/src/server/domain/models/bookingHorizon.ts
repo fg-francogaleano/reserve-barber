@@ -123,3 +123,69 @@ export const TRANSFER_HOLD_DURATION_MINUTES = 45;
  * real shop has produced some.
  */
 export const EXPIRY_GRACE_MINUTES = 10;
+
+/**
+ * How long before an appointment its reminder is sent.
+ *
+ * The sixth judgement of the same kind as the five above, and **the first one
+ * where zero is not a coherent product.** A grace of zero is a defensible
+ * design; a lead of zero is no feature at all. So unlike T78's cancellation
+ * window — which was deliberately not invented, because a window of zero is a
+ * real answer and picking a number would give every shop a rule none of them
+ * asked for — a number has to exist here.
+ *
+ * **Twenty-four hours, and the reasoning is the two things the message is for.**
+ * It is the largest lead at which a client still remembers making the booking,
+ * and the smallest at which a slot they release is still resellable to somebody
+ * else. The value of this message is concentrated in its cancellation link: a
+ * client who cannot come is the only person who can free the slot while it is
+ * still worth something, and this is the one moment the product puts that
+ * control in front of them.
+ *
+ * **Absolute hours, never "the same wall-clock time yesterday".** Two things
+ * follow. `America/Argentina/Buenos_Aires` observes no daylight saving today,
+ * and an absolute lead is the version that stays correct if that ever changes.
+ * And it places the message at approximately the appointment's own hour — a
+ * 09:00 appointment is reminded at about 09:00 the day before, never at 03:00 —
+ * which disposes of the quiet-hours question rather than needing a rule for it.
+ *
+ * The direction chosen is the recoverable one, as with every constant here. Too
+ * long a lead is a message a client reads and forgets; too short a lead is a
+ * message that arrives after they have already made other plans.
+ *
+ * Not configurable per shop, for T78's reason: no owner in this product has
+ * ever expressed a scheduling policy on any surface, and the shops most likely
+ * to want a different number are exactly the ones nobody has spoken to.
+ *
+ * A guess, like the others. The thing that would measure it is a shop with
+ * enough no-shows to compare against, which does not exist yet.
+ */
+export const REMINDER_LEAD_HOURS = 24;
+
+/**
+ * The shortest gap between a booking being made and its appointment that still
+ * earns a reminder.
+ *
+ * **This exists because of the shape of the candidate rule, not because of a
+ * product opinion.** The window a reminder is due in ends at the appointment
+ * rather than being centred on a target instant — which is what makes the job
+ * self-healing, since anything a failed run skipped is still a candidate on the
+ * next tick. The consequence is that a booking created *inside* its own lead
+ * window is due immediately.
+ *
+ * Without this, someone booking at 08:00 for 09:30 receives a "reminder"
+ * minutes after the confirmation email that carried the same appointment, the
+ * same details and the same link. That is not a reminder; it is the product
+ * appearing to malfunction.
+ *
+ * **Measured from `createdAt`, and this is load-bearing.** Not `updatedAt`:
+ * `markConfirmationEmailSent` bumps it on every confirmed booking, as Prisma's
+ * `@updatedAt` does on every write through the client — measured by the N1 gate
+ * — so `updatedAt` is not the booking's age. And not a new `confirmedAt`
+ * column: the question this rule asks is "was there ever time for this to be
+ * forgotten", which `createdAt` answers well enough, and adding a column to
+ * avoid a judgement call is how tables grow.
+ *
+ * Three hours is a guess of the same kind as the rest.
+ */
+export const REMINDER_MIN_GAP_HOURS = 3;

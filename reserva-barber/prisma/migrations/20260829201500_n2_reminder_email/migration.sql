@@ -1,0 +1,81 @@
+-- N2: the appointment reminder's claim column, and the index its candidate
+-- query runs on.
+--
+-- ONE COLUMN AND ONE INDEX. No data is touched, and that is deliberate rather
+-- than merely true: see the note on the backfill below.
+--
+-- ============================================================================
+-- The column, and why it is not the column beside it
+-- ============================================================================
+--
+-- "Booking" now carries two email-instant columns whose semantics are OPPOSITE,
+-- and confusing them removes a guarantee rather than a convenience.
+--
+--   "confirmationEmailSentAt" (N1) is NOT an idempotency key. Nothing reads it
+--   before sending. At-most-once there is a property of the confirming
+--   transition being a conditional update, so exactly one caller per booking
+--   ever observes the confirming outcome.
+--
+--   "reminderEmailSentAt" (N2) IS the idempotency key. A job triggered by time
+--   passing has no transition to key on -- nothing in the row changes to mark a
+--   booking as due -- so the guarantee has to be constructed. The claim is a
+--   single conditional update setting this column WHERE it is null AND the
+--   status is 'CONFIRMED', returning what it matched; a second run, an
+--   overlapping invocation and a manual re-fire each match zero rows.
+--
+-- It is written BEFORE the send, which is also the reverse of N1's ordering.
+-- Recording after acceptance leaves a window -- a dying Worker, a provider that
+-- accepts and then times out -- in which the row is unclaimed and the next
+-- invocation sends again, once per invocation, for as long as the appointment
+-- stays due. Claiming first bounds the failure to one client losing one
+-- reminder.
+--
+-- Nullable and zone-aware, per the convention "startTime" states: Prisma's
+-- DateTime default is a zone-LESS timestamp, which is wrong for anything
+-- compared against a human's clock.
+ALTER TABLE "Booking" ADD COLUMN "reminderEmailSentAt" TIMESTAMPTZ(3);
+
+-- ============================================================================
+-- NO BACKFILL, and it is not an omission
+-- ============================================================================
+--
+-- Every existing booking gets null, which is correct in BOTH directions:
+--
+--   * A future confirmed booking becomes a candidate, which is what the
+--     capability is for.
+--   * A PAST confirmed booking is excluded by the candidate rule's own
+--     `"startTime" > now` bound -- the bound that stops the first production
+--     run mailing every client the shop has ever had.
+--
+-- An UPDATE here would do one of two unrecoverable things: mark the future as
+-- already reminded and silence the feature permanently, or leave the past
+-- eligible under some other reading. Neither is worth writing to avoid a null
+-- that is already the right answer.
+
+-- ============================================================================
+-- The index
+-- ============================================================================
+--
+-- Serves: status = 'CONFIRMED' AND "reminderEmailSentAt" IS NULL
+--           AND "startTime" > now AND "startTime" < now + lead
+--         ordered by "startTime" ASC (soonest appointment first).
+--
+-- Raw SQL because Prisma's schema language cannot declare a partial index. Its
+-- existence is recorded in prisma/schema.prisma so the schema file is not
+-- mistaken for the whole truth -- the same note B7's two sweep indexes, the
+-- hold CHECK constraint and Payment_one_live_per_booking already carry.
+--
+-- NONE of this table's existing indexes can serve this query.
+-- "Booking_barberId_startTime_idx" leads with a barber this query does not
+-- name, because a scheduled job is a maintenance query over every shop at once.
+-- B7's two are restricted to the PROVISIONAL statuses; this is the only index
+-- on this table whose predicate selects CONFIRMED rows.
+--
+-- BOTH predicate clauses are load-bearing and each is useless alone. The status
+-- clause alone would keep every reminded booking in the index forever; the null
+-- clause alone would keep every cancelled and expired one. Together they bound
+-- the index to a shop's unreminded FUTURE appointments, and a row leaves it
+-- permanently the moment it is claimed.
+CREATE INDEX "Booking_reminder_due"
+  ON "Booking" ("startTime")
+  WHERE status = 'CONFIRMED' AND "reminderEmailSentAt" IS NULL;

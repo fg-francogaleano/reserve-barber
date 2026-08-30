@@ -18,7 +18,15 @@ export default defineConfig({
           // would otherwise match neither project — Vitest would collect it
           // nowhere, the test would never run, and the suite would still
           // report green.
-          include: ['{app,src}/**/*.test.ts'],
+          //
+          // `worker` for the same reason, added by N2. It holds the scheduled
+          // entrypoint and its composition roots, which no other test can
+          // reach — and the failure they guard against is the one that is
+          // silent on every surface: a scheduled job whose sender resolves
+          // unconfigured claims every row it was given and delivers nothing.
+          // B7 could only say "fire the trigger by hand"; this makes the
+          // wiring assertable.
+          include: ['{app,src,worker}/**/*.test.ts'],
         },
       },
       {

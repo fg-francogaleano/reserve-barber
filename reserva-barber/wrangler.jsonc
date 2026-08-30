@@ -10,7 +10,7 @@
   // `.open-next/server-functions/default/handler.mjs`, so the Prisma query
   // compiler shipped **twice** and the bundle went from 2924 to 3812 KiB gzip —
   // past the free plan's 3 MiB ceiling. The sweep lives in its own Worker
-  // instead; see `wrangler.cron.jsonc` and `worker/sweep.ts`.
+  // instead; see `wrangler.cron.jsonc` and `worker/scheduled.ts`.
   "main": ".open-next/worker.js",
   "compatibility_date": "2025-09-01",
   "compatibility_flags": ["nodejs_compat"],

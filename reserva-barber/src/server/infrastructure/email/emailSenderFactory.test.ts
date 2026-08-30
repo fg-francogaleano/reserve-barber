@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createEmailSender, EMAIL_API_KEY_VAR, EMAIL_FROM_VAR } from './emailSenderFactory';
+import {
+  createEmailSender,
+  createEmailSenderFrom,
+  EMAIL_API_KEY_VAR,
+  EMAIL_FROM_VAR,
+} from './emailSenderFactory';
 import { ResendEmailSender } from './ResendEmailSender';
 import {
   BOOKING_CANCELLATION_EMAIL,
   BOOKING_CONFIRMATION_EMAIL,
+  BOOKING_REMINDER_EMAIL,
 } from '@/server/domain/models/emailCapability';
 import type { EmailMessage } from '@/server/domain/repositories/IEmailSender';
 import type { ILogger } from '@/server/domain/repositories/ILogger';
@@ -227,5 +233,140 @@ describe('createEmailSender - the line names the capability it was built for', (
    */
   it('should_require_the_capability_rather_than_defaulting_it', () => {
     expect(createEmailSender).toHaveLength(2);
+  });
+});
+
+/**
+ * N2's addition: configuration supplied as an argument.
+ *
+ * **The scheduled Worker cannot use the entry point above.** A scheduled
+ * invocation has no request context and its bindings arrive on the handler's
+ * `env` argument, not in `process.env` — which is exactly why `worker/scheduled.ts`
+ * builds its own Prisma client from a connection string rather than using the
+ * request-memoized factory.
+ *
+ * **What makes this the most dangerous line in N2 if it is got wrong.** The
+ * reminder job claims its rows BEFORE it sends, because the claim is the only
+ * thing making delivery at-most-once. If the sender resolves unconfigured, the
+ * unconfigured stand-in answers `rejected` for every booking — so every due row
+ * is permanently marked as reminded, nobody is reminded, and every page, test
+ * and status check still reports correctly. It fails completely, once,
+ * silently, and irreversibly.
+ *
+ * So the values are passed explicitly rather than relying on any runtime
+ * behaviour that might populate `process.env` from deployment bindings at some
+ * compatibility date. B5's whole lesson is that a runtime is measured rather
+ * than assumed; this costs one function signature and cannot be wrong.
+ */
+describe('createEmailSenderFrom - configuration as an argument', () => {
+  it('should_build_the_real_sender_without_reading_the_process_environment', () => {
+    // The environment is emptied first: if the implementation fell back to it,
+    // this would return the unconfigured stand-in and the assertion would fail.
+    configure(undefined, undefined);
+
+    const sender = createEmailSenderFrom(
+      { apiKey: 'key-from-binding', from: 'turnos@barberia.test' },
+      testLogger(),
+      BOOKING_REMINDER_EMAIL
+    );
+
+    expect(sender).toBeInstanceOf(ResendEmailSender);
+  });
+
+  it('should_ignore_a_populated_process_environment_entirely', () => {
+    // The reverse direction, and the one that catches a wrapper accidentally
+    // written to prefer the environment over its arguments.
+    configure('key-from-env', 'env@barberia.test');
+
+    const sender = createEmailSenderFrom(
+      { apiKey: undefined, from: undefined },
+      testLogger(),
+      BOOKING_REMINDER_EMAIL
+    );
+
+    expect(sender).not.toBeInstanceOf(ResendEmailSender);
+  });
+
+  it('should_return_a_sender_that_cannot_send_when_the_key_is_absent', async () => {
+    const logger = testLogger();
+    const sender = createEmailSenderFrom(
+      { apiKey: undefined, from: 'turnos@barberia.test' },
+      logger,
+      BOOKING_REMINDER_EMAIL
+    );
+
+    const { outcome } = await sender.send(MESSAGE);
+
+    expect(outcome).toBe('rejected');
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        operation: BOOKING_REMINDER_EMAIL.operation,
+        reason: 'notConfigured',
+        missing: EMAIL_API_KEY_VAR,
+      })
+    );
+  });
+
+  it('should_name_both_variables_when_neither_is_supplied', () => {
+    const logger = testLogger();
+    const sender = createEmailSenderFrom(
+      { apiKey: undefined, from: undefined },
+      logger,
+      BOOKING_REMINDER_EMAIL
+    );
+
+    void sender.send(MESSAGE);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ missing: `${EMAIL_API_KEY_VAR}, ${EMAIL_FROM_VAR}` })
+    );
+  });
+
+  it('should_report_nothing_at_construction_no_matter_how_often_it_is_built', () => {
+    // The rule N1's adversarial pass established, and it matters more here:
+    // this composition root is built once per scheduled invocation, so a log
+    // line at construction would be one entry per hour forever on a deployment
+    // that is deliberately unconfigured in production (T76).
+    const logger = testLogger();
+
+    for (let i = 0; i < 5; i += 1) {
+      createEmailSenderFrom({ apiKey: undefined, from: undefined }, logger, BOOKING_REMINDER_EMAIL);
+    }
+
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('should_treat_whitespace_only_values_as_absent', () => {
+    // The byte-hygiene failure B7 lost an hour to twice: a secret that uploaded
+    // as an empty or whitespace string lists as present and behaves as missing.
+    const logger = testLogger();
+    const sender = createEmailSenderFrom(
+      { apiKey: '   ', from: '\n' },
+      logger,
+      BOOKING_REMINDER_EMAIL
+    );
+
+    expect(sender).not.toBeInstanceOf(ResendEmailSender);
+  });
+
+  it('should_file_under_the_capability_it_was_built_for_and_never_a_fixed_one', () => {
+    // The hole the cancellation notice fell through in C2, asserted for the
+    // third message type.
+    const logger = testLogger();
+    const sender = createEmailSenderFrom(
+      { apiKey: undefined, from: undefined },
+      logger,
+      BOOKING_CANCELLATION_EMAIL
+    );
+
+    void sender.send(MESSAGE);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ operation: BOOKING_CANCELLATION_EMAIL.operation })
+    );
   });
 });

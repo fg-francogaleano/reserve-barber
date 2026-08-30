@@ -104,16 +104,88 @@ class UnconfiguredEmailSender implements IEmailSender {
  * through.
  */
 export function createEmailSender(logger: ILogger, capability: EmailCapability): IEmailSender {
-  const apiKey = process.env[EMAIL_API_KEY_VAR]?.trim();
-  const from = process.env[EMAIL_FROM_VAR]?.trim();
+  return createEmailSenderFrom(
+    { apiKey: process.env[EMAIL_API_KEY_VAR], from: process.env[EMAIL_FROM_VAR] },
+    logger,
+    capability
+  );
+}
 
-  const missing: string[] = [];
-  if (!apiKey) missing.push(EMAIL_API_KEY_VAR);
-  if (!from) missing.push(EMAIL_FROM_VAR);
+/** The two values, however the caller came by them. */
+export interface EmailConfiguration {
+  readonly apiKey: string | undefined;
+  readonly from: string | undefined;
+}
 
-  if (!apiKey || !from) {
+/**
+ * The same decision, with the configuration handed in rather than read.
+ *
+ * **This exists because a scheduled invocation has no request context.** N2's
+ * reminder job runs on the cron Worker, where bindings arrive on the handler's
+ * `env` argument and `process.env` is not populated from them — the same
+ * property that makes `worker/scheduled.ts` build its own Prisma client from a
+ * connection string instead of using the request-memoized factory.
+ *
+ * **Not left to the runtime, deliberately.** Some workerd compatibility dates
+ * do populate `process.env` from deployment bindings. Depending on that would
+ * make this feature's correctness a property of a runtime behaviour nobody here
+ * has measured — the assumption B5 was written to refuse, having measured
+ * `Intl` and `fetch` rather than trusting them. An explicit parameter costs one
+ * signature and cannot be wrong.
+ *
+ * **Why the stakes are higher on the scheduled path than on either request
+ * path.** The reminder job claims its rows *before* it sends, because that
+ * claim is the only thing making delivery at-most-once. An unconfigured sender
+ * therefore answers `rejected` for every booking it was handed, and every one
+ * of them stays permanently marked as reminded — nobody reminded, no retry, and
+ * every page, test and status check still reporting correctly. The confirmation
+ * path fails visibly on a page; this one fails once, silently, and for good.
+ *
+ * Values are trimmed and empty-after-trim is treated as absent, which is the
+ * byte-hygiene failure B7 lost an hour to twice: a secret uploaded as an empty
+ * string lists as present and behaves as missing.
+ */
+export function createEmailSenderFrom(
+  configuration: EmailConfiguration,
+  logger: ILogger,
+  capability: EmailCapability
+): IEmailSender {
+  const missing = missingEmailConfiguration(configuration);
+
+  if (missing.length > 0) {
     return new UnconfiguredEmailSender(missing, logger, capability);
   }
 
-  return new ResendEmailSender(apiKey, from);
+  return new ResendEmailSender(
+    configuration.apiKey!.trim(),
+    configuration.from!.trim()
+  );
+}
+
+/**
+ * Which of the two values a deployment is missing, by name.
+ *
+ * **Separate from building the sender because one caller needs the answer
+ * BEFORE it does anything else.** Both request-served paths can afford to
+ * discover a missing key at send time: the booking is already confirmed, the
+ * failure is logged, and the page tells the client the truth. N2's reminder
+ * cannot. It claims each row before sending — the claim is the only thing
+ * making delivery at-most-once — so an unconfigured deployment would claim
+ * every due booking and deliver nothing, permanently, on its first run.
+ *
+ * Its composition root therefore asks this first and refuses to run at all,
+ * which is what makes "the key is deliberately unset in production" (T76) a
+ * handled state rather than a slow-motion data loss.
+ *
+ * Empty-after-trim counts as absent: a secret uploaded as an empty string lists
+ * as present and behaves as missing, which is the byte-hygiene failure B7 lost
+ * an hour to twice.
+ */
+export function missingEmailConfiguration(
+  configuration: EmailConfiguration
+): readonly string[] {
+  const missing: string[] = [];
+  if (!configuration.apiKey?.trim()) missing.push(EMAIL_API_KEY_VAR);
+  if (!configuration.from?.trim()) missing.push(EMAIL_FROM_VAR);
+  return missing;
 }
